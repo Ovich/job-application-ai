@@ -9,7 +9,7 @@ Capture clause: when a decision made during a session would pass the five filter
 
 ## Architecture (context you must not break)
 
-- **job-application.app**: the AI job-seeker platform. A job seeker builds one profile from every CV they have, then, per job offer, a tailored CV and cover letter through one conversation that never invents a claim. Product roadmap and foundation decisions live outside this repo (aiview, project JOBS); this file carries only what the code must obey.
+- **job-application.app**: the AI job-seeker platform. A job seeker builds one profile from every CV they have, then, per job offer, a tailored CV and cover letter through one conversation that never invents a claim. Product roadmap and foundation decisions live outside this repo (aiview, project JOBAPP); this file carries only what the code must obey.
 - pnpm monorepo. `apps/web` = Angular 22 SPA (standalone, signals, zoneless, Vitest; spartan/ui on Angular CDK, Tailwind). `apps/api` = Hono on AWS Lambda (Drizzle, PostgreSQL). `packages/db` = the Drizzle schema, the single source of truth for data shapes. `infra` = AWS CDK v2, TypeScript, region eu-central-2 (Zurich).
 - Type flow is **Drizzle → `@app/db` → `@app/api` (`AppType`) → `apps/web` (`InferResponseType`)**. Types are inferred across this whole chain; nothing is hand-maintained in parallel to it. No OpenAPI document, no generated client.
 - No build step for `@app/db`: apps import its TypeScript source directly via the package `exports` field.
