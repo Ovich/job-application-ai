@@ -3,3 +3,6 @@ packages:
   - apps/api
   - packages/db
   - infra
+
+allowBuilds:
+  esbuild: true

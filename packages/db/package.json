@@ -8,6 +8,15 @@
     "./schema": "./src/schema.ts"
   },
   "scripts": {
-    "check:types": "tsc -p tsconfig.json --noEmit"
+    "check:types": "tsc -p tsconfig.json --noEmit",
+    "db:generate": "drizzle-kit generate",
+    "db:migrate": "drizzle-kit migrate"
+  },
+  "dependencies": {
+    "drizzle-orm": "0.45.2"
+  },
+  "devDependencies": {
+    "drizzle-kit": "0.31.10",
+    "postgres": "3.4.9"
   }
 }
