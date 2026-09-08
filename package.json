@@ -16,10 +16,12 @@
     "check:lint": "biome check .",
     "check:types": "tsc -p tsconfig.json --noEmit && pnpm -r run check:types",
     "test": "vitest run --passWithNoTests && pnpm -r run test",
+    "test:e2e": "playwright test",
     "format": "biome check --write ."
   },
   "devDependencies": {
     "@biomejs/biome": "2.5.12",
+    "@playwright/test": "1.62.1",
     "@tsconfig/strictest": "2.0.8",
     "@types/node": "24.13.3",
     "typescript": "6.0.3",
