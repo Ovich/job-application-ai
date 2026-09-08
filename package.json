@@ -9,6 +9,9 @@
     "pnpm": ">=11 <12"
   },
   "scripts": {
+    "dev": "pnpm run dev:db && pnpm run dev:migrate && pnpm -r --parallel run dev",
+    "dev:db": "docker compose up --detach --wait",
+    "dev:migrate": "pnpm --filter @app/db db:migrate",
     "check": "pnpm run check:lint && pnpm run check:types && pnpm run test",
     "check:lint": "biome check .",
     "check:types": "tsc -p tsconfig.json --noEmit && pnpm -r run check:types",
