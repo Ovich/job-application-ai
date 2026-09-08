@@ -1,0 +1,12 @@
+node_modules/
+dist/
+out/
+coverage/
+.angular/
+cdk.out/
+*.tsbuildinfo
+.env
+.env.*
+!.env.example
+.DS_Store
+Thumbs.db
