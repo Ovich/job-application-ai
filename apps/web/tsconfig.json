@@ -10,8 +10,8 @@
      * build step and no generated client), so the API's configuration module, which
      * reads the process environment, is part of this program and needs Node's globals
      * to typecheck. The type is erased at build time and nothing from the API reaches
-     * the bundle. Nothing in this application may use a Node global; S1.6b draws that
-     * boundary in the linter, where it belongs.
+     * the bundle. Nothing in this application may use a Node global: biome.json'''s
+     * apps/web override denies them, and Node builtin imports with them.
      */
     "types": ["node"]
   },

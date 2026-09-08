@@ -19,7 +19,10 @@
   "linter": {
     "enabled": true,
     "rules": {
-      "preset": "recommended"
+      "preset": "recommended",
+      "style": {
+        "noProcessEnv": "error"
+      }
     }
   },
   "javascript": {
@@ -45,5 +48,91 @@
         "organizeImports": "on"
       }
     }
-  }
+  },
+  "overrides": [
+    {
+      "includes": ["apps/web/**"],
+      "linter": {
+        "rules": {
+          "correctness": {
+            "noNodejsModules": "error"
+          },
+          "style": {
+            "noRestrictedImports": {
+              "level": "error",
+              "options": {
+                "patterns": [
+                  {
+                    "group": ["@app/db", "@app/db/**"],
+                    "message": "apps/web must not depend on @app/db. Response shapes reach the web app through the RPC client, inferred from AppType (CLAUDE.md rule 4)."
+                  }
+                ]
+              }
+            },
+            "noRestrictedGlobals": {
+              "level": "error",
+              "options": {
+                "deniedGlobals": {
+                  "process": "apps/web must not use Node globals. Node's types are in this program only because importing @app/api for AppType pulls its configuration module in; nothing here may run on them (CLAUDE.md rules 4 and 12).",
+                  "Buffer": "apps/web must not use Node globals. Node's types are in this program only because importing @app/api for AppType pulls its configuration module in; nothing here may run on them (CLAUDE.md rules 4 and 12).",
+                  "__dirname": "apps/web must not use Node globals. Node's types are in this program only because importing @app/api for AppType pulls its configuration module in; nothing here may run on them (CLAUDE.md rules 4 and 12).",
+                  "__filename": "apps/web must not use Node globals. Node's types are in this program only because importing @app/api for AppType pulls its configuration module in; nothing here may run on them (CLAUDE.md rules 4 and 12).",
+                  "global": "apps/web must not use Node globals. Use globalThis (CLAUDE.md rules 4 and 12).",
+                  "require": "apps/web must not use Node globals. Use an ES import (CLAUDE.md rules 4 and 12).",
+                  "module": "apps/web must not use Node globals. Use an ES export (CLAUDE.md rules 4 and 12).",
+                  "exports": "apps/web must not use Node globals. Use an ES export (CLAUDE.md rules 4 and 12).",
+                  "setImmediate": "apps/web must not use Node globals. Use queueMicrotask or setTimeout (CLAUDE.md rules 4 and 12).",
+                  "clearImmediate": "apps/web must not use Node globals. Use queueMicrotask or setTimeout (CLAUDE.md rules 4 and 12)."
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "includes": ["apps/api/src/handlers/**", "!apps/api/src/handlers/**/*.test.ts"],
+      "linter": {
+        "rules": {
+          "style": {
+            "noRestrictedImports": {
+              "level": "error",
+              "options": {
+                "patterns": [
+                  {
+                    "group": ["./*", "./**", "../handlers/**", "**/handlers/*"],
+                    "message": "A handler must not import another handler. A helper a second file needs moves to apps/api/src/lib/ (CLAUDE.md rules 10 and 11)."
+                  },
+                  {
+                    "group": [
+                      "aws-sdk",
+                      "@aws-sdk/**",
+                      "@smithy/**",
+                      "aws-lambda",
+                      "@types/aws-lambda"
+                    ],
+                    "message": "A handler must not reach for the AWS SDK. An external service lives behind apps/api/src/lib/<service>/, and the Lambda entry point is the only place that knows it is on AWS (CLAUDE.md rules 7 and 10)."
+                  },
+                  {
+                    "group": ["process", "node:process"],
+                    "message": "A handler must not read the process environment. Configuration is parsed once by apps/api/src/env.ts and imported from there (CLAUDE.md rule 12)."
+                  }
+                ]
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "includes": ["apps/api/src/env.ts", "packages/db/drizzle.config.ts"],
+      "linter": {
+        "rules": {
+          "style": {
+            "noProcessEnv": "off"
+          }
+        }
+      }
+    }
+  ]
 }
