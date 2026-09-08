@@ -13,8 +13,8 @@ anywhere along that chain.
 
 Three things trip a first run, and none of them produces an error that names itself.
 
-| | |
-|---|---|
+| What | Why |
+| --- | --- |
 | **Node 24.15 or newer** | Angular 22 refuses to start below it. `.nvmrc` names the version; run `nvm use` in the repository root, elevated on Windows. |
 | **pnpm 11** | The workspace uses pnpm 11's `allowBuilds`, which pnpm 9 and 10 ignore silently. |
 | **Docker Desktop running** | Not merely installed. When it is closed, `docker compose` fails with a pipe error that says nothing about Docker. |
@@ -22,7 +22,7 @@ Three things trip a first run, and none of them produces an error that names its
 
 ## Run it
 
-```
+```sh
 pnpm install
 pnpm dev
 ```
@@ -34,7 +34,7 @@ Open `http://localhost:4200`.
 An empty database shows the empty state, which is correct rather than broken. To put
 something on the page:
 
-```
+```sh
 curl -X POST http://localhost:3000/api/runs \
   -H "content-type: application/json" \
   -d '{"kind":"demo","units":3}'
@@ -46,14 +46,14 @@ arrives with the resumable run later in the foundation.
 Stopping `pnpm dev` leaves the container up, so your data survives a restart. To stop
 the database too:
 
-```
+```sh
 docker compose down
 ```
 
 ## The commands
 
-| | |
-|---|---|
+| Command | What it does |
+| --- | --- |
 | `pnpm dev` | database, migrations, API and web app, together |
 | `pnpm check` | lint, typecheck across every member, and both test suites. This is what CI runs. |
 | `pnpm format` | apply the formatter |
@@ -61,7 +61,7 @@ docker compose down
 
 ## The layout
 
-```
+```text
 apps/web      Angular 22, standalone, signals, zoneless
 apps/api      Hono on Node today, on Lambda in the cloud
 packages/db   the Drizzle schema, the single source of truth for data shapes
