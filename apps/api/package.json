@@ -5,5 +5,8 @@
   "type": "module",
   "scripts": {
     "check:types": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@app/db": "workspace:*"
   }
 }
