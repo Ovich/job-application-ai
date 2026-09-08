@@ -5,14 +5,14 @@
   "type": "module",
   "packageManager": "pnpm@11.1.2",
   "engines": {
-    "node": ">=24 <25",
+    "node": ">=24.15 <25",
     "pnpm": ">=11 <12"
   },
   "scripts": {
     "check": "pnpm run check:lint && pnpm run check:types && pnpm run test",
     "check:lint": "biome check .",
     "check:types": "tsc -p tsconfig.json --noEmit && pnpm -r run check:types",
-    "test": "vitest run --passWithNoTests",
+    "test": "vitest run --passWithNoTests && pnpm -r run test",
     "format": "biome check --write ."
   },
   "devDependencies": {
