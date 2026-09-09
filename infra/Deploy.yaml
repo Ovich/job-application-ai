@@ -49,7 +49,22 @@ Resources:
             Condition:
               StringEquals:
                 token.actions.githubusercontent.com:aud: sts.amazonaws.com
-                token.actions.githubusercontent.com:sub: repo:Ovich/job-application-ai:ref:refs/heads/main
+                # Two forms of the same subject, and either is accepted. GitHub now issues
+                # the second: `owner@ownerId/repo@repoId`, with immutable numeric ids
+                # rather than names. The first deploy on 2026-09-09 failed on exactly this
+                # — `Not authorized to perform sts:AssumeRoleWithWebIdentity` against a
+                # policy that reads correctly, because StringEquals compared
+                # `repo:Ovich/job-application-ai:...` against
+                # `repo:Ovich@4007098/job-application-ai@1359469611:...`. CloudTrail's
+                # record of the claim is the only place the difference is visible.
+                #
+                # The id form is the stronger of the two and is why GitHub made the
+                # change: a repository renamed away frees its name for anyone to take,
+                # and an id is never reused. Both are listed so a rollout that is still
+                # in progress, or reverted, does not lock the pipeline out.
+                token.actions.githubusercontent.com:sub:
+                  - repo:Ovich@4007098/job-application-ai@1359469611:ref:refs/heads/main
+                  - repo:Ovich/job-application-ai:ref:refs/heads/main
 
   # What the pipeline may do, and it is deliberately not "deploy anything anywhere".
   #
