@@ -5,9 +5,10 @@
 # `check:lint` is `biome check`, which is the formatter, the linter and import sorting
 # in one command, so format and lint are both gates here rather than a later surprise.
 #
-# Nothing here touches AWS and nothing here needs a service running: the suite is unit
-# tests against a mocked query layer by decision (ID13), so there is no container step
-# and no credential. The browser check that reads through real SQL is not in any
+# Nothing here touches AWS and nothing here needs a service running. The query layer is
+# tested against a real PostgreSQL, but one compiled to WebAssembly and running inside
+# the test process (ID49, amending ID13), so there is still no service step, no
+# container and no credential. The browser check that reads through real SQL is not in any
 # workflow: it is the operator check of D3, which a person runs against a deployed
 # address (`pnpm test:e2e:deployed`). Amended from D9 on 2026-09-09.
 name: check
@@ -29,11 +30,15 @@ jobs:
   check:
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v6
+      # Every action is used by commit SHA, never by a tag: a tag is a pointer its owner
+      # can move, and these run with the repository checked out and, in the deploy
+      # workflow, with the token that assumes the AWS role. The trailing comment is the
+      # version, and Renovate moves both together (renovate.json).
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
 
-      - uses: pnpm/action-setup@v4
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4.3.0
 
-      - uses: actions/setup-node@v6
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
         with:
           # The floor is Angular 22's: it refuses to start below 24.15, and below it the
           # web app's failure reads as a version error rather than as whatever broke

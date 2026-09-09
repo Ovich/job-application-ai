@@ -56,11 +56,11 @@ jobs:
       DATABASE_USER: api
       DATABASE_PORT: "5432"
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
 
-      - uses: pnpm/action-setup@v4
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4.3.0
 
-      - uses: actions/setup-node@v6
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
         with:
           node-version-file: .nvmrc
           cache: pnpm
@@ -72,7 +72,7 @@ jobs:
       # `refs/heads/main`, so a fork or another branch gets credentials refused rather
       # than a deploy it did not intend.
       - name: Assume the deployment role
-        uses: aws-actions/configure-aws-credentials@v5
+        uses: aws-actions/configure-aws-credentials@61815dcd50bd041e203e49132bacad1fd04d2708 # v5.1.1
         with:
           role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN_DEV }}
           aws-region: ${{ vars.AWS_REGION }}
