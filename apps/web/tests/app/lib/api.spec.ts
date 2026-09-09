@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { api } from "./api";
+import { api } from "../../../src/app/lib/api";
 
 /**
  * The payload hash the client states on every request that carries a body (ID10).

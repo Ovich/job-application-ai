@@ -2,8 +2,8 @@ import { provideZonelessChangeDetection } from "@angular/core";
 import { TestBed } from "@angular/core/testing";
 import type { InferResponseType } from "hono/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { api } from "../lib/api";
-import { RunsPage } from "./runs-page";
+import type { api } from "../../../src/app/lib/api";
+import { RunsPage } from "../../../src/app/runs/runs-page";
 
 /**
  * The page that shows the latest run (US3, US6). Two things are its contract, and this

@@ -22,5 +22,5 @@
     "strictTemplates": true,
     "typeCheckHostBindings": true
   },
-  "include": ["src/**/*.ts"]
+  "include": ["src/**/*.ts", "tests/**/*.ts"]
 }
