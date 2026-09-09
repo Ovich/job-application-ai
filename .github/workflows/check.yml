@@ -1,0 +1,46 @@
+# What every push has to pass. It runs the same three commands a laptop runs, in the
+# same order, so a failure here is reproducible with `pnpm check` and needs no reading
+# of this file to understand.
+#
+# Nothing here touches AWS and nothing here needs a service running: the suite is unit
+# tests against a mocked query layer by decision (ID13), so there is no container step
+# and no credential. The browser check that reads through real SQL lives in the deploy
+# workflow, because the only place it can ask its question is a deployed environment.
+name: check
+
+on:
+  # Every branch but main, which is covered by the deploy workflow calling this one.
+  # Without the exclusion a merge runs the checks twice, side by side, on the same commit.
+  push:
+    branches-ignore: [main]
+  pull_request:
+  # So the deploy workflow can require this one rather than repeat it.
+  workflow_call:
+
+concurrency:
+  group: check-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v6
+        with:
+          # The floor is Angular 22's: it refuses to start below 24.15, and below it the
+          # web app's failure reads as a version error rather than as whatever broke
+          # (ID24). `.nvmrc` is the one place the version is written.
+          node-version-file: .nvmrc
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      - run: pnpm run check:lint
+
+      - run: pnpm run check:types
+
+      - run: pnpm run test

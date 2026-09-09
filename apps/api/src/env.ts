@@ -36,15 +36,36 @@ const localRuntime = z.object({
   DATABASE_PASSWORD: z.string().min(1).default("local_dev_only"),
 });
 
-// S2.5 adds the cloud branch as a second option here: `APP_RUNTIME: "cloud"` with the
-// region and no password, `lib/db` minting an identity token per connection.
-const configuration = z.discriminatedUnion("APP_RUNTIME", [localRuntime]);
+/**
+ * The deployed function. Every value is required and none has a default, which is what
+ * rule 12 asks for: a function whose configuration is half-set fails its cold start
+ * with the field named, rather than answering requests against a database on its own
+ * loopback interface (ID23).
+ *
+ * There is no password here, and that is the point rather than an omission. The cloud
+ * branch authenticates with an identity token minted per connection from the function's
+ * own role, so no site that reads `DATABASE_PASSWORD` can compile against this branch.
+ * `AWS_REGION` is set by the Lambda runtime itself and is the one value nothing
+ * declares.
+ */
+const cloudRuntime = z.object({
+  APP_RUNTIME: z.literal("cloud"),
+  ...shared,
+  AWS_REGION: z.string().min(1),
+  DATABASE_HOST: z.string().min(1),
+  DATABASE_PORT: z.coerce.number().int().positive(),
+  DATABASE_NAME: z.string().min(1),
+  DATABASE_USER: z.string().min(1),
+});
+
+const configuration = z.discriminatedUnion("APP_RUNTIME", [localRuntime, cloudRuntime]);
 
 // Destructured rather than indexed: the strictest TypeScript base requires bracket
 // notation on the process environment and Biome's literal-keys rule forbids it, and
 // this form is the one both accept.
 const {
   APP_RUNTIME,
+  AWS_REGION,
   PORT,
   DATABASE_HOST,
   DATABASE_PORT,
@@ -59,6 +80,7 @@ export const env = Object.freeze(
     // The discriminator defaults to the local runtime so a clone runs with nothing
     // set; the deployed function is given `cloud` explicitly by CDK.
     APP_RUNTIME: APP_RUNTIME ?? "local",
+    AWS_REGION,
     PORT,
     DATABASE_HOST,
     DATABASE_PORT,
