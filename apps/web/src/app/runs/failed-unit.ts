@@ -1,4 +1,5 @@
 import { ChangeDetectionStrategy, Component, input } from "@angular/core";
+import { FailedMark } from "./failed-mark";
 import { UnitRow } from "./unit-row";
 
 /**
@@ -8,11 +9,11 @@ import { UnitRow } from "./unit-row";
  */
 @Component({
   selector: "li[failedUnit]",
-  imports: [UnitRow],
+  imports: [FailedMark, UnitRow],
   host: { class: "bg-danger-soft" },
   template: `
     <unit-row [seq]="seq()" [endedAt]="doneAt()">
-      <span mark class="shrink-0 font-semibold text-danger">&#x25A0; failed</span>
+      <failed-mark mark />
       <span class="min-w-0 flex-1">{{ result() ?? "no result recorded" }}</span>
     </unit-row>
   `,

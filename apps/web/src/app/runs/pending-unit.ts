@@ -1,4 +1,5 @@
 import { ChangeDetectionStrategy, Component, input } from "@angular/core";
+import { PendingMark } from "./pending-mark";
 import { UnitRow } from "./unit-row";
 
 /**
@@ -7,10 +8,10 @@ import { UnitRow } from "./unit-row";
  */
 @Component({
   selector: "li[pendingUnit]",
-  imports: [UnitRow],
+  imports: [PendingMark, UnitRow],
   template: `
     <unit-row [seq]="seq()">
-      <span mark class="shrink-0 text-muted-foreground">&#x25CB; pending</span>
+      <pending-mark mark />
       <span class="min-w-0 flex-1 text-muted-foreground">not started yet</span>
     </unit-row>
   `,
