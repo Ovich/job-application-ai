@@ -1,0 +1,178 @@
+# A merge to main puts the page on the internet. Nobody runs a command.
+#
+# The order is the board's and the spec's, and two parts of it are deliberate rather
+# than incidental. The checks come first and the deploy does not start unless they
+# passed. And the migration runs AFTER the application, which means new code has to
+# tolerate the old schema for the minute between the two, and a failed migration leaves
+# working code with the deploy already reported successful; recovering is re-tagging,
+# not a rollback. Both consequences are written in the spec and are the accepted cost of
+# never having a schema ahead of the code that reads it.
+#
+# The last step is the browser check against the deployed address. It is the gate: a
+# deploy that finishes without it passing is not a deploy that worked, and it is also
+# the only test in this repository that touches real SQL and a real migration (ID13).
+name: deploy
+
+on:
+  push:
+    branches: [main]
+
+# One deploy at a time, and never cancelled halfway: a cancelled CloudFormation update
+# leaves a stack in a state the next run has to clean up by hand.
+concurrency:
+  group: deploy-dev
+  cancel-in-progress: false
+
+jobs:
+  check:
+    uses: ./.github/workflows/check.yml
+
+  deploy-dev:
+    needs: check
+    runs-on: ubuntu-24.04
+    permissions:
+      # What lets Actions mint the token AWS trusts. Without it there is no token and
+      # the role cannot be assumed; nothing else here needs any permission at all.
+      id-token: write
+      contents: read
+    env:
+      AWS_REGION: ${{ vars.AWS_REGION }}
+      # The names the CDK application uses. Read here so a reader of this file can see
+      # what the SQL below is talking about without opening the stacks.
+      DATA_STACK: Data-dev
+      DATABASE_NAME: jobapp
+      DATABASE_USER: api
+      DATABASE_PORT: "5432"
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      # No access key exists on either side. Actions presents a signed token saying which
+      # repository and which ref is running, and the role's trust condition names exactly
+      # `refs/heads/main`, so a fork or another branch gets credentials refused rather
+      # than a deploy it did not intend.
+      - name: Assume the deployment role
+        uses: aws-actions/configure-aws-credentials@v5
+        with:
+          role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN_DEV }}
+          aws-region: ${{ vars.AWS_REGION }}
+
+      # Built before the stacks, because the App stack uploads this directory: CDK reads
+      # it at synth time, and a missing bundle would fail inside a deployment rather than
+      # here where the message says what is wrong.
+      - name: Build the web bundle
+        run: pnpm --filter @app/web run build
+
+      # The project-wide stacks first. They change rarely, and deploying them from here
+      # rather than from a laptop is what keeps the account and the repository in
+      # agreement; the bootstrap deployed them once by hand, and that was the exception.
+      - name: Deploy the shared stacks
+        run: pnpm run infra:deploy -- Deploy Dns --require-approval never
+
+      - name: Deploy the certificate
+        run: pnpm run infra:deploy -- Cert-dev --require-approval never
+
+      - name: Deploy the data stack
+        run: pnpm run infra:deploy -- ${{ env.DATA_STACK }} --require-approval never
+
+      - name: Deploy the application
+        run: pnpm run infra:deploy -- App-dev --require-approval never
+
+      - name: Find the cluster
+        id: cluster
+        run: |
+          set -euo pipefail
+          # The stack names the cluster it made, and the cluster names its own endpoint
+          # and the secret RDS manages for it. Two lookups rather than one because the
+          # secret's name is chosen by RDS and is not knowable from the template.
+          identifier=$(aws cloudformation describe-stacks --stack-name "$DATA_STACK" \
+            --query "Stacks[0].Outputs[?OutputKey=='ClusterIdentifier'].OutputValue" \
+            --output text)
+          cluster=$(aws rds describe-db-clusters --db-cluster-identifier "$identifier" \
+            --query 'DBClusters[0]' --output json)
+          echo "endpoint=$(echo "$cluster" | jq -r '.Endpoint')" >> "$GITHUB_OUTPUT"
+          echo "secret=$(echo "$cluster" | jq -r '.MasterUserSecret.SecretArn')" >> "$GITHUB_OUTPUT"
+
+      # Declared rather than assumed present in the runner image. This one statement is
+      # the only place a PostgreSQL client is needed — the migrate step below uses the
+      # driver from this repository — and an image that quietly stopped shipping one
+      # would otherwise break a deploy for a reason nothing in this file mentions.
+      - name: Install the PostgreSQL client
+        run: sudo apt-get update && sudo apt-get install --yes --no-install-recommends postgresql-client
+
+      # The one step in the whole system that uses a password, and it uses it to make
+      # every other connection passwordless. PostgreSQL will only accept an identity
+      # token for a role that has been granted `rds_iam`, and only somebody already
+      # connected can grant it; RDS generates and rotates the master password itself, so
+      # this reads it, runs three statements, and never stores it. Idempotent: it runs on
+      # every deploy and does nothing on all but the first.
+      - name: Create the database role the function authenticates as
+        env:
+          SECRET_ARN: ${{ steps.cluster.outputs.secret }}
+          PGHOST: ${{ steps.cluster.outputs.endpoint }}
+          PGPORT: ${{ env.DATABASE_PORT }}
+          PGDATABASE: ${{ env.DATABASE_NAME }}
+          PGSSLMODE: require
+        run: |
+          set -euo pipefail
+          secret=$(aws secretsmanager get-secret-value --secret-id "$SECRET_ARN" \
+            --query SecretString --output text)
+          PGUSER=$(echo "$secret" | jq -r '.username')
+          PGPASSWORD=$(echo "$secret" | jq -r '.password')
+          export PGUSER PGPASSWORD
+          psql --set=ON_ERROR_STOP=1 --quiet <<'SQL'
+          DO $$
+          BEGIN
+            IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'api') THEN
+              CREATE ROLE api LOGIN;
+            END IF;
+          END
+          $$;
+          GRANT rds_iam TO api;
+          -- CREATE on the database because the migration tool keeps its own record in a
+          -- schema of its own. The migrations then run AS this role, so every table they
+          -- make is owned by it and no grant is ever needed for a table added later.
+          GRANT CONNECT, CREATE ON DATABASE jobapp TO api;
+          GRANT ALL ON SCHEMA public TO api;
+          SQL
+
+      # As the application's own role, with the application's own kind of credential: if
+      # a token cannot migrate, a token cannot serve requests either, and this is where
+      # that is found out.
+      - name: Migrate
+        env:
+          PGHOST: ${{ steps.cluster.outputs.endpoint }}
+        run: |
+          set -euo pipefail
+          token=$(aws rds generate-db-auth-token \
+            --hostname "$PGHOST" --port "$DATABASE_PORT" --username "$DATABASE_USER")
+          # The token is a signed query string and is full of characters a URL treats as
+          # structure, so it is encoded rather than pasted.
+          encoded=$(node -e 'process.stdout.write(encodeURIComponent(process.argv[1]))' "$token")
+          export DATABASE_URL="postgres://${DATABASE_USER}:${encoded}@${PGHOST}:${DATABASE_PORT}/${DATABASE_NAME}?sslmode=require"
+          pnpm --filter @app/db run db:migrate
+
+      - name: Install the browser
+        run: pnpm exec playwright install --with-deps chromium
+
+      # The gate. It writes a run through the deployed API and then asks the deployed
+      # page to show it, so a page that merely loaded, an empty state, or a run whose
+      # units never left the database all fail here.
+      - name: The deploy check
+        run: pnpm run test:e2e:deployed
+
+      - name: Keep what failed
+        if: failure()
+        uses: actions/upload-artifact@v5
+        with:
+          name: deploy-check
+          path: test-results/
+          retention-days: 7

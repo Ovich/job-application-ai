@@ -59,13 +59,37 @@ docker compose down
 | `pnpm format` | apply the formatter |
 | `pnpm --filter @app/db db:generate --name=<what_it_does>` | a new migration. The name is not optional; see the conventions file. |
 
+## How it reaches the internet
+
+Nobody deploys from a laptop. A merge to `main` runs `.github/workflows/deploy.yml`,
+which builds the bundle, deploys the stacks, migrates and then proves the result with a
+browser check against `https://dev.job-application.app`. A deploy that finishes without
+that check passing is not a deploy that worked.
+
+GitHub holds no AWS key. Actions presents a signed token naming the repository and the
+branch, and the deployment role trusts exactly `refs/heads/main`, so no other branch and
+no fork can obtain credentials. Two repository *variables* say where to go:
+`AWS_DEPLOY_ROLE_ARN_DEV` and `AWS_REGION`. Neither is a secret; a role name grants
+nothing without a token that matches the trust condition.
+
+Two consequences of the order, both deliberate. The migration runs **after** the
+application, so new code must tolerate the old schema for the minute between them. And a
+failed migration leaves working code with the deploy already reported successful:
+nothing rolls back, and recovering means shipping a fix.
+
+```sh
+pnpm infra:diff          # what a deploy would change, against the live account
+pnpm test:e2e            # the browser specs against your local stack
+pnpm test:e2e:deployed   # the deploy check, against the development address
+```
+
 ## The layout
 
 ```text
 apps/web      Angular 22, standalone, signals, zoneless
 apps/api      Hono on Node today, on Lambda in the cloud
 packages/db   the Drizzle schema, the single source of truth for data shapes
-infra         AWS CDK
+infra         AWS CDK: Deploy and Dns once, Cert-dev, Data-dev and App-dev per environment
 ```
 
 Types flow one way and are never written twice: the Drizzle schema defines the row
