@@ -1,7 +1,7 @@
 import { provideZonelessChangeDetection } from "@angular/core";
 import { type ComponentFixture, TestBed } from "@angular/core/testing";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { RunStream } from "./run-stream";
+import { RunStream } from "../../../src/app/runs/run-stream";
 
 /**
  * The browser's side of the stream (US4, S3.5): what a run says while it is running,

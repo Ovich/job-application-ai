@@ -91,7 +91,7 @@
       }
     },
     {
-      "includes": ["apps/api/src/handlers/**", "!apps/api/src/handlers/**/*.test.ts"],
+      "includes": ["apps/api/src/handlers/**"],
       "linter": {
         "rules": {
           "style": {

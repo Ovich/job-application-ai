@@ -2,6 +2,7 @@
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
   "extends": [
     "config:recommended",
+    "helpers:pinGitHubActionDigests",
     ":semanticCommits",
     ":dependencyDashboard",
     "group:monorepos",
@@ -13,6 +14,13 @@
     "enabled": true
   },
   "packageRules": [
+    {
+      "description": "Every action is used by commit SHA with its version in a trailing comment. Renovate owns the pins: it moves the SHA and rewrites the comment, and a digest or a patch merges on its own once check has passed. A major is a person's.",
+      "matchManagers": ["github-actions"],
+      "groupName": "github actions",
+      "matchUpdateTypes": ["digest", "pin", "pinDigest", "patch", "minor"],
+      "automerge": true
+    },
     {
       "description": "Angular is pinned to 22 by the foundation; a major needs a decision, not a bot.",
       "matchPackageNames": ["/^@angular//", "/^@angular-devkit//", "@nguniversal/**"],

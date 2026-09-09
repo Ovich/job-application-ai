@@ -1,6 +1,11 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { Frame, Leaf } from "./envelope";
-import { catalogueVersion, createEnvelope, heartbeatIntervalMs, leafSchema } from "./envelope";
+import type { Frame, Leaf } from "../../../src/lib/stream/envelope";
+import {
+  catalogueVersion,
+  createEnvelope,
+  heartbeatIntervalMs,
+  leafSchema,
+} from "../../../src/lib/stream/envelope";
 
 /**
  * The envelope is what turns a leaf into a well-formed event stream: it validates the
