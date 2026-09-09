@@ -239,6 +239,8 @@ const conversions: readonly Conversion[] = [
       "Resources.Api.Properties.Environment.Variables.DATABASE_HOST":
         "The same import from Data-dev, under the export's readable name.",
       "Resources.Api.Properties.Environment.Variables.DATABASE_PORT": "The same.",
+      "Resources.ApiInvokeFunctionFromDistribution":
+        "New, and required. Since October 2025 a function URL behind origin access control needs lambda:InvokeFunction as well as lambda:InvokeFunctionUrl, or CloudFront is refused with 403 before the function is invoked at all. CDK granted only the latter, which is what every guide written before that date says; the first deploy failed on exactly this, with a textbook configuration and an empty log group.",
       "Resources.ApiRolePolicy.Properties.PolicyName":
         "A readable name in place of the hashed one.",
       "Resources.ApiRolePolicy.Properties.PolicyDocument.Statement[0].Resource":

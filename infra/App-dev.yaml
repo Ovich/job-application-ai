@@ -202,12 +202,33 @@ Resources:
         SigningBehavior: always
         SigningProtocol: sigv4
 
-  # The other half of AWS_IAM on the function URL: the distribution signs, and this says
+  # The other half of AWS_IAM on the function URL: the distribution signs, and these say
   # whose signature the function accepts.
+  #
+  # TWO permissions, not one. Every guide written before October 2025 grants only
+  # lambda:InvokeFunctionUrl, and a function URL created after that date also needs
+  # lambda:InvokeFunction or the call is refused with 403 before the function is ever
+  # invoked. The first deploy failed exactly there: textbook configuration, an empty log
+  # group, and CloudFront's SPA fallback turning the 403 into a 200 page.
   ApiInvokeFromDistribution:
     Type: AWS::Lambda::Permission
     Properties:
       Action: lambda:InvokeFunctionUrl
+      FunctionName: !GetAtt ApiFunctionUrl.FunctionArn
+      Principal: cloudfront.amazonaws.com
+      SourceArn: !Join
+        - ""
+        - - "arn:"
+          - !Ref AWS::Partition
+          - ":cloudfront::"
+          - !Ref AWS::AccountId
+          - ":distribution/"
+          - !Ref Distribution
+
+  ApiInvokeFunctionFromDistribution:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: lambda:InvokeFunction
       FunctionName: !GetAtt ApiFunctionUrl.FunctionArn
       Principal: cloudfront.amazonaws.com
       SourceArn: !Join
