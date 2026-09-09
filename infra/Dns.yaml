@@ -1,0 +1,107 @@
+AWSTemplateFormatVersion: "2010-09-09"
+
+# Created once for the project: the zone every environment's records live in, the one
+# topic every alarm reports to, and the alarm on spend.
+#
+# The zone is here rather than in an environment stack because a domain is not owned by
+# an environment: production sits at the apex and development at a subdomain of the same
+# name, and the registrar can only point at one set of name servers.
+#
+# Region: eu-central-1. Route 53 is global, but a stack has to live somewhere and this
+# is where the project's stacks live.
+Description: The hosted zone for job-application.app, the alert topic and the spend alarm.
+
+Resources:
+  # The one resource in this repository that can take the product off the internet. Its
+  # four name servers are typed in by hand at Spaceship, the registrar; a replacement
+  # zone gets four different ones and nothing resolves until they are typed in again and
+  # propagate. Retain is what stops CloudFormation from ever doing that on its own —
+  # a stack deletion leaves the zone standing, to be adopted again by import.
+  Zone:
+    Type: AWS::Route53::HostedZone
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      Name: job-application.app.
+      HostedZoneConfig:
+        Comment: job-application.app. Name servers set at Spaceship, the registrar.
+
+  # One topic for every alarm the project raises, so there is a single place to change
+  # where alerts go.
+  Alerts:
+    Type: AWS::SNS::Topic
+    Properties:
+      DisplayName: job-application.app alerts
+
+  # Email, so an alert needs no application to read it. The address has to confirm the
+  # subscription once, by following the link SNS sends; until it does, the subscription
+  # exists and delivers nothing.
+  AlertsEmailSubscription:
+    Type: AWS::SNS::Subscription
+    Properties:
+      Protocol: email
+      Endpoint: tigoes44@gmail.com
+      TopicArn: !Ref Alerts
+
+  # Budgets is not a CloudWatch alarm and does not assume it may publish here; it must be
+  # granted that, and scoped to this account so no other account's budget can use the
+  # topic as a megaphone. The statement id is "0" because that is what the deployed
+  # policy says; renaming it would be a change to a live resource for no gain.
+  AlertsPolicy:
+    Type: AWS::SNS::TopicPolicy
+    Properties:
+      Topics:
+        - !Ref Alerts
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Sid: "0"
+            Effect: Allow
+            Principal:
+              Service: budgets.amazonaws.com
+            Action: SNS:Publish
+            Resource: !Ref Alerts
+            Condition:
+              StringEquals:
+                aws:SourceAccount: "917993967998"
+
+  # Twenty dollars a month, alerted twice: on the forecast, while the month can still be
+  # changed, and on the actual, in case the forecast was wrong. That is the point of US7
+  # — learn it from an alert rather than from a bill.
+  MonthlySpend:
+    Type: AWS::Budgets::Budget
+    Properties:
+      Budget:
+        BudgetName: monthly-spend
+        BudgetType: COST
+        TimeUnit: MONTHLY
+        BudgetLimit:
+          Amount: 20
+          Unit: USD
+      NotificationsWithSubscribers:
+        - Notification:
+            NotificationType: FORECASTED
+            ComparisonOperator: GREATER_THAN
+            Threshold: 100
+            ThresholdType: PERCENTAGE
+          Subscribers:
+            - SubscriptionType: SNS
+              Address: !Ref Alerts
+        - Notification:
+            NotificationType: ACTUAL
+            ComparisonOperator: GREATER_THAN
+            Threshold: 100
+            ThresholdType: PERCENTAGE
+          Subscribers:
+            - SubscriptionType: SNS
+              Address: !Ref Alerts
+
+Outputs:
+  NameServers:
+    Description: Set these four at the registrar. Nothing validates a certificate until they propagate.
+    Value: !Join
+      - ", "
+      - !GetAtt Zone.NameServers
+
+  AlertTopicArn:
+    Value: !Ref Alerts

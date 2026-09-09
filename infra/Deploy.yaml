@@ -1,0 +1,227 @@
+AWSTemplateFormatVersion: "2010-09-09"
+
+# The identity GitHub Actions deploys as, and the two things it needs to deploy with.
+#
+# Region: eu-central-1. IAM is global; the bucket is not, and the function's code has to
+# be in the function's own region.
+#
+# This is the one stack deployed from a laptop, and deploying it is what makes every
+# later deploy come from the pipeline instead: it replaces a stored access key with a
+# trust relationship. Actions presents a signed token describing which repository and
+# which branch is running; AWS verifies it against GitHub's OpenID Connect provider and
+# issues credentials that expire. Nothing is stored on either side.
+#
+# Two of the three resources here used to belong to the CDK toolkit's bootstrap stack,
+# and they are declared where they can be read now that there is no toolkit: the role
+# CloudFormation acts as, and the bucket the function's bundle is uploaded to.
+Description: GitHub OIDC provider and the deployment role. Deployed once, from a laptop.
+
+Resources:
+  # ClientIdList is the audience AWS requires the token to be addressed to. Without it a
+  # token minted for any other service would be accepted here.
+  #
+  # No ThumbprintList: IAM stopped verifying the certificate chain of its own well-known
+  # OIDC providers, and a thumbprint written here would be a value that expires and that
+  # nobody would think to renew.
+  GitHubProvider:
+    Type: AWS::IAM::OIDCProvider
+    Properties:
+      Url: https://token.actions.githubusercontent.com
+      ClientIdList:
+        - sts.amazonaws.com
+
+  # The condition is the whole security boundary. `sub` names the repository AND the ref,
+  # so a fork, a pull request from one, or a push to any other branch produces a token
+  # this role will not accept. Matching on the repository alone would let any branch
+  # anyone can push deploy to the account.
+  DeployRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: github-actions-deploy-dev
+      Description: Assumed by GitHub Actions on a push to main, to deploy the development environment.
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Action: sts:AssumeRoleWithWebIdentity
+            Principal:
+              Federated: !Ref GitHubProvider
+            Condition:
+              StringEquals:
+                token.actions.githubusercontent.com:aud: sts.amazonaws.com
+                token.actions.githubusercontent.com:sub: repo:Ovich/job-application-ai:ref:refs/heads/main
+
+  # What the pipeline may do, and it is deliberately not "deploy anything anywhere".
+  #
+  # The first two statements are the deploy: CloudFormation on this project's five stacks
+  # by name, and permission to hand CloudFormation the execution role below. The rights
+  # to CREATE resources are held by that role and not by this one, so a mistake in the
+  # workflow reaches only what CloudFormation would have done anyway. This is the shape
+  # CDK's bootstrap had, with its roles named here instead of hashed into a stack nobody
+  # in this repository wrote.
+  #
+  # The rest is what the pipeline does that is not a deployment: it uploads the artefact,
+  # syncs the web bundle, invalidates the entry document, and migrates the database.
+  DeployRolePolicy:
+    Type: AWS::IAM::Policy
+    Properties:
+      PolicyName: deploy-the-development-environment
+      Roles:
+        - !Ref DeployRole
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Sid: TheProjectsStacks
+            Effect: Allow
+            Action:
+              - cloudformation:CreateChangeSet
+              - cloudformation:DeleteChangeSet
+              - cloudformation:DescribeChangeSet
+              - cloudformation:ExecuteChangeSet
+              - cloudformation:CreateStack
+              - cloudformation:UpdateStack
+              - cloudformation:UpdateTerminationProtection
+              - cloudformation:DescribeStacks
+              - cloudformation:DescribeStackEvents
+              - cloudformation:DescribeStackResources
+              - cloudformation:GetTemplate
+              - cloudformation:GetTemplateSummary
+              - cloudformation:ListStackResources
+            Resource:
+              - arn:aws:cloudformation:*:917993967998:stack/Deploy/*
+              - arn:aws:cloudformation:*:917993967998:stack/Dns/*
+              - arn:aws:cloudformation:*:917993967998:stack/Cert-dev/*
+              - arn:aws:cloudformation:*:917993967998:stack/Data-dev/*
+              - arn:aws:cloudformation:*:917993967998:stack/App-dev/*
+
+          # `aws cloudformation deploy` calls ValidateTemplate, which takes no resource.
+          - Sid: ValidateATemplateBeforeSendingIt
+            Effect: Allow
+            Action: cloudformation:ValidateTemplate
+            Resource: "*"
+
+          # The condition is what stops this role from lending the execution role to
+          # anything but CloudFormation.
+          - Sid: HandTheExecutionRoleToCloudFormation
+            Effect: Allow
+            Action: iam:PassRole
+            Resource: !GetAtt CloudFormationExecutionRole.Arn
+            Condition:
+              StringEquals:
+                iam:PassedToService: cloudformation.amazonaws.com
+
+          - Sid: UploadTheFunctionsBundle
+            Effect: Allow
+            Action:
+              - s3:PutObject
+              - s3:GetObject
+              - s3:ListBucket
+            Resource:
+              - !GetAtt ArtefactBucket.Arn
+              - !Join ["", [!GetAtt ArtefactBucket.Arn, "/*"]]
+
+          - Sid: SyncTheWebBundle
+            Effect: Allow
+            Action:
+              - s3:PutObject
+              - s3:GetObject
+              - s3:DeleteObject
+              - s3:ListBucket
+            Resource:
+              - !Sub arn:aws:s3:::job-application-web-dev-${AWS::AccountId}
+              - !Sub arn:aws:s3:::job-application-web-dev-${AWS::AccountId}/*
+
+          # Only the entry document is ever invalidated, because everything else carries
+          # a content hash in its name; the action is not scopable below the
+          # distribution.
+          - Sid: InvalidateTheEntryDocument
+            Effect: Allow
+            Action: cloudfront:CreateInvalidation
+            Resource: arn:aws:cloudfront::917993967998:distribution/*
+
+          # Where the cluster is, and which secret RDS manages its master password in.
+          - Sid: FindTheCluster
+            Effect: Allow
+            Action: rds:DescribeDBClusters
+            Resource: "*"
+
+          # One statement, once: creating the `api` role and granting it rds_iam, which
+          # only a password login can do. Scoped to the secrets RDS itself manages, so
+          # this cannot read any secret the application ever holds.
+          - Sid: ReadTheMasterPasswordRdsManages
+            Effect: Allow
+            Action: secretsmanager:GetSecretValue
+            Resource: arn:aws:secretsmanager:*:917993967998:secret:rds!cluster-*
+
+          # The database user is named in the resource, so a token minted for any other
+          # PostgreSQL role is refused. The cluster's resource id is not known here: it
+          # is created by a stack this stack knows nothing about, and it changes if the
+          # cluster is ever restored from a snapshot.
+          - Sid: MigrateAsTheApplicationsOwnRole
+            Effect: Allow
+            Action: rds-db:connect
+            Resource: arn:aws:rds-db:*:917993967998:dbuser:*/api
+
+  # Who CloudFormation is while it deploys. Every stack is applied with --role-arn
+  # naming this role, so the rights to create a distribution or a database cluster live
+  # here rather than on the identity the workflow holds. It is the direct replacement for
+  # cdk-hnb659fds-cfn-exec-role, which the CDK bootstrap created with the same breadth
+  # and which nothing in this repository declared.
+  #
+  # AdministratorAccess, because a stack that creates IAM roles cannot be given less
+  # without listing every action of every service the project will ever use. The
+  # boundary that matters is the trust policy: only CloudFormation may assume it, only
+  # from this account, and only the five stacks above may be handed it.
+  CloudFormationExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: job-application-cloudformation-execution
+      Description: Assumed by CloudFormation while it applies this project's stacks.
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Action: sts:AssumeRole
+            Principal:
+              Service: cloudformation.amazonaws.com
+            Condition:
+              StringEquals:
+                aws:SourceAccount: !Ref AWS::AccountId
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/AdministratorAccess
+
+  # Where the function's bundle is uploaded before App-dev is applied. A Lambda reads its
+  # code from a bucket in its own region, which is why this is a regional resource in a
+  # stack that is otherwise global, and it replaces cdk-hnb659fds-assets-<account>-<region>.
+  #
+  # Nothing here is worth keeping: an artefact is reproducible from the commit it was
+  # built from, so old ones expire rather than accumulate.
+  ArtefactBucket:
+    Type: AWS::S3::Bucket
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      BucketName: !Sub job-application-artefacts-${AWS::AccountId}-${AWS::Region}
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      LifecycleConfiguration:
+        Rules:
+          - Id: expire-old-artefacts
+            Status: Enabled
+            ExpirationInDays: 90
+
+Outputs:
+  ArtefactBucketName:
+    Description: The bucket the pipeline uploads the API bundle to.
+    Value: !Ref ArtefactBucket
+
+  CloudFormationExecutionRoleArn:
+    Description: Passed to every `aws cloudformation deploy` as --role-arn.
+    Value: !GetAtt CloudFormationExecutionRole.Arn

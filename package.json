@@ -16,10 +16,10 @@
     "check:lint": "biome check .",
     "check:types": "tsc -p tsconfig.json --noEmit && pnpm -r run check:types",
     "test": "vitest run --passWithNoTests && pnpm -r run test",
-    "test:e2e": "playwright test --project=local",
-    "test:e2e:deployed": "playwright test --project=deployed",
     "infra:diff": "pnpm --filter @app/infra exec cdk diff",
     "infra:deploy": "pnpm --filter @app/infra exec cdk deploy",
+    "test:e2e": "playwright test --project=local",
+    "test:e2e:deployed": "playwright test --project=deployed",
     "format": "biome check --write ."
   },
   "devDependencies": {
@@ -27,7 +27,9 @@
     "@playwright/test": "1.62.1",
     "@tsconfig/strictest": "2.0.8",
     "@types/node": "24.13.3",
+    "esbuild": "0.28.2",
     "typescript": "6.0.3",
-    "vitest": "4.1.11"
+    "vitest": "4.1.11",
+    "yaml": "2.8.1"
   }
 }
