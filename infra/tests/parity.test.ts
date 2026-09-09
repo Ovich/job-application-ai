@@ -165,6 +165,8 @@ const conversions: readonly Conversion[] = [
     scaffolding: { ...cdkPreamble },
     differences: {
       ...cdkPreamblePaths,
+      "Resources.ClusterSecurityGroup.Properties.SecurityGroupIngress[0].Description":
+        "Reworded to carry no apostrophe. EC2 accepts a rule description only from a-zA-Z0-9. _-:/()#,@[]+=&;{}!$*, and rejected the whole stack on the one in \"pipeline's\" — the first deploy of Data-dev died there on 2026-09-09 after twelve minutes of Aurora provisioning. CDK's template carried the same apostrophe and would have failed identically. invariants.test.ts asserts the character set now.",
       "Resources.Vpc.Properties.Tags":
         "A Name tag whose value was the construct path, Data-dev/Vpc.",
       "Resources.PublicSubnet1.Properties.Tags":
