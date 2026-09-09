@@ -78,10 +78,16 @@ failed migration leaves working code with the deploy already reported successful
 nothing rolls back, and recovering means shipping a fix.
 
 ```sh
-pnpm infra:diff          # what a deploy would change, against the live account
+cd infra && cfn-lint     # the templates against CloudFormation's own specification
 pnpm test:e2e            # the browser specs against your local stack
 pnpm test:e2e:deployed   # the deploy check, against the development address
 ```
+
+`pnpm check` already runs the tests in `infra/tests`: a parity harness that holds each
+template against the CDK template it replaced, and the invariants of rule 17 — no NAT
+gateway, no API Gateway, no RDS proxy, compression off on `/api/*`, a database that
+scales to nothing. `cfn-lint` is a Python tool and is the one check `pnpm check` leaves
+to CI, so that a laptop with only Node on it can still run everything else.
 
 ## The layout
 
@@ -89,7 +95,7 @@ pnpm test:e2e:deployed   # the deploy check, against the development address
 apps/web      Angular 22, standalone, signals, zoneless
 apps/api      Hono on Node today, on Lambda in the cloud
 packages/db   the Drizzle schema, the single source of truth for data shapes
-infra         AWS CDK: Deploy and Dns once, Cert-dev, Data-dev and App-dev per environment
+infra         CloudFormation YAML: Deploy and Dns once, Cert-dev, Data-dev and App-dev per environment
 ```
 
 Types flow one way and are never written twice: the Drizzle schema defines the row

@@ -7,7 +7,7 @@
   },
   "files": {
     "ignoreUnknown": false,
-    "includes": ["**", "!**/pnpm-lock.yaml", "!**/cdk.out", "!**/.angular", "!packages/db/drizzle"]
+    "includes": ["**", "!**/pnpm-lock.yaml", "!**/.angular", "!packages/db/drizzle"]
   },
   "formatter": {
     "enabled": true,

@@ -56,12 +56,6 @@
       "allowedVersions": "<5.0.0"
     },
     {
-      "description": "AWS CDK v2 moves as one.",
-      "matchPackageNames": ["aws-cdk", "aws-cdk-lib", "constructs", "/^@aws-cdk//"],
-      "groupName": "aws-cdk",
-      "allowedVersions": "<3.0.0"
-    },
-    {
       "description": "Tooling patches and minors merge on their own once the checks pass.",
       "matchDepTypes": ["devDependencies"],
       "matchUpdateTypes": ["minor", "patch"],

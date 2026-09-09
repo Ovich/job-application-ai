@@ -2,10 +2,9 @@ packages:
   - apps/web
   - apps/api
   - packages/db
-  - infra
 
 # pnpm 11 runs no dependency's install script unless it is named here. drizzle-kit
-# needs esbuild's; the other three are Angular's toolchain, whose build cache (lmdb,
+# and the pipeline's own bundling step need esbuild's; the other three are Angular's toolchain, whose build cache (lmdb,
 # msgpackr-extract) and file watcher (@parcel/watcher, through sass) are native.
 allowBuilds:
   esbuild: true
