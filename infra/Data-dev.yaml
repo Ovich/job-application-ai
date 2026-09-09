@@ -1,0 +1,246 @@
+AWSTemplateFormatVersion: "2010-09-09"
+
+# What holds state, kept in its own stack so that tearing down and redeploying the
+# application never touches the data (board D8).
+#
+# Region: eu-central-1.
+#
+# Termination protection is on for the same reason, and it is NOT a template property:
+# the pipeline sets it with `aws cloudformation update-termination-protection` after the
+# stack exists. If you create this stack by hand, do that too.
+Description: The development network and Aurora Serverless v2 cluster. Holds the state.
+
+Resources:
+  # Public subnets only, and no NAT gateway. A NAT gateway is about CHF 35 a month before
+  # any traffic, which is the single largest trap rule 17 names, and it would buy nothing
+  # here: the Lambda is outside the VPC entirely (F10), so nothing in these subnets ever
+  # makes an outbound connection. Two availability zones because a DB subnet group
+  # requires them, not because there is a second instance.
+  Vpc:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: 10.0.0.0/16
+      EnableDnsHostnames: true
+      EnableDnsSupport: true
+      InstanceTenancy: default
+      Tags:
+        - Key: Name
+          Value: job-application-dev
+
+  InternetGateway:
+    Type: AWS::EC2::InternetGateway
+    Properties:
+      Tags:
+        - Key: Name
+          Value: job-application-dev
+
+  InternetGatewayAttachment:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties:
+      VpcId: !Ref Vpc
+      InternetGatewayId: !Ref InternetGateway
+
+  # The availability zones are written out rather than chosen with Fn::GetAZs. GetAZs
+  # returns them in an order AWS may change, and a changed order would move a subnet,
+  # which moves the DB subnet group, which replaces the cluster.
+  PublicSubnet1:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref Vpc
+      AvailabilityZone: eu-central-1a
+      CidrBlock: 10.0.0.0/24
+      MapPublicIpOnLaunch: true
+      Tags:
+        - Key: Name
+          Value: job-application-dev-public-1a
+
+  PublicSubnet1RouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref Vpc
+      Tags:
+        - Key: Name
+          Value: job-application-dev-public-1a
+
+  PublicSubnet1RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PublicSubnet1
+      RouteTableId: !Ref PublicSubnet1RouteTable
+
+  PublicSubnet1DefaultRoute:
+    Type: AWS::EC2::Route
+    DependsOn: InternetGatewayAttachment
+    Properties:
+      RouteTableId: !Ref PublicSubnet1RouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref InternetGateway
+
+  PublicSubnet2:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref Vpc
+      AvailabilityZone: eu-central-1b
+      CidrBlock: 10.0.1.0/24
+      MapPublicIpOnLaunch: true
+      Tags:
+        - Key: Name
+          Value: job-application-dev-public-1b
+
+  PublicSubnet2RouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref Vpc
+      Tags:
+        - Key: Name
+          Value: job-application-dev-public-1b
+
+  PublicSubnet2RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PublicSubnet2
+      RouteTableId: !Ref PublicSubnet2RouteTable
+
+  PublicSubnet2DefaultRoute:
+    Type: AWS::EC2::Route
+    DependsOn: InternetGatewayAttachment
+    Properties:
+      RouteTableId: !Ref PublicSubnet2RouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref InternetGateway
+
+  # The cluster is reachable from the internet, which looks alarming written down and is
+  # what the cost posture buys. The alternative is a Lambda inside the VPC, and that is
+  # the NAT gateway again. What protects the database instead: TLS is forced by the
+  # parameter group below, so no connection is ever in the clear, and password
+  # authentication is not used by anything — the application and the pipeline both
+  # present a short-lived identity token, so knowing the endpoint grants nothing.
+  #
+  # The egress rule is the way CloudFormation is told that there is NO egress. An
+  # AWS::EC2::SecurityGroup with no SecurityGroupEgress gets an allow-all rule created
+  # for it; this unreachable one (ICMP to a broadcast address) is what occupies the field
+  # so that no such rule is added.
+  ClusterSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      VpcId: !Ref Vpc
+      GroupDescription: Postgres, reachable from outside the VPC because nothing runs inside it.
+      SecurityGroupIngress:
+        - Description: The API on Lambda and the pipeline's migrate step, neither of which is in this VPC.
+          IpProtocol: tcp
+          FromPort: 5432
+          ToPort: 5432
+          CidrIp: 0.0.0.0/0
+      SecurityGroupEgress:
+        - Description: Disallow all traffic
+          IpProtocol: icmp
+          FromPort: 252
+          ToPort: 86
+          CidrIp: 255.255.255.255/32
+
+  # rds.force_ssl is the setting that makes the public endpoint acceptable: a connection
+  # that does not negotiate TLS is refused by the server rather than trusted to have
+  # asked for it.
+  ClusterParameters:
+    Type: AWS::RDS::DBClusterParameterGroup
+    Properties:
+      Description: TLS required on every connection.
+      Family: aurora-postgresql17
+      Parameters:
+        rds.force_ssl: "1"
+
+  ClusterSubnets:
+    Type: AWS::RDS::DBSubnetGroup
+    Properties:
+      DBSubnetGroupDescription: Subnets for Cluster database
+      SubnetIds:
+        - !Ref PublicSubnet1
+        - !Ref PublicSubnet2
+
+  # The whole cost posture is in ServerlessV2ScalingConfiguration. A zero minimum
+  # capacity is what lets the cluster pause; SecondsUntilAutoPause is the idleness it
+  # waits for first, and the driver's own twenty-second idle timeout is what makes the
+  # cluster ever look idle at all. Waking costs the first request of a quiet stretch
+  # about fifteen seconds, which the spec's failure table accepts by name.
+  #
+  # Authentication is by identity token: the API and the pipeline both present a
+  # fifteen-minute token minted from their IAM role, and neither holds a password. A
+  # master user still has to exist, because Aurora will not create a cluster without one
+  # and because PostgreSQL's rds_iam grant can only be given by somebody already
+  # connected. ManageMasterUserPassword makes RDS generate and rotate that password
+  # itself, so it never passes through this repository or a log; the pipeline reads it
+  # from the managed secret for exactly one statement and uses a token thereafter.
+  #
+  # EnableHttpEndpoint is the Data API, declined by the board: a pooled connection beats
+  # an HTTPS round trip per statement on a schema that issues many small queries (F8).
+  Cluster:
+    Type: AWS::RDS::DBCluster
+    DeletionPolicy: Snapshot
+    UpdateReplacePolicy: Snapshot
+    Properties:
+      Engine: aurora-postgresql
+      EngineVersion: "17.5"
+      DatabaseName: jobapp
+      Port: 5432
+      DBClusterParameterGroupName: !Ref ClusterParameters
+      DBSubnetGroupName: !Ref ClusterSubnets
+      VpcSecurityGroupIds:
+        - !GetAtt ClusterSecurityGroup.GroupId
+      ServerlessV2ScalingConfiguration:
+        MinCapacity: 0
+        MaxCapacity: 2
+        SecondsUntilAutoPause: 300
+      EnableIAMDatabaseAuthentication: true
+      ManageMasterUserPassword: true
+      MasterUsername: jobapp_root
+      EnableHttpEndpoint: false
+      EnableCloudwatchLogsExports:
+        - postgresql
+      BackupRetentionPeriod: 7
+      CopyTagsToSnapshot: true
+      StorageEncrypted: true
+
+  # One instance, serverless, and publicly addressable for the reason the security group
+  # explains. It waits for the routes because an instance placed in a subnet with no path
+  # to the internet gateway is not reachable, and CloudFormation would not otherwise
+  # order the two.
+  ClusterWriter:
+    Type: AWS::RDS::DBInstance
+    DeletionPolicy: Delete
+    UpdateReplacePolicy: Delete
+    DependsOn:
+      - PublicSubnet1DefaultRoute
+      - PublicSubnet1RouteTableAssociation
+      - PublicSubnet2DefaultRoute
+      - PublicSubnet2RouteTableAssociation
+    Properties:
+      DBClusterIdentifier: !Ref Cluster
+      DBInstanceClass: db.serverless
+      Engine: aurora-postgresql
+      PromotionTier: 0
+      PubliclyAccessible: true
+
+Outputs:
+  # Read by the pipeline, which needs the cluster before it can ask RDS for the endpoint
+  # and for the name of the secret RDS chose. The identifier is the one part of that
+  # chain the template knows.
+  ClusterIdentifier:
+    Value: !Ref Cluster
+
+  # The three App-dev imports. Exported by name so that a reader of either template can
+  # see which value crosses the boundary.
+  ClusterResourceId:
+    Description: The cluster's resource id, which the rds-db:connect ARN is built from.
+    Value: !GetAtt Cluster.DBClusterResourceId
+    Export:
+      Name: Data-dev:ClusterResourceId
+
+  ClusterEndpointAddress:
+    Value: !GetAtt Cluster.Endpoint.Address
+    Export:
+      Name: Data-dev:ClusterEndpointAddress
+
+  ClusterEndpointPort:
+    Value: !GetAtt Cluster.Endpoint.Port
+    Export:
+      Name: Data-dev:ClusterEndpointPort

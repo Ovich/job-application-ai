@@ -1,0 +1,22 @@
+# cfn-lint reads the templates in this directory against CloudFormation's own resource
+# specification, which is the half of a template's correctness the parity harness cannot
+# see: the harness compares two templates and would happily agree on a property that does
+# not exist. Run it from here — `cd infra && cfn-lint` — which is where it looks for this
+# file. CI does the same (.github/workflows/check.yml).
+#
+# The glob rather than a list, so a stack added later is linted without anybody
+# remembering, and so that deleting infra/import after the one import it exists for does
+# not leave a name here pointing at nothing.
+templates:
+  - "**/*.yaml"
+
+# One rule is turned off.
+#
+# W3010, "avoid hardcoding availability zones". Data-dev names eu-central-1a and
+# eu-central-1b instead of calling Fn::GetAZs, and that is deliberate: GetAZs returns the
+# zones in an order AWS may change, a changed order moves a subnet, a moved subnet
+# changes the DB subnet group, and a changed DB subnet group REPLACES the cluster. The
+# template says so where the subnets are declared. The rule is right about portability
+# and wrong about this stack, which exists in one region by decision (D14).
+ignore_checks:
+  - W3010

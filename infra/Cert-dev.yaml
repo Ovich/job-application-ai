@@ -1,0 +1,34 @@
+AWSTemplateFormatVersion: "2010-09-09"
+
+# The certificate, and the only reason this stack exists separately.
+#
+# CloudFront reads its certificate from us-east-1 and from nowhere else, whatever region
+# the distribution serves from. A certificate is therefore not something the App stack
+# can hold, and the split is AWS's, not a design preference (F10, board D8).
+#
+# Region: us-east-1. That is the whole point of the file.
+#
+# The zone is named by identifier rather than looked up. A CloudFormation export cannot
+# be read across a region, and the identifier changes only if the zone is destroyed.
+Description: The development certificate. In us-east-1 because CloudFront reads it there.
+
+Resources:
+  # DNS validation rather than email: the validation record is written into the zone by
+  # CloudFormation, so issuance and renewal both happen with nobody watching a mailbox.
+  # It only completes once the registrar points at the zone's name servers, which is why
+  # the bootstrap does that before anything is deployed.
+  Certificate:
+    Type: AWS::CertificateManager::Certificate
+    Properties:
+      DomainName: dev.job-application.app
+      ValidationMethod: DNS
+      DomainValidationOptions:
+        - DomainName: dev.job-application.app
+          HostedZoneId: Z01268721BDDLWGJVLJS8
+
+Outputs:
+  # Read by the pipeline, in this region, and passed to App-dev in eu-central-1 as a
+  # parameter. Not exported: an export cannot be imported across a region.
+  CertificateArn:
+    Description: Passed to App-dev as its CertificateArn parameter.
+    Value: !Ref Certificate

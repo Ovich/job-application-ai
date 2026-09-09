@@ -3,7 +3,6 @@ dist/
 out/
 coverage/
 .angular/
-cdk.out/
 test-results/
 playwright-report/
 *.tsbuildinfo

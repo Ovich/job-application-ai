@@ -1,0 +1,322 @@
+AWSTemplateFormatVersion: "2010-09-09"
+
+# Everything that can be destroyed and rebuilt from this repository: the function, the
+# bundle, and the distribution that serves both under one name.
+#
+# Region: eu-central-1.
+#
+# The one name matters beyond tidiness. Page and API share an origin, so the browser
+# makes no cross-origin request, nothing has to be configured for CORS, and the RPC
+# client never learns a host (ID5). That is why /api/* is a behaviour on this
+# distribution rather than a second address.
+#
+# Two things reach this stack from outside CloudFormation's own graph, and both are
+# parameters rather than magic: the key of the function's bundle, which the pipeline
+# builds and uploads, and the certificate's ARN, which lives in us-east-1 and cannot be
+# imported across the region boundary.
+Description: The development API, web bundle and distribution. Rebuildable from the repository.
+
+Parameters:
+  ApiArtefactKey:
+    Type: String
+    Description: >-
+      Key, in the Deploy stack's artefact bucket, of the zip esbuild produced from
+      apps/api/src/lambda.ts. The pipeline uploads it under the commit SHA, which is what
+      makes a deploy of unchanged code a no-op and a deploy of changed code a new version.
+
+  CertificateArn:
+    Type: String
+    Description: >-
+      The ARN of the Cert-dev certificate, read from that stack's output in us-east-1.
+    AllowedPattern: ^arn:aws:acm:us-east-1:\d{12}:certificate/.+$
+
+Resources:
+  # Declared rather than left to the function, which would otherwise create a group that
+  # outlives the stack and keeps its logs for ever. Rule 18 says what a log line may
+  # carry; this says how long it is kept. Fourteen days on development is the retention
+  # F15 prices, against a default of forever that is a cost line nobody decided.
+  ApiLogs:
+    Type: AWS::Logs::LogGroup
+    DeletionPolicy: Delete
+    UpdateReplacePolicy: Delete
+    Properties:
+      RetentionInDays: 14
+
+  ApiRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Action: sts:AssumeRole
+            Principal:
+              Service: lambda.amazonaws.com
+      ManagedPolicyArns:
+        - !Join
+          - ""
+          - - "arn:"
+            - !Ref AWS::Partition
+            - ":iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
+
+  # What lets the function authenticate as a database role without holding a secret. The
+  # ARN names the role: a token minted for any other PostgreSQL user is refused.
+  ApiRolePolicy:
+    Type: AWS::IAM::Policy
+    Properties:
+      PolicyName: api-connects-to-the-database
+      Roles:
+        - !Ref ApiRole
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Action: rds-db:connect
+            Resource: !Join
+              - ""
+              - - "arn:"
+                - !Ref AWS::Partition
+                - ":rds-db:eu-central-1:917993967998:dbuser:"
+                - !ImportValue Data-dev:ClusterResourceId
+                - "/api"
+
+  # The API. One function for every route, in response-streaming invoke mode from the
+  # first deploy rather than from the slice that needs streaming (ID9): a streaming
+  # function serves an ordinary buffered JSON response perfectly well, so splitting into
+  # a streaming function and a buffered one would buy nothing and would double what has
+  # to be deployed and reasoned about.
+  #
+  # APP_RUNTIME has to be set explicitly: an unset one falls back to the local runtime,
+  # which would point the function at a database on its own loopback interface and fail
+  # in a way that reads like a network problem rather than a configuration one (ID23).
+  Api:
+    Type: AWS::Lambda::Function
+    # The policy only, and not the role: the role is already ordered ahead of the
+    # function by the GetAtt below, and naming it twice is what cfn-lint's W3005 is
+    # about. CDK named both.
+    DependsOn: ApiRolePolicy
+    Properties:
+      Runtime: nodejs24.x
+      Handler: index.handler
+      MemorySize: 512
+      # Long enough for a run that streams and for a cluster that has to wake, which the
+      # spec's failure table prices at about fifteen seconds.
+      Timeout: 300
+      Role: !GetAtt ApiRole.Arn
+      LoggingConfig:
+        LogGroup: !Ref ApiLogs
+      Code:
+        S3Bucket: !Sub job-application-artefacts-${AWS::AccountId}-${AWS::Region}
+        S3Key: !Ref ApiArtefactKey
+      Environment:
+        Variables:
+          APP_RUNTIME: cloud
+          DATABASE_HOST: !ImportValue Data-dev:ClusterEndpointAddress
+          DATABASE_PORT: !ImportValue Data-dev:ClusterEndpointPort
+          DATABASE_NAME: jobapp
+          DATABASE_USER: api
+
+  # The URL is unreachable except through the distribution, which signs every request it
+  # forwards. An unauthenticated function URL would be a second, public front door to the
+  # same API with none of the distribution's behaviour on it.
+  ApiFunctionUrl:
+    Type: AWS::Lambda::Url
+    Properties:
+      TargetFunctionArn: !GetAtt Api.Arn
+      AuthType: AWS_IAM
+      InvokeMode: RESPONSE_STREAM
+
+  # The Angular bundle. Reached only through the distribution, as the API is.
+  #
+  # Named rather than left to CloudFormation, because the Deploy stack has to grant the
+  # pipeline the right to sync into it and a policy in another stack cannot refer to a
+  # name that will not exist until this one is applied.
+  WebBucket:
+    Type: AWS::S3::Bucket
+    DeletionPolicy: Delete
+    UpdateReplacePolicy: Delete
+    Properties:
+      BucketName: !Sub job-application-web-dev-${AWS::AccountId}
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+
+  WebBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref WebBucket
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          # Nothing may reach the bucket over plain HTTP, not even a principal that is
+          # otherwise allowed to.
+          - Effect: Deny
+            Principal:
+              AWS: "*"
+            Action: s3:*
+            Resource:
+              - !GetAtt WebBucket.Arn
+              - !Join ["", [!GetAtt WebBucket.Arn, "/*"]]
+            Condition:
+              Bool:
+                aws:SecureTransport: "false"
+          # Origin access control: CloudFront signs its request to the bucket, and the
+          # condition names the one distribution whose signature is accepted.
+          - Effect: Allow
+            Principal:
+              Service: cloudfront.amazonaws.com
+            Action: s3:GetObject
+            Resource: !Join ["", [!GetAtt WebBucket.Arn, "/*"]]
+            Condition:
+              StringEquals:
+                AWS:SourceArn: !Join
+                  - ""
+                  - - "arn:"
+                    - !Ref AWS::Partition
+                    - ":cloudfront::"
+                    - !Ref AWS::AccountId
+                    - ":distribution/"
+                    - !Ref Distribution
+
+  WebOriginAccessControl:
+    Type: AWS::CloudFront::OriginAccessControl
+    Properties:
+      OriginAccessControlConfig:
+        Name: app-dev-web-bucket
+        OriginAccessControlOriginType: s3
+        SigningBehavior: always
+        SigningProtocol: sigv4
+
+  ApiOriginAccessControl:
+    Type: AWS::CloudFront::OriginAccessControl
+    Properties:
+      OriginAccessControlConfig:
+        Name: app-dev-api-function-url
+        OriginAccessControlOriginType: lambda
+        SigningBehavior: always
+        SigningProtocol: sigv4
+
+  # The other half of AWS_IAM on the function URL: the distribution signs, and this says
+  # whose signature the function accepts.
+  ApiInvokeFromDistribution:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: lambda:InvokeFunctionUrl
+      FunctionName: !GetAtt ApiFunctionUrl.FunctionArn
+      Principal: cloudfront.amazonaws.com
+      SourceArn: !Join
+        - ""
+        - - "arn:"
+          - !Ref AWS::Partition
+          - ":cloudfront::"
+          - !Ref AWS::AccountId
+          - ":distribution/"
+          - !Ref Distribution
+
+  Distribution:
+    Type: AWS::CloudFront::Distribution
+    Properties:
+      DistributionConfig:
+        Enabled: true
+        Aliases:
+          - dev.job-application.app
+        DefaultRootObject: index.html
+        HttpVersion: http2and3
+        IPV6Enabled: true
+        # Europe and North America. The visitors are Swiss and the edge locations that
+        # cost extra serve neither of them.
+        PriceClass: PriceClass_100
+        ViewerCertificate:
+          AcmCertificateArn: !Ref CertificateArn
+          MinimumProtocolVersion: TLSv1.2_2021
+          SslSupportMethod: sni-only
+        Origins:
+          - Id: web-bucket
+            DomainName: !GetAtt WebBucket.RegionalDomainName
+            OriginAccessControlId: !GetAtt WebOriginAccessControl.Id
+            # Required on an S3 origin and required to be empty when origin access
+            # control is used: the empty string is what says "not an origin access
+            # identity", which is the older mechanism this replaces.
+            S3OriginConfig:
+              OriginAccessIdentity: ""
+          - Id: api-function-url
+            # A function URL is an https endpoint, so CloudFront treats it as a custom
+            # origin. The host is the middle segment of the URL the function URL yields.
+            DomainName: !Select [2, !Split ["/", !GetAtt ApiFunctionUrl.FunctionUrl]]
+            OriginAccessControlId: !GetAtt ApiOriginAccessControl.Id
+            CustomOriginConfig:
+              OriginProtocolPolicy: https-only
+              OriginSSLProtocols:
+                - TLSv1.2
+        DefaultCacheBehavior:
+          TargetOriginId: web-bucket
+          ViewerProtocolPolicy: redirect-to-https
+          Compress: true
+          # The managed CachingOptimized policy.
+          CachePolicyId: 658327ea-f89d-4fab-a63d-7e88639e58f6
+        CacheBehaviors:
+          - PathPattern: /api/*
+            TargetOriginId: api-function-url
+            ViewerProtocolPolicy: redirect-to-https
+            AllowedMethods: [GET, HEAD, OPTIONS, PUT, PATCH, POST, DELETE]
+            # The managed CachingDisabled policy. An API response is never cached, and
+            # neither is a stream.
+            CachePolicyId: 4135ea2d-6df8-44a3-9df3-4b5a84be39ad
+            # The managed AllViewerExceptHostHeader policy: everything the viewer sent
+            # except the host header. The exception is not cosmetic — the signature the
+            # distribution computes covers the host it is sending to, so forwarding the
+            # viewer's host makes every signed request fail. x-amz-content-sha256, which
+            # the browser and the deploy check both set, rides through on this policy.
+            OriginRequestPolicyId: b689b0a8-53d0-40ab-baf2-68738e2966ac
+            # Compression off, and this is the setting that silently breaks streaming
+            # when it is on: CloudFront buffers a response it intends to compress, so
+            # every event of a server-sent stream arrives at the end, together, and the
+            # page still renders correctly. A test that reads content passes. Only a test
+            # that measures arrival fails, which is why e2e/stream.spec.ts measures
+            # arrival.
+            Compress: false
+        # The page is a single-page application: a deep link is a path S3 has no object
+        # for, and the router resolves it in the browser. Both codes are mapped because a
+        # bucket behind origin access control answers 403 for a missing key rather than
+        # 404, so mapping only the latter would leave every deep link broken.
+        CustomErrorResponses:
+          - ErrorCode: 403
+            ResponseCode: 200
+            ResponsePagePath: /index.html
+          - ErrorCode: 404
+            ResponseCode: 200
+            ResponsePagePath: /index.html
+
+  # Z2FDTNDATAQYW2 is CloudFront's own hosted zone id. It is a constant of the aws
+  # partition, the same for every distribution there has ever been.
+  AliasRecord:
+    Type: AWS::Route53::RecordSet
+    Properties:
+      HostedZoneId: Z01268721BDDLWGJVLJS8
+      Name: dev.job-application.app.
+      Type: A
+      AliasTarget:
+        DNSName: !GetAtt Distribution.DomainName
+        HostedZoneId: Z2FDTNDATAQYW2
+
+Outputs:
+  DistributionDomainName:
+    Value: !GetAtt Distribution.DomainName
+
+  SiteUrl:
+    Value: https://dev.job-application.app
+
+  # Read by the pipeline: the bundle is synced into the bucket and /index.html is then
+  # invalidated, which is the pair of things BucketDeployment used to do from inside the
+  # stack.
+  DistributionId:
+    Value: !Ref Distribution
+
+  WebBucketName:
+    Value: !Ref WebBucket
