@@ -156,3 +156,30 @@ describe("the zone that cannot be recreated", () => {
     }).toEqual({ onDelete: "Retain", onReplace: "Retain" });
   });
 });
+
+describe("what EC2 will accept in a rule description", () => {
+  // EC2 takes a security group rule description only from this set, and rejects the
+  // whole stack otherwise. The first deploy of Data-dev died here after twelve minutes
+  // of Aurora provisioning, on the apostrophe in "pipeline's": a character legal
+  // everywhere else in the template, in a field that reads like a comment. cfn-lint does
+  // not know the rule, so nothing before CloudFormation catches it.
+  const allowed = /^[a-zA-Z0-9. _\-:/()#,@[\]+=&;{}!$*]*$/;
+
+  it("accepts every ingress and egress description in Data-dev", () => {
+    const group = resource("Data-dev", "ClusterSecurityGroup").Properties as Record<
+      string,
+      { Description?: string }[]
+    >;
+    const rules = [
+      ...(group["SecurityGroupIngress"] ?? []),
+      ...(group["SecurityGroupEgress"] ?? []),
+    ];
+    expect(rules.length).toBeGreaterThan(0);
+    for (const rule of rules) {
+      expect({
+        description: rule.Description,
+        legal: allowed.test(rule.Description ?? ""),
+      }).toEqual({ description: rule.Description, legal: true });
+    }
+  });
+});

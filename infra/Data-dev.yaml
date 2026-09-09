@@ -126,7 +126,11 @@ Resources:
       VpcId: !Ref Vpc
       GroupDescription: Postgres, reachable from outside the VPC because nothing runs inside it.
       SecurityGroupIngress:
-        - Description: The API on Lambda and the pipeline's migrate step, neither of which is in this VPC.
+        # No apostrophe, and no dash that is not ASCII. EC2 accepts a rule description
+        # only from a-zA-Z0-9. _-:/()#,@[]+=&;{}!$* and rejects the whole stack
+        # otherwise: the first deploy died here, after twelve minutes, on the apostrophe
+        # in "pipeline's". invariants.test.ts asserts the character set now.
+        - Description: The API on Lambda and the migrate step of the pipeline, neither of which is in this VPC.
           IpProtocol: tcp
           FromPort: 5432
           ToPort: 5432
