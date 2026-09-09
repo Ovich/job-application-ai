@@ -73,5 +73,45 @@ export class DeployStack extends Stack {
         resources: [`arn:aws:ssm:*:${this.account}:parameter/cdk-bootstrap/*`],
       }),
     );
+
+    /**
+     * What the pipeline does that is not a deployment: it migrates the database.
+     *
+     * Everything above this point is CloudFormation, which acts as the bootstrap roles
+     * and needs nothing from this identity. The migrate step is different — it opens a
+     * PostgreSQL connection itself — so these are the rights it needs and the only ones
+     * held directly. They are read-only but for the database connection, which is the
+     * same identity token the function uses and grants exactly what the `api` role has
+     * inside PostgreSQL.
+     */
+    developmentRole.addToPolicy(
+      new PolicyStatement({
+        effect: Effect.ALLOW,
+        // Where the cluster is, and which secret RDS manages its master password in.
+        actions: ["rds:DescribeDBClusters", "cloudformation:DescribeStacks"],
+        resources: ["*"],
+      }),
+    );
+    developmentRole.addToPolicy(
+      new PolicyStatement({
+        effect: Effect.ALLOW,
+        // One statement, once: creating the `api` role and granting it `rds_iam`, which
+        // only a password login can do. Scoped to the secrets RDS itself manages, so
+        // this cannot read any secret the application ever holds.
+        actions: ["secretsmanager:GetSecretValue"],
+        resources: [`arn:aws:secretsmanager:*:${this.account}:secret:rds!cluster-*`],
+      }),
+    );
+    developmentRole.addToPolicy(
+      new PolicyStatement({
+        effect: Effect.ALLOW,
+        actions: ["rds-db:connect"],
+        // The database user is named in the resource, so a token minted for any other
+        // PostgreSQL role is refused. The cluster's resource id is not known here: it
+        // is created by a stack this stack knows nothing about, and it changes if the
+        // cluster is ever restored from a snapshot.
+        resources: [`arn:aws:rds-db:*:${this.account}:dbuser:*/api`],
+      }),
+    );
   }
 }

@@ -1,7 +1,16 @@
 {
+  // AGENTS EXCEPTION (rule none; the strictest base, tsconfig.base.json):
+  // `exactOptionalPropertyTypes` is off for this program alone. aws-cdk-lib declares
+  // its interfaces with optional properties (`isWebsite?: boolean`, `vpnGatewayId?:
+  // string`) and its own classes implement them as `boolean | undefined`, so under that
+  // flag no concrete construct is assignable to the interface any other construct
+  // accepts: passing a `Bucket` where an `IBucket` is wanted is an error. The library is
+  // not written for the flag and nothing in this repository can fix that. Revisit if
+  // aws-cdk-lib ever ships declarations that satisfy it; every other strictness stays on.
   "extends": "../tsconfig.base.json",
   "compilerOptions": {
-    "types": ["node"]
+    "types": ["node"],
+    "exactOptionalPropertyTypes": false
   },
   "files": [],
   "include": ["bin/**/*.ts", "lib/**/*.ts"]
