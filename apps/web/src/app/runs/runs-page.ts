@@ -1,5 +1,6 @@
 import { ChangeDetectionStrategy, Component, resource, signal } from "@angular/core";
 import { api } from "../lib/api";
+import { HlmButton } from "../ui/hlm-button";
 import { DoneUnit } from "./done-unit";
 import { FailedUnit } from "./failed-unit";
 import { NoRunYet } from "./no-run-yet";
@@ -31,19 +32,14 @@ const demonstrationRun = { kind: "stream-demo", units: 4 } as const;
  */
 @Component({
   selector: "app-runs-page",
-  imports: [DoneUnit, FailedUnit, NoRunYet, PendingUnit, RunStream, RunSummary],
+  imports: [DoneUnit, FailedUnit, HlmButton, NoRunYet, PendingUnit, RunStream, RunSummary],
   host: { class: "block" },
   template: `
     <main class="mx-auto flex max-w-2xl flex-col gap-6 px-6 py-8">
       <header class="flex flex-col gap-1">
         <div class="flex items-baseline justify-between gap-4">
           <h1 class="text-figure font-semibold">Latest run</h1>
-          <button
-            type="button"
-            class="shrink-0 rounded-md bg-primary px-4 py-2 text-caption font-semibold text-primary-foreground disabled:opacity-60"
-            [disabled]="started.isLoading()"
-            (click)="start()"
-          >
+          <button hlmBtn type="button" [disabled]="started.isLoading()" (click)="start()">
             Start a run
           </button>
         </div>
