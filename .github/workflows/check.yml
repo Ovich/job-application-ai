@@ -53,3 +53,16 @@ jobs:
       - run: pnpm run check:types
 
       - run: pnpm run test
+
+      # The one check that is not in `pnpm check`, because it is a Python tool and
+      # `pnpm check` must run on a laptop with nothing but Node installed. It reads the
+      # templates against CloudFormation's own resource specification, which is the half
+      # of a template's correctness the parity harness cannot see: the harness compares
+      # two templates and would happily agree on a property that does not exist.
+      #
+      # No arguments: which templates and which rule is turned off are both in
+      # `infra/.cfnlintrc.yaml`, and cfn-lint looks for that in the directory it runs in.
+      # Pinned like every action here, and for the same reason.
+      - name: Lint the CloudFormation templates
+        working-directory: infra
+        run: pipx run cfn-lint==1.56.2

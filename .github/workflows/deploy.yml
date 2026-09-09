@@ -19,6 +19,15 @@
 # The consequence, accepted with the choice: CloudFormation reporting success is not
 # the same as the environment working, so a deploy that breaks DNS, the certificate or
 # the distribution is reported successful until a person looks.
+#
+# WHAT THIS FILE DOES THAT A TEMPLATE CANNOT (D17, ID52). `infra/` is CloudFormation
+# YAML, so the two jobs the CDK L2 constructs did from inside a stack are steps here
+# instead: `NodejsFunction` bundled the API with esbuild and uploaded it, and
+# `BucketDeployment` unzipped the web bundle into S3 and invalidated the entry document.
+# Both are below, in the open. The stacks are applied with `aws cloudformation deploy`,
+# each one handed the execution role the Deploy stack declares, so the rights to create
+# a distribution or a cluster belong to CloudFormation and not to this workflow's own
+# identity.
 name: deploy
 
 on:
@@ -49,9 +58,15 @@ jobs:
       contents: read
     env:
       AWS_REGION: ${{ vars.AWS_REGION }}
-      # The names the CDK application uses. Read here so a reader of this file can see
-      # what the SQL below is talking about without opening the stacks.
+      AWS_ACCOUNT: "917993967998"
+      # The certificate's region, and CloudFront's. Not a preference: CloudFront reads a
+      # certificate from us-east-1 and from nowhere else.
+      CERTIFICATE_REGION: us-east-1
+      # The names the templates carry, read here so a reader of this file can see what
+      # the commands below are talking about without opening infra/.
       DATA_STACK: Data-dev
+      APP_STACK: App-dev
+      CERT_STACK: Cert-dev
       DATABASE_NAME: jobapp
       DATABASE_USER: api
       DATABASE_PORT: "5432"
@@ -77,26 +92,135 @@ jobs:
           role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN_DEV }}
           aws-region: ${{ vars.AWS_REGION }}
 
-      # Built before the stacks, because the App stack uploads this directory: CDK reads
-      # it at synth time, and a missing bundle would fail inside a deployment rather than
-      # here where the message says what is wrong.
-      - name: Build the web bundle
-        run: pnpm --filter @app/web run build
+      # Who CloudFormation is while it applies each stack. The name is fixed by
+      # Deploy.yaml, so it can be written out here rather than looked up — which matters
+      # for the one stack that declares it: the first `Deploy` apply of all had to be
+      # done by a person with rights of their own, because the role did not exist yet.
+      - name: Name the execution role
+        id: roles
+        run: |
+          set -euo pipefail
+          echo "cloudformation=arn:aws:iam::${AWS_ACCOUNT}:role/job-application-cloudformation-execution" >> "$GITHUB_OUTPUT"
 
       # The project-wide stacks first. They change rarely, and deploying them from here
       # rather than from a laptop is what keeps the account and the repository in
       # agreement; the bootstrap deployed them once by hand, and that was the exception.
+      #
+      # CAPABILITY_NAMED_IAM because these stacks create roles with names the rest of the
+      # system refers to. --no-fail-on-empty-changeset so that a merge touching neither
+      # stack is a no-op rather than a red run.
       - name: Deploy the shared stacks
-        run: pnpm run infra:deploy -- Deploy Dns --require-approval never
+        env:
+          EXECUTION_ROLE: ${{ steps.roles.outputs.cloudformation }}
+        run: |
+          set -euo pipefail
+          for stack in Deploy Dns; do
+            aws cloudformation deploy \
+              --template-file "infra/${stack}.yaml" \
+              --stack-name "$stack" \
+              --role-arn "$EXECUTION_ROLE" \
+              --capabilities CAPABILITY_NAMED_IAM \
+              --no-fail-on-empty-changeset
+          done
 
+      # What NodejsFunction did. esbuild bundles the entry point with nothing treated as
+      # already present on the platform — which AWS SDK packages the Node 24 runtime ships
+      # is a runtime detail that changes without notice, and the identity-token signer is
+      # the one package a wrong guess would break in the cloud only.
+      #
+      # The key is the commit SHA, so an artefact is traceable to the code it came from
+      # and a redeploy of the same commit changes nothing in the stack.
+      - name: Bundle the API
+        id: api
+        run: |
+          set -euo pipefail
+          pnpm exec esbuild apps/api/src/lambda.ts \
+            --bundle --platform=node --target=node24 --minify --sourcemap \
+            --outfile=dist/lambda/index.js
+          (cd dist/lambda && zip --quiet --recurse-paths ../api.zip .)
+          key="api/${GITHUB_SHA}.zip"
+          aws s3 cp dist/api.zip "s3://job-application-artefacts-${AWS_ACCOUNT}-${AWS_REGION}/${key}"
+          echo "key=$key" >> "$GITHUB_OUTPUT"
+
+      # Built before App-dev, as the API bundle is: a missing bundle should fail here,
+      # where the message says what is wrong, rather than inside a sync.
+      - name: Build the web bundle
+        run: pnpm --filter @app/web run build
+
+      # In us-east-1, and the only stack that is. Its output is read straight afterwards
+      # because a CloudFormation export cannot be imported across a region: the ARN
+      # travels as a parameter instead.
       - name: Deploy the certificate
-        run: pnpm run infra:deploy -- Cert-dev --require-approval never
+        env:
+          EXECUTION_ROLE: ${{ steps.roles.outputs.cloudformation }}
+        run: |
+          set -euo pipefail
+          aws cloudformation deploy \
+            --region "$CERTIFICATE_REGION" \
+            --template-file infra/Cert-dev.yaml \
+            --stack-name "$CERT_STACK" \
+            --role-arn "$EXECUTION_ROLE" \
+            --no-fail-on-empty-changeset
 
+      - name: Read the certificate ARN
+        id: certificate
+        run: |
+          set -euo pipefail
+          arn=$(aws cloudformation describe-stacks --region "$CERTIFICATE_REGION" \
+            --stack-name "$CERT_STACK" \
+            --query "Stacks[0].Outputs[?OutputKey=='CertificateArn'].OutputValue" \
+            --output text)
+          echo "arn=$arn" >> "$GITHUB_OUTPUT"
+
+      # Termination protection is a property of the stack and not of the template, so it
+      # is set here. This is the stack that cannot be recreated from the repository, and
+      # it is the one the flag exists for. Idempotent: setting it when it is already set
+      # succeeds.
       - name: Deploy the data stack
-        run: pnpm run infra:deploy -- ${{ env.DATA_STACK }} --require-approval never
+        env:
+          EXECUTION_ROLE: ${{ steps.roles.outputs.cloudformation }}
+        run: |
+          set -euo pipefail
+          aws cloudformation deploy \
+            --template-file infra/Data-dev.yaml \
+            --stack-name "$DATA_STACK" \
+            --role-arn "$EXECUTION_ROLE" \
+            --no-fail-on-empty-changeset
+          aws cloudformation update-termination-protection \
+            --stack-name "$DATA_STACK" --enable-termination-protection
 
       - name: Deploy the application
-        run: pnpm run infra:deploy -- App-dev --require-approval never
+        env:
+          EXECUTION_ROLE: ${{ steps.roles.outputs.cloudformation }}
+          ARTEFACT_KEY: ${{ steps.api.outputs.key }}
+          CERTIFICATE_ARN: ${{ steps.certificate.outputs.arn }}
+        run: |
+          set -euo pipefail
+          aws cloudformation deploy \
+            --template-file infra/App-dev.yaml \
+            --stack-name "$APP_STACK" \
+            --role-arn "$EXECUTION_ROLE" \
+            --capabilities CAPABILITY_IAM \
+            --no-fail-on-empty-changeset \
+            --parameter-overrides \
+              "ApiArtefactKey=$ARTEFACT_KEY" \
+              "CertificateArn=$CERTIFICATE_ARN"
+
+      # What BucketDeployment did, in two commands instead of a Lambda in a layer.
+      # --delete is what prunes the previous build's chunks. Only the entry document is
+      # invalidated, because everything else carries a content hash in its name and an
+      # invalidation of it would be paid for and would change nothing.
+      - name: Publish the web bundle
+        run: |
+          set -euo pipefail
+          distribution=$(aws cloudformation describe-stacks --stack-name "$APP_STACK" \
+            --query "Stacks[0].Outputs[?OutputKey=='DistributionId'].OutputValue" \
+            --output text)
+          bucket=$(aws cloudformation describe-stacks --stack-name "$APP_STACK" \
+            --query "Stacks[0].Outputs[?OutputKey=='WebBucketName'].OutputValue" \
+            --output text)
+          aws s3 sync apps/web/dist/web/browser "s3://${bucket}" --delete
+          aws cloudfront create-invalidation --distribution-id "$distribution" --paths /index.html
 
       - name: Find the cluster
         id: cluster
