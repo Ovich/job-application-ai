@@ -17,6 +17,13 @@ import { expect, test } from "@playwright/test";
  *
  * The address is the project's, in `playwright.config.ts`, under the `deployed`
  * project; run it with `pnpm test:e2e:deployed`.
+ *
+ * No workflow runs this. It is the operator check of `D3`, run by a person against a
+ * deployed address when a slot is being validated, and it is deliberately not a step of
+ * the deploy pipeline: exercising the product on every merge writes runs into the domain
+ * tables forever, which on prod means writing product data as a side effect of shipping.
+ * Amended from `D9` on 2026-09-09. Running it does write a run to whatever environment
+ * it is pointed at, so point it at dev.
  */
 
 /** How many units the run under test has: enough that a wrong count is a wrong count. */

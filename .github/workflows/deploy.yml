@@ -8,9 +8,17 @@
 # not a rollback. Both consequences are written in the spec and are the accepted cost of
 # never having a schema ahead of the code that reads it.
 #
-# The last step is the browser check against the deployed address. It is the gate: a
-# deploy that finishes without it passing is not a deploy that worked, and it is also
-# the only test in this repository that touches real SQL and a real migration (ID13).
+# The pipeline ends at the migration. It ships code and moves the schema, and it does
+# not judge whether the feature works: that is the operator check of D3, which a person
+# runs against the deployed address (`pnpm test:e2e:deployed`, then their own eyes).
+# Amended from D9 on 2026-09-09, which had ended the pipeline with that check. Two
+# reasons: a deploy step that exercises the product writes runs into the domain tables
+# on every merge, which on prod means writing product data forever; and D3 is a slot's
+# acceptance criterion, a thing proven once, not a permanent step of every release.
+#
+# The consequence, accepted with the choice: CloudFormation reporting success is not
+# the same as the environment working, so a deploy that breaks DNS, the certificate or
+# the distribution is reported successful until a person looks.
 name: deploy
 
 on:
@@ -30,6 +38,10 @@ jobs:
   deploy-dev:
     needs: check
     runs-on: ubuntu-24.04
+    # Bounded because the concurrency group above is never cancelled: without a timeout a
+    # CloudFormation wait that hangs holds `deploy-dev` for GitHub's default six hours and
+    # every later merge queues behind it.
+    timeout-minutes: 30
     permissions:
       # What lets Actions mint the token AWS trusts. Without it there is no token and
       # the role cannot be assumed; nothing else here needs any permission at all.
@@ -159,20 +171,3 @@ jobs:
           encoded=$(node -e 'process.stdout.write(encodeURIComponent(process.argv[1]))' "$token")
           export DATABASE_URL="postgres://${DATABASE_USER}:${encoded}@${PGHOST}:${DATABASE_PORT}/${DATABASE_NAME}?sslmode=require"
           pnpm --filter @app/db run db:migrate
-
-      - name: Install the browser
-        run: pnpm exec playwright install --with-deps chromium
-
-      # The gate. It writes a run through the deployed API and then asks the deployed
-      # page to show it, so a page that merely loaded, an empty state, or a run whose
-      # units never left the database all fail here.
-      - name: The deploy check
-        run: pnpm run test:e2e:deployed
-
-      - name: Keep what failed
-        if: failure()
-        uses: actions/upload-artifact@v5
-        with:
-          name: deploy-check
-          path: test-results/
-          retention-days: 7
