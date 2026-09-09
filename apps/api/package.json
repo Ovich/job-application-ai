@@ -12,6 +12,7 @@
   },
   "dependencies": {
     "@app/db": "workspace:*",
+    "@aws-sdk/rds-signer": "3.1127.0",
     "@hono/zod-validator": "0.9.1",
     "drizzle-orm": "0.45.2",
     "drizzle-zod": "0.8.3",
