@@ -89,6 +89,12 @@ const conversions: readonly Conversion[] = [
       "Resources.GitHubProvider.UpdateReplacePolicy":
         "CDK writes Delete on its custom resources; the native provider carries the stack default.",
       "Resources.GitHubProvider.DeletionPolicy": "The same.",
+      "Resources.DeployRole.Properties.AssumeRolePolicyDocument.Statement[0].Condition.StringEquals.token.actions.githubusercontent.com:sub":
+        "A list rather than one string, because GitHub now issues the subject with immutable numeric ids — repo:Ovich@4007098/job-application-ai@1359469611:ref:refs/heads/main — and CDK wrote the name-only form the first deploy was refused on (2026-09-09, AccessDenied on AssumeRoleWithWebIdentity). Both forms are accepted; the id form is the stronger, a freed repository name being reusable where an id is not.",
+      "Resources.DeployRole.Properties.AssumeRolePolicyDocument.Statement[0].Condition.StringEquals.token.actions.githubusercontent.com:sub[0]":
+        "The id form, which GitHub now sends.",
+      "Resources.DeployRole.Properties.AssumeRolePolicyDocument.Statement[0].Condition.StringEquals.token.actions.githubusercontent.com:sub[1]":
+        "The name form CDK wrote, kept so a rollout still in progress or reverted cannot lock the pipeline out.",
       "Resources.DeployRolePolicy.Properties.PolicyName":
         "A readable name in place of the hashed one CDK derived from the construct path.",
       "Resources.DeployRolePolicy.Properties.PolicyDocument.Statement":
