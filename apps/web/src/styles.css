@@ -1,0 +1,131 @@
+@import "tailwindcss";
+
+/*
+ * The design language's tokens, copied from design-language.reference.md and not
+ * invented here. They are declared once under the names that document uses, and the
+ * theme block below maps them into Tailwind's namespaces with `inline`, so a utility
+ * class and a hand-written rule read the same variable and the dark palette overrides
+ * both at once.
+ *
+ * The product designs for light only for now; the dark palette travels with the tokens
+ * because the design language carries it, so the day a theme switch lands there is
+ * nothing to invent.
+ */
+:root {
+  --background: #fafafa;
+  --foreground: #18181b;
+  --muted: #f4f4f5;
+  --muted-foreground: #71717a;
+  --card: #ffffff;
+  --border: #e4e4e7;
+  --input: #d4d4d8;
+
+  /* One blue only, for everything that is blue. */
+  --primary: #1d4ed8;
+  --primary-foreground: #ffffff;
+  --accent: #eef2ff;
+  --accent-foreground: #1d4ed8;
+
+  /* Semantic colours are translucent in their soft form so they read on both themes. */
+  --ok: #15803d;
+  --ok-soft: #15803d1f;
+  --warn: #b45309;
+  --warn-soft: #d977061f;
+  --danger: #b91c1c;
+  --danger-soft: #dc26261f;
+
+  /* The rendered CV is paper, not interface: its palette does not follow the theme. */
+  --cv-ink: #18181b;
+  --cv-muted: #71717a;
+  --cv-accent: #172554;
+  --cv-hairline: #e2e8f0;
+
+  --radius: 6px;
+  --shadow: 0 1px 2px #0000000d, 0 4px 12px #0000000f;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --background: #09090b;
+    --foreground: #fafafa;
+    --muted: #18181b;
+    --muted-foreground: #a1a1aa;
+    --card: #111113;
+    --border: #27272a;
+    --input: #3f3f46;
+    --primary: #60a5fa;
+    --primary-foreground: #0b1220;
+    --accent: #1e293b;
+    --accent-foreground: #dbeafe;
+    --ok: #4ade80;
+    --warn: #fbbf24;
+    --danger: #f87171;
+  }
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-card: var(--card);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-ok: var(--ok);
+  --color-ok-soft: var(--ok-soft);
+  --color-warn: var(--warn);
+  --color-warn-soft: var(--warn-soft);
+  --color-danger: var(--danger);
+  --color-danger-soft: var(--danger-soft);
+  --color-cv-ink: var(--cv-ink);
+  --color-cv-muted: var(--cv-muted);
+  --color-cv-accent: var(--cv-accent);
+  --color-cv-hairline: var(--cv-hairline);
+
+  --radius-sm: 4px;
+  --radius-md: var(--radius);
+  --radius-lg: 10px;
+
+  --shadow-card: var(--shadow);
+}
+
+/*
+ * The type scale, one name per role rather than a ladder of sizes, and the two weights
+ * the design language allows: everything else is removed from the namespace so a
+ * `font-bold` cannot appear by habit. Spacing keeps Tailwind's 4 px step, which is
+ * exactly the scale the design language names: 1, 2, 3, 4, 6 and 8.
+ */
+@theme {
+  --font-sans: "Segoe UI", Inter, system-ui, sans-serif;
+  --font-mono: "Cascadia Code", Consolas, monospace;
+
+  --text-label: 13px;
+  --text-label--line-height: 1.55;
+  --text-caption: 15px;
+  --text-caption--line-height: 1.55;
+  --text-ui: 16px;
+  --text-ui--line-height: 1.55;
+  --text-body: 17px;
+  --text-body--line-height: 1.55;
+  --text-figure: 26px;
+  --text-figure--line-height: 1.2;
+
+  --font-weight-*: initial;
+  --font-weight-normal: 400;
+  --font-weight-semibold: 600;
+}
+
+@layer base {
+  body {
+    margin: 0;
+    background-color: var(--background);
+    color: var(--foreground);
+    font-family: var(--font-sans);
+    font-size: var(--text-body);
+    line-height: 1.55;
+  }
+}

@@ -1,0 +1,26 @@
+# Local development only. These credentials are throwaway values committed on purpose:
+# the container listens on localhost and holds nothing but development data. The
+# deployed database is Aurora Serverless v2 and takes its credentials from Secrets
+# Manager. This container is not used by the test suite, which runs against mocks.
+services:
+  postgres:
+    image: postgres:17-alpine
+    container_name: jobapp-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: jobapp
+      POSTGRES_PASSWORD: local_dev_only
+      POSTGRES_DB: jobapp
+    ports:
+      - "5432:5432"
+    volumes:
+      - jobapp-postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U jobapp -d jobapp"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
+volumes:
+  jobapp-postgres-data:

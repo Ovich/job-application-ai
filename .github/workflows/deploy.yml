@@ -1,0 +1,297 @@
+# A merge to main puts the page on the internet. Nobody runs a command.
+#
+# The order is the board's and the spec's, and two parts of it are deliberate rather
+# than incidental. The checks come first and the deploy does not start unless they
+# passed. And the migration runs AFTER the application, which means new code has to
+# tolerate the old schema for the minute between the two, and a failed migration leaves
+# working code with the deploy already reported successful; recovering is re-tagging,
+# not a rollback. Both consequences are written in the spec and are the accepted cost of
+# never having a schema ahead of the code that reads it.
+#
+# The pipeline ends at the migration. It ships code and moves the schema, and it does
+# not judge whether the feature works: that is the operator check of D3, which a person
+# runs against the deployed address (`pnpm test:e2e:deployed`, then their own eyes).
+# Amended from D9 on 2026-09-09, which had ended the pipeline with that check. Two
+# reasons: a deploy step that exercises the product writes runs into the domain tables
+# on every merge, which on prod means writing product data forever; and D3 is a slot's
+# acceptance criterion, a thing proven once, not a permanent step of every release.
+#
+# The consequence, accepted with the choice: CloudFormation reporting success is not
+# the same as the environment working, so a deploy that breaks DNS, the certificate or
+# the distribution is reported successful until a person looks.
+#
+# WHAT THIS FILE DOES THAT A TEMPLATE CANNOT (D17, ID52). `infra/` is CloudFormation
+# YAML, so the two jobs the CDK L2 constructs did from inside a stack are steps here
+# instead: `NodejsFunction` bundled the API with esbuild and uploaded it, and
+# `BucketDeployment` unzipped the web bundle into S3 and invalidated the entry document.
+# Both are below, in the open. The stacks are applied with `aws cloudformation deploy`,
+# each one handed the execution role the Deploy stack declares, so the rights to create
+# a distribution or a cluster belong to CloudFormation and not to this workflow's own
+# identity.
+name: deploy
+
+on:
+  push:
+    branches: [main]
+
+# One deploy at a time, and never cancelled halfway: a cancelled CloudFormation update
+# leaves a stack in a state the next run has to clean up by hand.
+concurrency:
+  group: deploy-dev
+  cancel-in-progress: false
+
+jobs:
+  check:
+    uses: ./.github/workflows/check.yml
+
+  deploy-dev:
+    needs: check
+    runs-on: ubuntu-24.04
+    # Bounded because the concurrency group above is never cancelled: without a timeout a
+    # CloudFormation wait that hangs holds `deploy-dev` for GitHub's default six hours and
+    # every later merge queues behind it.
+    timeout-minutes: 30
+    permissions:
+      # What lets Actions mint the token AWS trusts. Without it there is no token and
+      # the role cannot be assumed; nothing else here needs any permission at all.
+      id-token: write
+      contents: read
+    env:
+      AWS_REGION: ${{ vars.AWS_REGION }}
+      AWS_ACCOUNT: "917993967998"
+      # The certificate's region, and CloudFront's. Not a preference: CloudFront reads a
+      # certificate from us-east-1 and from nowhere else.
+      CERTIFICATE_REGION: us-east-1
+      # The names the templates carry, read here so a reader of this file can see what
+      # the commands below are talking about without opening infra/.
+      DATA_STACK: Data-dev
+      APP_STACK: App-dev
+      CERT_STACK: Cert-dev
+      DATABASE_NAME: jobapp
+      DATABASE_USER: api
+      DATABASE_PORT: "5432"
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4.3.0
+
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      # No access key exists on either side. Actions presents a signed token saying which
+      # repository and which ref is running, and the role's trust condition names exactly
+      # `refs/heads/main`, so a fork or another branch gets credentials refused rather
+      # than a deploy it did not intend.
+      - name: Assume the deployment role
+        uses: aws-actions/configure-aws-credentials@61815dcd50bd041e203e49132bacad1fd04d2708 # v5.1.1
+        with:
+          role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN_DEV }}
+          aws-region: ${{ vars.AWS_REGION }}
+
+      # Who CloudFormation is while it applies each stack. The name is fixed by
+      # Deploy.yaml, so it can be written out here rather than looked up — which matters
+      # for the one stack that declares it: the first `Deploy` apply of all had to be
+      # done by a person with rights of their own, because the role did not exist yet.
+      - name: Name the execution role
+        id: roles
+        run: |
+          set -euo pipefail
+          echo "cloudformation=arn:aws:iam::${AWS_ACCOUNT}:role/job-application-cloudformation-execution" >> "$GITHUB_OUTPUT"
+
+      # The project-wide stacks first. They change rarely, and deploying them from here
+      # rather than from a laptop is what keeps the account and the repository in
+      # agreement; the bootstrap deployed them once by hand, and that was the exception.
+      #
+      # CAPABILITY_NAMED_IAM because these stacks create roles with names the rest of the
+      # system refers to. --no-fail-on-empty-changeset so that a merge touching neither
+      # stack is a no-op rather than a red run.
+      - name: Deploy the shared stacks
+        env:
+          EXECUTION_ROLE: ${{ steps.roles.outputs.cloudformation }}
+        run: |
+          set -euo pipefail
+          for stack in Deploy Dns; do
+            aws cloudformation deploy \
+              --template-file "infra/${stack}.yaml" \
+              --stack-name "$stack" \
+              --role-arn "$EXECUTION_ROLE" \
+              --capabilities CAPABILITY_NAMED_IAM \
+              --no-fail-on-empty-changeset
+          done
+
+      # What NodejsFunction did. esbuild bundles the entry point with nothing treated as
+      # already present on the platform — which AWS SDK packages the Node 24 runtime ships
+      # is a runtime detail that changes without notice, and the identity-token signer is
+      # the one package a wrong guess would break in the cloud only.
+      #
+      # The key is the commit SHA, so an artefact is traceable to the code it came from
+      # and a redeploy of the same commit changes nothing in the stack.
+      - name: Bundle the API
+        id: api
+        run: |
+          set -euo pipefail
+          pnpm exec esbuild apps/api/src/lambda.ts \
+            --bundle --platform=node --target=node24 --minify --sourcemap \
+            --outfile=dist/lambda/index.js
+          (cd dist/lambda && zip --quiet --recurse-paths ../api.zip .)
+          key="api/${GITHUB_SHA}.zip"
+          aws s3 cp dist/api.zip "s3://job-application-artefacts-${AWS_ACCOUNT}-${AWS_REGION}/${key}"
+          echo "key=$key" >> "$GITHUB_OUTPUT"
+
+      # Built before App-dev, as the API bundle is: a missing bundle should fail here,
+      # where the message says what is wrong, rather than inside a sync.
+      - name: Build the web bundle
+        run: pnpm --filter @app/web run build
+
+      # In us-east-1, and the only stack that is. Its output is read straight afterwards
+      # because a CloudFormation export cannot be imported across a region: the ARN
+      # travels as a parameter instead.
+      - name: Deploy the certificate
+        env:
+          EXECUTION_ROLE: ${{ steps.roles.outputs.cloudformation }}
+        run: |
+          set -euo pipefail
+          aws cloudformation deploy \
+            --region "$CERTIFICATE_REGION" \
+            --template-file infra/Cert-dev.yaml \
+            --stack-name "$CERT_STACK" \
+            --role-arn "$EXECUTION_ROLE" \
+            --no-fail-on-empty-changeset
+
+      - name: Read the certificate ARN
+        id: certificate
+        run: |
+          set -euo pipefail
+          arn=$(aws cloudformation describe-stacks --region "$CERTIFICATE_REGION" \
+            --stack-name "$CERT_STACK" \
+            --query "Stacks[0].Outputs[?OutputKey=='CertificateArn'].OutputValue" \
+            --output text)
+          echo "arn=$arn" >> "$GITHUB_OUTPUT"
+
+      # Termination protection is a property of the stack and not of the template, so it
+      # is set here. This is the stack that cannot be recreated from the repository, and
+      # it is the one the flag exists for. Idempotent: setting it when it is already set
+      # succeeds.
+      - name: Deploy the data stack
+        env:
+          EXECUTION_ROLE: ${{ steps.roles.outputs.cloudformation }}
+        run: |
+          set -euo pipefail
+          aws cloudformation deploy \
+            --template-file infra/Data-dev.yaml \
+            --stack-name "$DATA_STACK" \
+            --role-arn "$EXECUTION_ROLE" \
+            --no-fail-on-empty-changeset
+          aws cloudformation update-termination-protection \
+            --stack-name "$DATA_STACK" --enable-termination-protection
+
+      - name: Deploy the application
+        env:
+          EXECUTION_ROLE: ${{ steps.roles.outputs.cloudformation }}
+          ARTEFACT_KEY: ${{ steps.api.outputs.key }}
+          CERTIFICATE_ARN: ${{ steps.certificate.outputs.arn }}
+        run: |
+          set -euo pipefail
+          aws cloudformation deploy \
+            --template-file infra/App-dev.yaml \
+            --stack-name "$APP_STACK" \
+            --role-arn "$EXECUTION_ROLE" \
+            --capabilities CAPABILITY_IAM \
+            --no-fail-on-empty-changeset \
+            --parameter-overrides \
+              "ApiArtefactKey=$ARTEFACT_KEY" \
+              "CertificateArn=$CERTIFICATE_ARN"
+
+      # What BucketDeployment did, in two commands instead of a Lambda in a layer.
+      # --delete is what prunes the previous build's chunks. Only the entry document is
+      # invalidated, because everything else carries a content hash in its name and an
+      # invalidation of it would be paid for and would change nothing.
+      - name: Publish the web bundle
+        run: |
+          set -euo pipefail
+          distribution=$(aws cloudformation describe-stacks --stack-name "$APP_STACK" \
+            --query "Stacks[0].Outputs[?OutputKey=='DistributionId'].OutputValue" \
+            --output text)
+          bucket=$(aws cloudformation describe-stacks --stack-name "$APP_STACK" \
+            --query "Stacks[0].Outputs[?OutputKey=='WebBucketName'].OutputValue" \
+            --output text)
+          aws s3 sync apps/web/dist/web/browser "s3://${bucket}" --delete
+          aws cloudfront create-invalidation --distribution-id "$distribution" --paths /index.html
+
+      - name: Find the cluster
+        id: cluster
+        run: |
+          set -euo pipefail
+          # The stack names the cluster it made, and the cluster names its own endpoint
+          # and the secret RDS manages for it. Two lookups rather than one because the
+          # secret's name is chosen by RDS and is not knowable from the template.
+          identifier=$(aws cloudformation describe-stacks --stack-name "$DATA_STACK" \
+            --query "Stacks[0].Outputs[?OutputKey=='ClusterIdentifier'].OutputValue" \
+            --output text)
+          cluster=$(aws rds describe-db-clusters --db-cluster-identifier "$identifier" \
+            --query 'DBClusters[0]' --output json)
+          echo "endpoint=$(echo "$cluster" | jq -r '.Endpoint')" >> "$GITHUB_OUTPUT"
+          echo "secret=$(echo "$cluster" | jq -r '.MasterUserSecret.SecretArn')" >> "$GITHUB_OUTPUT"
+
+      # Declared rather than assumed present in the runner image. This one statement is
+      # the only place a PostgreSQL client is needed — the migrate step below uses the
+      # driver from this repository — and an image that quietly stopped shipping one
+      # would otherwise break a deploy for a reason nothing in this file mentions.
+      - name: Install the PostgreSQL client
+        run: sudo apt-get update && sudo apt-get install --yes --no-install-recommends postgresql-client
+
+      # The one step in the whole system that uses a password, and it uses it to make
+      # every other connection passwordless. PostgreSQL will only accept an identity
+      # token for a role that has been granted `rds_iam`, and only somebody already
+      # connected can grant it; RDS generates and rotates the master password itself, so
+      # this reads it, runs three statements, and never stores it. Idempotent: it runs on
+      # every deploy and does nothing on all but the first.
+      - name: Create the database role the function authenticates as
+        env:
+          SECRET_ARN: ${{ steps.cluster.outputs.secret }}
+          PGHOST: ${{ steps.cluster.outputs.endpoint }}
+          PGPORT: ${{ env.DATABASE_PORT }}
+          PGDATABASE: ${{ env.DATABASE_NAME }}
+          PGSSLMODE: require
+        run: |
+          set -euo pipefail
+          secret=$(aws secretsmanager get-secret-value --secret-id "$SECRET_ARN" \
+            --query SecretString --output text)
+          PGUSER=$(echo "$secret" | jq -r '.username')
+          PGPASSWORD=$(echo "$secret" | jq -r '.password')
+          export PGUSER PGPASSWORD
+          psql --set=ON_ERROR_STOP=1 --quiet <<'SQL'
+          DO $$
+          BEGIN
+            IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'api') THEN
+              CREATE ROLE api LOGIN;
+            END IF;
+          END
+          $$;
+          GRANT rds_iam TO api;
+          -- CREATE on the database because the migration tool keeps its own record in a
+          -- schema of its own. The migrations then run AS this role, so every table they
+          -- make is owned by it and no grant is ever needed for a table added later.
+          GRANT CONNECT, CREATE ON DATABASE jobapp TO api;
+          GRANT ALL ON SCHEMA public TO api;
+          SQL
+
+      # As the application's own role, with the application's own kind of credential: if
+      # a token cannot migrate, a token cannot serve requests either, and this is where
+      # that is found out.
+      - name: Migrate
+        env:
+          PGHOST: ${{ steps.cluster.outputs.endpoint }}
+        run: |
+          set -euo pipefail
+          token=$(aws rds generate-db-auth-token \
+            --hostname "$PGHOST" --port "$DATABASE_PORT" --username "$DATABASE_USER")
+          # The token is a signed query string and is full of characters a URL treats as
+          # structure, so it is encoded rather than pasted.
+          encoded=$(node -e 'process.stdout.write(encodeURIComponent(process.argv[1]))' "$token")
+          export DATABASE_URL="postgres://${DATABASE_USER}:${encoded}@${PGHOST}:${DATABASE_PORT}/${DATABASE_NAME}?sslmode=require"
+          pnpm --filter @app/db run db:migrate

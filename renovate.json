@@ -1,0 +1,65 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": [
+    "config:recommended",
+    "helpers:pinGitHubActionDigests",
+    ":semanticCommits",
+    ":dependencyDashboard",
+    "group:monorepos",
+    "schedule:weekly"
+  ],
+  "timezone": "Europe/Zurich",
+  "rangeStrategy": "bump",
+  "lockFileMaintenance": {
+    "enabled": true
+  },
+  "packageRules": [
+    {
+      "description": "Every action is used by commit SHA with its version in a trailing comment. Renovate owns the pins: it moves the SHA and rewrites the comment, and a digest or a patch merges on its own once check has passed. A major is a person's.",
+      "matchManagers": ["github-actions"],
+      "groupName": "github actions",
+      "matchUpdateTypes": ["digest", "pin", "pinDigest", "patch", "minor"],
+      "automerge": true
+    },
+    {
+      "description": "Angular is pinned to 22 by the foundation; a major needs a decision, not a bot.",
+      "matchPackageNames": ["/^@angular//", "/^@angular-devkit//", "@nguniversal/**"],
+      "groupName": "angular",
+      "allowedVersions": "<23.0.0"
+    },
+    {
+      "description": "Drizzle stays on 0.45.x: 1.x is still beta with a moving relational query API.",
+      "matchPackageNames": ["drizzle-orm", "drizzle-kit", "drizzle-zod"],
+      "groupName": "drizzle",
+      "allowedVersions": "<1.0.0"
+    },
+    {
+      "description": "TypeScript is bounded by the Angular 22 peer range (>=6.0 <6.1).",
+      "matchPackageNames": ["typescript"],
+      "allowedVersions": "<6.1.0"
+    },
+    {
+      "description": "Vitest is bounded by the @angular/build peer range (^4.0.8).",
+      "matchPackageNames": ["vitest", "/^@vitest//"],
+      "groupName": "vitest",
+      "allowedVersions": "<5.0.0"
+    },
+    {
+      "description": "Node stays on 24, the Lambda runtime and the local version.",
+      "matchPackageNames": ["node", "@types/node"],
+      "allowedVersions": "<25.0.0"
+    },
+    {
+      "description": "Hono stays on 4.x.",
+      "matchPackageNames": ["hono", "/^@hono//"],
+      "groupName": "hono",
+      "allowedVersions": "<5.0.0"
+    },
+    {
+      "description": "Tooling patches and minors merge on their own once the checks pass.",
+      "matchDepTypes": ["devDependencies"],
+      "matchUpdateTypes": ["minor", "patch"],
+      "automerge": true
+    }
+  ]
+}

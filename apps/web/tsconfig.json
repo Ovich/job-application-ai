@@ -1,0 +1,26 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "lib": ["ES2023", "DOM", "DOM.Iterable"],
+    "experimentalDecorators": true,
+    "importHelpers": true,
+    "isolatedModules": true,
+    /*
+     * The RPC client imports the API's TypeScript source for `AppType` (there is no
+     * build step and no generated client), so the API's configuration module, which
+     * reads the process environment, is part of this program and needs Node's globals
+     * to typecheck. The type is erased at build time and nothing from the API reaches
+     * the bundle. Nothing in this application may use a Node global: biome.json'''s
+     * apps/web override denies them, and Node builtin imports with them.
+     */
+    "types": ["node"]
+  },
+  "angularCompilerOptions": {
+    "enableI18nLegacyMessageIdFormat": false,
+    "strictInjectionParameters": true,
+    "strictInputAccessModifiers": true,
+    "strictTemplates": true,
+    "typeCheckHostBindings": true
+  },
+  "include": ["src/**/*.ts", "tests/**/*.ts"]
+}

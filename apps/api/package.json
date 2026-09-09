@@ -1,0 +1,28 @@
+{
+  "name": "@app/api",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/app.ts"
+  },
+  "scripts": {
+    "dev": "tsx watch src/local.ts",
+    "check:types": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@app/db": "workspace:*",
+    "@aws-sdk/rds-signer": "3.1127.0",
+    "@hono/zod-validator": "0.9.1",
+    "drizzle-orm": "0.45.2",
+    "drizzle-zod": "0.8.3",
+    "hono": "4.13.5",
+    "postgres": "3.4.9",
+    "zod": "4.5.4"
+  },
+  "devDependencies": {
+    "@electric-sql/pglite": "0.5.8",
+    "@hono/node-server": "2.1.1",
+    "tsx": "4.23.13"
+  }
+}

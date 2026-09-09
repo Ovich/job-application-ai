@@ -1,0 +1,33 @@
+{
+  "name": "job-application-ai",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@11.1.2",
+  "engines": {
+    "node": ">=24.15 <25",
+    "pnpm": ">=11 <12"
+  },
+  "scripts": {
+    "dev": "pnpm run dev:db && pnpm run dev:migrate && pnpm -r --parallel run dev",
+    "dev:db": "docker compose up --detach --wait",
+    "dev:migrate": "pnpm --filter @app/db db:migrate",
+    "check": "pnpm run check:lint && pnpm run check:types && pnpm run test",
+    "check:lint": "biome check .",
+    "check:types": "tsc -p tsconfig.json --noEmit && pnpm -r run check:types",
+    "test": "vitest run --passWithNoTests && pnpm -r run test",
+    "test:e2e": "playwright test --project=local",
+    "test:e2e:deployed": "playwright test --project=deployed",
+    "format": "biome check --write ."
+  },
+  "devDependencies": {
+    "@biomejs/biome": "2.5.12",
+    "@playwright/test": "1.62.1",
+    "@tsconfig/strictest": "2.0.8",
+    "@types/node": "24.13.3",
+    "esbuild": "0.28.2",
+    "typescript": "6.0.3",
+    "vitest": "4.1.11",
+    "yaml": "2.8.1"
+  }
+}
