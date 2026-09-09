@@ -12,3 +12,7 @@ playwright-report/
 !.env.example
 .DS_Store
 Thumbs.db
+
+# agent worktrees: a full second checkout, and every tree-walking tool would
+# descend into it
+.claude/worktrees/
