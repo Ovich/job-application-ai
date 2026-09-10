@@ -16,17 +16,20 @@ import { SignIn } from "../../../src/app/auth/sign-in";
 
 type Fetching = (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>;
 
-/** Stands in for the network and keeps what was handed to it. */
-function captureRequests() {
-  const fetching = vi.fn<Fetching>(
-    async () => new Response(JSON.stringify({ url: null, redirect: false }), { status: 200 }),
-  );
+/**
+ * Stands in for the network and keeps what was handed to it. Installed before any
+ * import runs, because the library's client takes the platform's `fetch` once, when it
+ * is built — the same seam S5.3 hands the payload-hash fetch through (ID58) — so a
+ * stand-in put in place after the client exists is never called.
+ */
+const fetching = vi.hoisted(() => {
+  const fetching = vi.fn<Fetching>();
   vi.stubGlobal("fetch", fetching);
   return fetching;
-}
+});
 
 /** The one request that left, as its address, its method and its parsed body. */
-function requestSentTo(fetching: ReturnType<typeof captureRequests>) {
+function requestSentTo() {
   const [input, init] = fetching.mock.calls[0] ?? [];
   const address =
     input instanceof Request ? input.url : input instanceof URL ? input.href : String(input);
@@ -36,11 +39,15 @@ function requestSentTo(fetching: ReturnType<typeof captureRequests>) {
 
 describe("the sign-in page", () => {
   beforeEach(() => {
+    fetching.mockReset();
+    fetching.mockImplementation(
+      async () => new Response(JSON.stringify({ url: null, redirect: false }), { status: 200 }),
+    );
     TestBed.configureTestingModule({ imports: [SignIn] });
   });
 
   afterEach(() => {
-    vi.unstubAllGlobals();
+    fetching.mockReset();
   });
 
   it("offers one button, to continue with Google", () => {
@@ -55,14 +62,13 @@ describe("the sign-in page", () => {
   });
 
   it("asks the library to sign in with Google when the button is pressed", async () => {
-    const fetching = captureRequests();
     const fixture = TestBed.createComponent(SignIn);
     fixture.detectChanges();
 
     (fixture.nativeElement as HTMLElement).querySelector("button")?.click();
     await vi.waitFor(() => expect(fetching).toHaveBeenCalled());
 
-    const { address, method, body } = requestSentTo(fetching);
+    const { address, method, body } = requestSentTo();
     expect(address).toContain("/api/auth/sign-in/social");
     expect(method).toBe("POST");
     expect(body).toMatchObject({ provider: "google" });
