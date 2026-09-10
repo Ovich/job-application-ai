@@ -92,7 +92,7 @@ Resources:
         Variables:
           APP_RUNTIME: cloud
           # The pooled connection string of the Neon project in aws-eu-central-1, held
-          # in Secrets Manager and never in this repository (rule 12, D19). A dynamic
+          # in Secrets Manager and never in this repository (D19). A dynamic
           # reference: CloudFormation reads the secret while it applies the stack, so
           # the function needs no right on Secrets Manager and makes no call to it at
           # cold start. The consequence, and it is the reason the name is written here

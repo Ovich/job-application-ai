@@ -102,7 +102,7 @@ pnpm test:e2e            # the end-to-end checks against your local stack, at th
 pnpm test:e2e:deployed   # the same, against the development address; the deploy job runs it
 ```
 
-`pnpm check` already runs the tests in `infra/tests`: the invariants of rule 17 — no NAT
+`pnpm check` already runs the tests in `infra/tests`: the invariants of the cost posture — no NAT
 gateway, no API Gateway, no RDS proxy, no VPC at all, compression off on `/api/*` — and
 the one that keeps an API error an error: the distribution maps only a bucket's 403 to
 the page, never a 404, so `/api/<unknown>` answers 404 and JSON rather than
@@ -127,6 +127,7 @@ three other boundaries, so a violation fails the build rather than review.
 
 ## Before you change anything
 
-Read `CLAUDE.md`. It is the binding conventions file for this repository, it is short,
-and the rules in it are enforced by review and in several cases by the linter. It also
-explains the one escape hatch for when a rule is genuinely wrong for a piece of code.
+There is no conventions file. The boundaries that matter are enforced by the linter
+(`biome.json`) and by the tests, and each lint message says why its rule exists. The
+technology decisions behind them are recorded with the project's design documents,
+outside this repository.

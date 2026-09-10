@@ -6,7 +6,7 @@ import { hlm } from "./hlm";
 
 /**
  * The button's look, as a variant table rather than a class string per call site. This
- * is the one folder rule 16 exempts, so the utilities live here and nowhere else: a
+ * is the one folder the named-component discipline exempts, so the utilities live here and nowhere else: a
  * page names a variant and a size, and never a colour.
  *
  * Adapted from spartan/ui 1.4.1's `hlm-button`. Two departures, both deliberate:
