@@ -1,6 +1,5 @@
-import { createHash } from "node:crypto";
-import type { APIRequestContext } from "@playwright/test";
 import { expect, test } from "@playwright/test";
+import { startRun } from "./support/api";
 
 /**
  * Whether a push put this on the internet. The subject is the deployed development
@@ -35,32 +34,8 @@ const units = 3;
  */
 const kind = "deploy-check";
 
-/**
- * A run created through the deployed API, with the header a signed origin requires.
- *
- * Origin access control signs the request that reaches the function and the signature
- * covers a SHA-256 of the body, which CloudFront does not compute: the sender states
- * it in `x-amz-content-sha256`. The browser client does this for every write
- * (`apps/web/src/app/lib/api.ts`), and a request made from the test process rather
- * than from the page has to do the same or the origin rejects it.
- */
-const startRun = async (request: APIRequestContext, howMany: number) => {
-  const body = JSON.stringify({ kind, units: howMany });
-  const created = await request.post("/api/runs", {
-    data: body,
-    headers: {
-      "content-type": "application/json",
-      "x-amz-content-sha256": createHash("sha256").update(body).digest("hex"),
-    },
-  });
-  expect(created.status()).toBe(201);
-  const { id } = (await created.json()) as { id: string };
-  expect(id).toBeTruthy();
-  return id;
-};
-
 test("the deployed page shows a run and its units", async ({ page, request }) => {
-  await startRun(request, units);
+  await startRun(request, kind, units);
 
   await page.goto("/");
 

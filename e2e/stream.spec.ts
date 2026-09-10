@@ -1,17 +1,18 @@
-import type { APIRequestContext } from "@playwright/test";
 import { expect, test } from "@playwright/test";
+import { startRun } from "./support/api";
 
 /**
  * Whether the value streams. The subject here is the *arrival* of the events, not
  * their content: a response buffered anywhere along the way — by the server, by a
- * compression layer, by the distribution at S3.7 — still ends with the same text on
+ * compression layer, by the distribution — still ends with the same text on
  * the page, so a spec that only checked the final text would pass against exactly the
  * failure this slice exists to prevent.
  *
- * Against the local dev server for now. The branch was forked from slice 2, which has
- * not deployed anything, so the one question that made this slice risky — whether a
- * heartbeat holds the origin connection open past the distribution's read timeout —
- * is the second case below, written and skipped until the join at S3.7.
+ * Both projects run it. Against the dev server it is the quick loop, where the page and
+ * the API are two processes and one proxy; against the development address it is the
+ * question the slice exists for, because that is the only place a distribution stands
+ * between the function and the browser. The related question of what happens to a
+ * stream that says nothing is `e2e/idle.spec.ts`, deployed only.
  */
 
 /** How far apart the first and the last event must land before "progressive" means anything. */
@@ -29,14 +30,6 @@ type Arrival = {
   /** The unit's sequence, its position in the run, on a progress leaf only. */
   readonly unitSeq: number | null;
   readonly status: string | null;
-};
-
-/** A run to stream, created through the same route the page creates one with. */
-const startRun = async (request: APIRequestContext, kind: string, howMany: number) => {
-  const created = await request.post("/api/runs", { data: { kind, units: howMany } });
-  expect(created.status()).toBe(201);
-  const { id } = (await created.json()) as { id: string };
-  return id;
 };
 
 test("the run's stream answers as an event stream", async ({ page, request }) => {
@@ -147,45 +140,4 @@ test("events arrive progressively, not in one buffered lump", async ({ page, req
     Array.from({ length: units }, (_unit, index) => index + 1),
   );
   expect(last?.status).toBe("done");
-});
-
-/**
- * Enabled at S3.7, the join, and not before. What it observes is the distribution's
- * origin read timeout, which this branch has never deployed: forked from slice 2, it
- * has no environment, no distribution and no function. Running it locally would prove
- * only that a Node server holds its own socket open, which nobody doubts.
- *
- * The assertion is "still open" rather than "a beat arrived" because the heartbeat is
- * a comment, and a browser never hands a comment to the page. Its whole job is to be
- * invisible to the page and visible to everything between the two.
- *
- * S3.7 removes the skip, points the address at the development environment, and needs
- * a stream that has nothing to say for longer than the timeout.
- */
-test.skip("a stream idle past the origin read timeout stays open", async ({ page, request }) => {
-  test.setTimeout(90_000);
-
-  const id = await startRun(request, "stream-idle", 1);
-
-  await page.goto("/");
-
-  const stillOpen = await page.evaluate(
-    ({ path, idleMs }) =>
-      new Promise<boolean>((resolve) => {
-        const source = new EventSource(path);
-        let failed = false;
-        source.addEventListener("error", () => {
-          failed = true;
-        });
-        setTimeout(() => {
-          const open = !failed && source.readyState === EventSource.OPEN;
-          source.close();
-          resolve(open);
-        }, idleMs);
-      }),
-    // Comfortably past the thirty seconds a distribution waits on a silent origin.
-    { path: `/api/runs/${id}/stream`, idleMs: 45_000 },
-  );
-
-  expect(stillOpen).toBe(true);
 });
