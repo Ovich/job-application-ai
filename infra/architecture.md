@@ -125,8 +125,8 @@ flowchart TB
 account, reached with a connection string Secrets Manager holds, so no stack declares a
 database and none declares a VPC. `Data-dev` — an Aurora Serverless v2 cluster in a VPC
 of its own — was deleted on 2026-09-10 with its sixteen resources, after `App-dev` had
-stopped importing from it; the template, its parity baseline and its invariants went with
-it (`S7.7`, `S7.8`).
+stopped importing from it; the template, its baseline and its invariants went with it
+(`S7.7`, `S7.8`).
 
 ## The tiers a request passes through
 
@@ -213,6 +213,17 @@ private, and CloudFront is the only door.
 
 The last two replace CDK's bootstrap (`cdk-hnb659fds-cfn-exec-role` and its asset
 bucket), which deleting CDK deleted.
+
+
+**The application register.** `Deploy` also declares an AppRegistry application called
+`job-application`, and `Deploy`, `Dns` and `App-dev` each associate themselves with it —
+a stack owns the statement that it belongs, so deleting the stack takes the statement
+with it. AWS then tags every resource of those stacks `awsApplication`, which is what
+fills the `Application` column in Resource Explorer. `Cert-dev` cannot join: AppRegistry
+is regional and that stack is in `us-east-1`. The point is separation rather than
+decoration — an account holds roughly thirty resources AWS creates by itself, from
+MemoryDB parameter groups to default KMS keys, and without this the console cannot tell
+them from the eleven that are ours.
 
 ### `Dns` — the domain and the spend alarm
 
@@ -444,7 +455,10 @@ few: the original bootstrap, and step 5 of `import-runbook.md`, both of which cr
 identity the pipeline needs in order to exist.
 
 Before changing a template, know that `tests/invariants.test.ts` will refuse a change
-that undoes a foundation decision, and `tests/parity.test.ts` will refuse any difference
-from what CDK produced that is not declared with its reason. The second is a migration
-check and is expected to retire once the conversion has proven itself (`ID53`); the first
-is permanent.
+that undoes a foundation decision. It is the permanent half of what `infra/tests` once
+held. The other half, `parity.test.ts`, compared every template against the CDK synth it
+was converted from; it was deleted on 2026-09-10 (`ID53`) once the pipeline had deployed
+green, because its oracle was a frozen 1,847-line snapshot from a tool no longer in this
+repository, so every legitimate future change could only lengthen its list of declared
+exceptions. It did its job first: seen failing twice, it caught real omissions and forced
+every difference from CDK to be justified in writing.

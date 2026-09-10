@@ -96,6 +96,16 @@ Resources:
             - SubscriptionType: SNS
               Address: !Ref Alerts
 
+  # Declares this stack part of the job-application application, so its resources carry
+  # the awsApplication tag and the console can tell them from AWS's own defaults. The
+  # application is declared in Deploy, which the pipeline applies first.
+  ApplicationAssociation:
+    Type: AWS::ServiceCatalogAppRegistry::ResourceAssociation
+    Properties:
+      Application: job-application
+      Resource: !Ref AWS::StackName
+      ResourceType: CFN_STACK
+
 Outputs:
   NameServers:
     Description: Set these four at the registrar. Nothing validates a certificate until they propagate.

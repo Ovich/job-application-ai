@@ -57,8 +57,8 @@ jobs:
       # The one check that is not in `pnpm check`, because it is a Python tool and
       # `pnpm check` must run on a laptop with nothing but Node installed. It reads the
       # templates against CloudFormation's own resource specification, which is the half
-      # of a template's correctness the parity harness cannot see: the harness compares
-      # two templates and would happily agree on a property that does not exist.
+      # of a template's correctness no test in `infra/tests` can see: an invariant asserts
+      # what must not appear, and would happily agree on a property that does not exist.
       #
       # No arguments: which templates to read is in `infra/.cfnlintrc.yaml`, and
       # cfn-lint looks for that in the directory it runs in.

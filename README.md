@@ -83,10 +83,10 @@ pnpm test:e2e            # the browser specs against your local stack
 pnpm test:e2e:deployed   # the deploy check, against the development address
 ```
 
-`pnpm check` already runs the tests in `infra/tests`: a parity harness that holds each
-template against the CDK template it replaced, and the invariants of rule 17 — no NAT
-gateway, no API Gateway, no RDS proxy, compression off on `/api/*`, a database that
-scales to nothing. `cfn-lint` is a Python tool and is the one check `pnpm check` leaves
+`pnpm check` already runs the tests in `infra/tests`: the invariants of rule 17 — no NAT
+gateway, no API Gateway, no RDS proxy, no VPC at all, compression off on `/api/*`. Each
+was proven to bite by making the violation and watching the test go red. `cfn-lint` is a
+Python tool and is the one check `pnpm check` leaves
 to CI, so that a laptop with only Node on it can still run everything else.
 
 ## The layout
