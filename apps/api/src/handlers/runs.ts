@@ -6,6 +6,7 @@ import { createFactory } from "hono/factory";
 import { stream } from "hono/streaming";
 import { z } from "zod";
 import { db } from "../lib/db";
+import { finishUnit, hasSeenUnit, hasSeenWhatUnitSaid, unitsOf } from "../lib/runs";
 import { createEnvelope } from "../lib/stream";
 
 const factory = createFactory();
@@ -86,6 +87,18 @@ export const createRun = factory.createHandlers(zValidator("json", newRunBody), 
 const streamParams = z.object({ id: z.uuid() });
 
 /**
+ * What a reconnecting client names: the last sequence it received. The contract is
+ * exclusive, "after N", which is the one the envelope already chose for `startAfter`
+ * and the one a browser's own `Last-Event-ID` means. Absent is zero, which is a client
+ * that has seen nothing and is therefore told the whole run.
+ *
+ * A query parameter rather than the header, because a page that reopens a stream itself
+ * opens an `EventSource`, and an `EventSource` cannot be given a header. What resumes
+ * has to be sayable by the client that resumes.
+ */
+const streamQuery = z.object({ after: z.coerce.number().int().min(0).default(0) });
+
+/**
  * How long the stand-in takes over one unit. **This is a placeholder, not the work.**
  * The AI engine is deferred to a later slot, so a run has nothing real to do yet, and
  * a stream whose events all land in the same tick cannot show the one property this
@@ -155,59 +168,79 @@ const pause = async (response: Pausable, ms: number): Promise<boolean> => {
  * the wire format, the numbering and the keep-alive: this handler chooses what is said
  * and when, and writes nothing to the response itself (ID11, ID31).
  *
- * It reads and reports, it does not persist. Writing each unit's result back as it
- * finishes, and resuming from the sequence a reconnecting browser names, are the runs
- * module of slice 4. `Last-Event-ID` is therefore deliberately not read here: framing
- * from a resumed sequence while the run itself replays from its first unit would
- * number old content as though it were new, which is worse than starting at one.
+ * Each unit is written as it finishes, through the runs module, so a connection that
+ * goes loses only the unit that was in flight (US5). A client that comes back names the
+ * last sequence it saw: the units behind that sequence are passed over, the ones that
+ * finished while it was away are replayed out of what they wrote, and the run carries
+ * on from the first one that never did. Doing a unit again is not how a stream is
+ * resumed — that is what the row is for.
  */
-export const streamRun = factory.createHandlers(zValidator("param", streamParams), async (c) => {
-  const { id } = c.req.valid("param");
+export const streamRun = factory.createHandlers(
+  zValidator("param", streamParams),
+  zValidator("query", streamQuery),
+  async (c) => {
+    const { id } = c.req.valid("param");
+    const { after } = c.req.valid("query");
 
-  const [found] = await db.select().from(run).where(eq(run.id, id)).limit(1);
-  if (!found) {
-    return c.json({ error: "no such run" }, 404);
-  }
-
-  const units = await db
-    .select()
-    .from(runUnit)
-    .where(eq(runUnit.runId, found.id))
-    .orderBy(asc(runUnit.seq));
-
-  // The raw stream helper rather than the server-sent-event one: the envelope already
-  // writes `id:` and `data:` lines, and the SSE helper would prefix them again. So the
-  // headers that helper sets are set here instead. `x-accel-buffering` asks a reverse
-  // proxy not to collect the response into one lump, which is exactly the failure the
-  // browser spec measures.
-  c.header("content-type", "text/event-stream");
-  c.header("cache-control", "no-cache");
-  c.header("x-accel-buffering", "no");
-
-  return stream(c, async (response) => {
-    // The envelope's sink returns nothing, so the write is awaited here rather than
-    // handed back: back-pressure is honoured, and the frame is on the socket before the
-    // next one is framed.
-    const envelope = createEnvelope(async (chunk) => {
-      await response.write(chunk);
-    });
-    // A browser that navigates away mid-run leaves a heartbeat armed, which would go
-    // on writing into a dead socket every fifteen seconds for as long as the process
-    // lives. Closing on abort is what keeps a disconnect from costing anything.
-    response.onAbort(() => {
-      envelope.close();
-    });
-
-    try {
-      for (const unit of units) {
-        if (!(await pause(response, unitPaceMs(found.kind)))) {
-          break;
-        }
-        await envelope.send({ kind: "text", text: `unit ${unit.seq} of ${units.length}\n` });
-        await envelope.send({ kind: "progress", seq: unit.seq, status: "done" });
-      }
-    } finally {
-      envelope.close();
+    const [found] = await db.select().from(run).where(eq(run.id, id)).limit(1);
+    if (!found) {
+      return c.json({ error: "no such run" }, 404);
     }
-  });
-});
+
+    const units = await unitsOf(found.id);
+
+    // The raw stream helper rather than the server-sent-event one: the envelope already
+    // writes `id:` and `data:` lines, and the SSE helper would prefix them again. So the
+    // headers that helper sets are set here instead. `x-accel-buffering` asks a reverse
+    // proxy not to collect the response into one lump, which is exactly the failure the
+    // browser spec measures.
+    c.header("content-type", "text/event-stream");
+    c.header("cache-control", "no-cache");
+    c.header("x-accel-buffering", "no");
+
+    return stream(c, async (response) => {
+      // The envelope's sink returns nothing, so the write is awaited here rather than
+      // handed back: back-pressure is honoured, and the frame is on the socket before
+      // the next one is framed. It starts numbering after what the client says it has,
+      // so the frames it receives continue the ones it already holds.
+      const envelope = createEnvelope(
+        async (chunk) => {
+          await response.write(chunk);
+        },
+        { startAfter: after },
+      );
+      // A browser that navigates away mid-run leaves a heartbeat armed, which would go
+      // on writing into a dead socket every fifteen seconds for as long as the process
+      // lives. Closing on abort is what keeps a disconnect from costing anything.
+      response.onAbort(() => {
+        envelope.close();
+      });
+
+      try {
+        for (const unit of units) {
+          if (hasSeenUnit(unit.seq, after)) {
+            continue;
+          }
+
+          // Only a unit that has not been done is done here. One that finished while
+          // this client was away is read back rather than run again, which is what
+          // makes reopening a page cost nothing and makes a second tab harmless.
+          let standing = unit;
+          if (unit.status === "pending") {
+            if (!(await pause(response, unitPaceMs(found.kind)))) {
+              break;
+            }
+            standing = await finishUnit(found.id, unit.seq, `unit ${unit.seq} of ${units.length}`);
+          }
+
+          if (!hasSeenWhatUnitSaid(unit.seq, after)) {
+            await envelope.send({ kind: "text", text: `${standing.result ?? ""}\n` });
+          }
+          await envelope.send({ kind: "progress", seq: unit.seq, status: standing.status });
+        }
+      } finally {
+        envelope.close();
+      }
+    });
+  },
+);

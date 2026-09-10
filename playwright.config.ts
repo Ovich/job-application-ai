@@ -16,7 +16,10 @@ import { defineConfig } from "@playwright/test";
  * Each project names the files it collects, so neither ever collects the other's work.
  * `stream` is named by both: arrival is worth measuring in the quick loop and it is
  * what the distribution can break. `foundation` and `idle` are the deployed project's
- * alone, because a laptop has nothing to say about either.
+ * alone, because a laptop has nothing to say about either. `resume` is the local
+ * project's alone: what it asks — is a unit's result there after the connection went,
+ * does the run carry on from it — is answered by the function and the database, and
+ * neither of those is what the distribution changes.
  *
  * Both addresses are written here rather than read from the environment because
  * nothing outside the API's configuration module and the schema package's generator
@@ -31,7 +34,7 @@ export default defineConfig({
   projects: [
     {
       name: "local",
-      testMatch: /stream\.spec\.ts$/,
+      testMatch: /(stream|resume)\.spec\.ts$/,
       use: { baseURL: "http://localhost:4200" },
     },
     {
