@@ -5,12 +5,19 @@ then, per job offer, a tailored CV and cover letter through one conversation tha
 invents a claim.
 
 This repository is at its foundation: the smallest deployable system the features stand
-on, with nothing on it yet. The web app is an empty shell: a router outlet, the typed
-RPC client and the UI kit, with the root route free for the first real screen. The API
-keeps one thing, the **operator check**: a run and its units, written to PostgreSQL
-through Drizzle and streamed back by a Hono handler, which is how a person proves that
-a deploy, the database and the stream still work. It stays until board `D11`'s `message`
-table replaces it with the conversation. Along that chain there is no hand-written type.
+on, with nothing on it yet, and nothing in it that nothing calls (board `D20`). The web
+app is an empty shell: a router outlet, the typed RPC client and the UI kit, with the
+root route free for the first real screen. The API keeps one route, `GET /api/health`,
+which answers after a real `select version()`, and `GET /api/health/stream`, which beats
+through the stream envelope: together they prove after every deploy that the merge
+reached the cloud, that the database answers and that a stream survives the
+distribution. The database schema is empty until board `D11`'s `message` table brings
+the conversation. Along the whole chain there is no hand-written type.
+
+The `run` and `run_unit` skeleton that stood here — invented in the first slice to have
+something to deploy, and the pattern for resuming a stream on a `(run, seq)` write —
+lives at the tag **`foundation-skeleton`**, not on a branch: `git show
+foundation-skeleton:apps/api/src/lib/runs/progress.ts`.
 
 ## Before you start
 
@@ -39,19 +46,19 @@ cannot change major, so the container follows it. A clone that ran the 17 contai
 before 2026-09-10 has a volume with a 17 cluster in it; `docker compose down -v` drops
 it, and the next `pnpm dev` starts a fresh 18 cluster. Nothing in it was worth keeping.
 
-The operator check is driven at the API. Create a run, read it back, watch it stream:
+The health route is what an operator asks, locally and deployed alike:
 
 ```sh
-curl -X POST http://localhost:3000/api/runs \
-  -H "content-type: application/json" \
-  -d '{"kind":"demo","units":3}'
-curl http://localhost:3000/api/runs/latest
-curl -N http://localhost:3000/api/runs/<id>/stream
+curl http://localhost:3000/api/health
+curl -N http://localhost:3000/api/health/stream
 ```
 
-The stream does the units one at a time, writes each as it finishes and says so as a
-server-sent event; a second read with `?after=<seq>` resumes after the last frame the
-first one saw. `pnpm test:e2e` asks the same questions of the local stack.
+The first answers `{"status":"ok","database":"PostgreSQL 18.6 ..."}` — the engine's own
+answer to `select version()`, so a route that never reached the database has nothing to
+put there — and 503 rather than a crash when the database cannot be reached. The second
+beats a frame a second as a server-sent event through `apps/api/src/lib/stream`, ends
+itself after two minutes and stops the moment the reader goes. `pnpm test:e2e` asks the
+same questions of the local stack.
 
 Stopping `pnpm dev` leaves the container up, so your data survives a restart. To stop
 the database too:
@@ -72,10 +79,11 @@ docker compose down
 ## How it reaches the internet
 
 Nobody deploys from a laptop. A merge to `main` runs `.github/workflows/deploy.yml`,
-which builds the bundle, deploys the stacks and migrates, and ends there. Whether the
-result works is the operator check, run by a person against
-`https://dev.job-application.app` with `pnpm test:e2e:deployed`: four specs that drive
-the deployed API and read its stream raw, and never open a page.
+which builds the bundle, deploys the stacks, migrates, and then checks what it
+deployed: `pnpm test:e2e:deployed` against `https://dev.job-application.app`, two specs
+that drive the deployed API and read its stream raw and never open a page. A failure
+there fails the deploy, which is what keeps CloudFormation reporting success from being
+mistaken for the environment working.
 
 GitHub holds no AWS key. Actions presents a signed token naming the repository and the
 branch, and the deployment role trusts exactly `refs/heads/main`, so no other branch and
@@ -91,13 +99,13 @@ nothing rolls back, and recovering means shipping a fix.
 ```sh
 cd infra && cfn-lint     # the templates against CloudFormation's own specification
 pnpm test:e2e            # the end-to-end checks against your local stack, at the API
-pnpm test:e2e:deployed   # the operator check, against the development address
+pnpm test:e2e:deployed   # the same, against the development address; the deploy job runs it
 ```
 
 `pnpm check` already runs the tests in `infra/tests`: the invariants of rule 17 — no NAT
 gateway, no API Gateway, no RDS proxy, no VPC at all, compression off on `/api/*` — and
 the one that keeps an API error an error: the distribution maps only a bucket's 403 to
-the page, never a 404, so `/api/runs/<unknown>/stream` answers 404 and JSON rather than
+the page, never a 404, so `/api/<unknown>` answers 404 and JSON rather than
 `index.html` and 200. Each was proven to bite by making the violation and watching the
 test go red. `cfn-lint` is a Python tool and is the one check `pnpm check` leaves to CI,
 so that a laptop with only Node on it can still run everything else.

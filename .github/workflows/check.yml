@@ -8,9 +8,11 @@
 # Nothing here touches AWS and nothing here needs a service running. The query layer is
 # tested against a real PostgreSQL, but one compiled to WebAssembly and running inside
 # the test process (ID49, amending ID13), so there is still no service step, no
-# container and no credential. The browser check that reads through real SQL is not in any
-# workflow: it is the operator check of D3, which a person runs against a deployed
-# address (`pnpm test:e2e:deployed`). Amended from D9 on 2026-09-09.
+# container and no credential. The checks that need a deployed address are not here and
+# cannot be: `pnpm test:e2e:deployed` asks the development environment whether the merge
+# reached it, so it is a step of the deploy workflow, after the migration (D20). No
+# Playwright project runs here at all: the local one needs `pnpm dev` up, and `pnpm
+# check` must stay green with nothing running.
 name: check
 
 on:

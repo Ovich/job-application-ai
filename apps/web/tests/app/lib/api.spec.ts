@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { api } from "../../../src/app/lib/api";
+import { api, fetchWithPayloadHash } from "../../../src/app/lib/api";
 
 /**
  * The payload hash the client states on every request that carries a body (ID10).
@@ -12,13 +12,31 @@ import { api } from "../../../src/app/lib/api";
  *
  * The digests below were computed outside this program, so a mistake in the client
  * cannot agree with the same mistake made again here.
+ *
+ * The two write cases go through the client's own `fetch` rather than through a route,
+ * because `main` has no write route: SL10 removed the run skeleton and D11 brings the
+ * first write back. What is under test is the same function the RPC client is built
+ * with, handed the same body it would hand it.
  */
 
 /** SHA-256 of the 25 bytes of `{"kind":"demo","units":3}`, lowercase hexadecimal. */
-const digestOfDemoRun = "af931bd18db5b2aadb44848c2aaccb854cf2a2cf9950ecb2ca488c115a8b5ac4";
+const digestOfPlainBody = "af931bd18db5b2aadb44848c2aaccb854cf2a2cf9950ecb2ca488c115a8b5ac4";
 
 /** SHA-256 of `{"kind":"démo","units":1}`: 25 characters, 26 bytes once encoded. */
-const digestOfAccentedRun = "bcadd2030f2612b1079de5232635429169442d0b275400c1a438bb94c6e72221";
+const digestOfAccentedBody = "bcadd2030f2612b1079de5232635429169442d0b275400c1a438bb94c6e72221";
+
+/** A body of exactly those bytes. What it says is nobody's data and nothing's shape. */
+const plainBody = '{"kind":"demo","units":3}';
+const accentedBody = '{"kind":"démo","units":1}';
+
+/** How the client sends a write: JSON, as a string, with its content type. */
+const postingTo = async (body: string): Promise<void> => {
+  await fetchWithPayloadHash("/api/anything", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body,
+  });
+};
 
 const payloadHash = "x-amz-content-sha256";
 
@@ -45,30 +63,30 @@ describe("the API client", () => {
   it("states the digest of the body it sends", async () => {
     const fetching = captureRequests();
 
-    await api.runs.$post({ json: { kind: "demo", units: 3 } });
+    await postingTo(plainBody);
 
     const { body, headers } = requestSentTo(fetching);
-    expect(body).toBe('{"kind":"demo","units":3}');
-    expect(headers.get(payloadHash)).toBe(digestOfDemoRun);
+    expect(body).toBe(plainBody);
+    expect(headers.get(payloadHash)).toBe(digestOfPlainBody);
   });
 
   it("hashes the bytes that leave, not the characters they were written in", async () => {
     const fetching = captureRequests();
 
-    await api.runs.$post({ json: { kind: "démo", units: 1 } });
+    await postingTo(accentedBody);
 
     const { body, headers } = requestSentTo(fetching);
     // The body is one character shorter than it is long in bytes, which is the whole
     // point: a digest taken over characters would not be this one.
     expect(new TextEncoder().encode(String(body)).byteLength).toBe(26);
     expect(String(body)).toHaveLength(25);
-    expect(headers.get(payloadHash)).toBe(digestOfAccentedRun);
+    expect(headers.get(payloadHash)).toBe(digestOfAccentedBody);
   });
 
   it("sends no digest when there is no body", async () => {
     const fetching = captureRequests();
 
-    await api.runs.latest.$get();
+    await api.health.$get();
 
     const { body, headers } = requestSentTo(fetching);
     expect(body).toBeUndefined();

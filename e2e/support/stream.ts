@@ -1,15 +1,13 @@
 /**
- * A raw read of a run's event stream, from the test process rather than from a page.
+ * A raw read of an event stream, from the test process rather than from a page.
  *
- * The specs used to open an `EventSource` inside a page, and the page is gone (S9.1).
- * What they were ever measuring is the API's stream, and the API is what the four
- * checks stand on, so the read is made here with the platform's `fetch` and a hand
- * parse of the event-stream format. Two things this sees that a page never could: the
- * heartbeat, which the browser hides as a comment and which is the whole mechanism of
- * `idle.spec.ts`; and the moment each byte arrives, which is the measurement of
- * `stream.spec.ts`. Playwright's `request` fixture is not used for the stream because
- * it hands back a body only once it is complete, which is the one thing a stream must
- * not be waited for.
+ * The web app is an empty shell (S9.1) and what the checks measure is the API's stream,
+ * so the read is made here with the platform's `fetch` and a hand parse of the
+ * event-stream format. Two things this sees that a page never could: the envelope's
+ * heartbeat, which a browser hides as a comment; and the moment each byte arrives,
+ * which is the measurement `e2e/health-stream.spec.ts` exists for. Playwright's
+ * `request` fixture is not used for a stream because it hands back a body only once it
+ * is complete, which is the one thing a stream must not be waited for.
  */
 
 /** One frame as the reader received it: what the envelope said, without when. */
@@ -17,9 +15,6 @@ export type Frame = {
   readonly seq: number;
   readonly version: number;
   readonly kind: string;
-  /** The unit's position in the run, on a progress leaf only. */
-  readonly unitSeq: number | null;
-  readonly status: string | null;
   readonly text: string | null;
 };
 
@@ -54,7 +49,7 @@ const defaultSilenceMs = 15_000;
 type WireFrame = {
   seq: number;
   version: number;
-  leaf: { kind: string; seq?: number; status?: string; text?: string };
+  leaf: { kind: string; text?: string };
 };
 
 const frameOf = (data: string): Frame => {
@@ -63,26 +58,8 @@ const frameOf = (data: string): Frame => {
     seq: wire.seq,
     version: wire.version,
     kind: wire.leaf.kind,
-    unitSeq: wire.leaf.seq ?? null,
-    status: wire.leaf.status ?? null,
     text: wire.leaf.text ?? null,
   };
-};
-
-/**
- * The address of a run's stream at the project's base address, with `after` when a
- * client is resuming: the last sequence it saw, exclusive, which is what the route
- * reads (`apps/api/src/handlers/runs.ts`).
- */
-export const streamUrl = (baseURL: string | undefined, id: string, after?: number): string => {
-  if (baseURL === undefined) {
-    throw new Error("the Playwright project names no baseURL");
-  }
-  const url = new URL(`/api/runs/${id}/stream`, baseURL);
-  if (after !== undefined) {
-    url.searchParams.set("after", String(after));
-  }
-  return url.toString();
 };
 
 /**

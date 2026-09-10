@@ -1,35 +1,15 @@
-import { integer, pgEnum, pgTable, primaryKey, text, timestamp, uuid } from "drizzle-orm/pg-core";
-
 /**
- * The status of one unit of work inside a run. A unit starts `pending`, and ends
- * either `done` or `failed`. A Postgres enum rather than a text column with a check,
- * so an impossible value cannot be written and the type flows to the API for free.
+ * The database schema: every table the product has, and the single source of truth for
+ * every data shape above it. Types flow from here through `@app/db` into the API's
+ * `AppType` and from there into the web app, so a shape written here is never written
+ * again anywhere (rules 1 to 4).
+ *
+ * It is empty, and that is the state SL10 left it in. The two tables that stood here, a
+ * run and the units it was made of, were invented in slice 1 to have something to
+ * deploy, and D20 removed them with the rest of the fake domain: if nothing on `main`
+ * calls it, it does not live on `main`. They are kept at the tag `foundation-skeleton`,
+ * for a slice that wants the resume-on-(run, sequence) pattern back.
+ *
+ * The first real table is D11's `message`, which arrives with the conversation.
  */
-export const runUnitStatus = pgEnum("run_unit_status", ["pending", "done", "failed"]);
-
-/** One run: a piece of work made of ordered units. */
-export const run = pgTable("run", {
-  id: uuid("id").primaryKey().defaultRandom(),
-  kind: text("kind").notNull(),
-  createdAt: timestamp("created_at", { withTimezone: true, mode: "date" }).notNull().defaultNow(),
-  finishedAt: timestamp("finished_at", { withTimezone: true, mode: "date" }),
-});
-
-/**
- * One unit of a run, identified by its run and its position in it. The pair is the
- * primary key, which is what makes writing a unit idempotent: the same run and the
- * same sequence is the same row, whoever writes it.
- */
-export const runUnit = pgTable(
-  "run_unit",
-  {
-    runId: uuid("run_id")
-      .notNull()
-      .references(() => run.id, { onDelete: "cascade" }),
-    seq: integer("seq").notNull(),
-    status: runUnitStatus("status").notNull().default("pending"),
-    result: text("result"),
-    doneAt: timestamp("done_at", { withTimezone: true, mode: "date" }),
-  },
-  (table) => [primaryKey({ columns: [table.runId, table.seq] })],
-);
+export {};

@@ -30,12 +30,18 @@ async function sha256Hex(bytes: Uint8Array<ArrayBuffer>): Promise<string> {
  * and the signature carries that claim through. A request with no body is sent
  * untouched, which is why no read carries the header.
  *
+ * Exported for its own test, and kept although `main` carries no write yet: SL10
+ * removed the run skeleton and D11's conversation brings the first write back. Origin
+ * access control is already in the distribution, so the first write that reaches it
+ * without this header is a 403 in the cloud and nothing at all locally — the kind of
+ * failure that has to be held by a test rather than discovered.
+ *
  * The RPC client sends JSON, so the body is a string and goes out as it came in. Any
  * other kind is read into bytes first and those exact bytes are what is sent, so the
  * hash can never describe something other than what was transmitted. `crypto.subtle`
  * is the platform's, so nothing is installed to compute a digest.
  */
-async function fetchWithPayloadHash(
+export async function fetchWithPayloadHash(
   input: RequestInfo | URL,
   init?: RequestInit,
 ): Promise<Response> {
@@ -57,7 +63,7 @@ async function fetchWithPayloadHash(
 }
 
 /**
- * The API, reachable as the routes read: `api.runs.latest.$get()`. The `/api` prefix
+ * The API, reachable as the routes read: `api.health.$get()`. The `/api` prefix
  * the server mounts under is part of the type, so it is part of the path here and is
  * not repeated in the address.
  */

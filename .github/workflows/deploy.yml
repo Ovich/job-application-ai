@@ -8,17 +8,17 @@
 # not a rollback. Both consequences are written in the spec and are the accepted cost of
 # never having a schema ahead of the code that reads it.
 #
-# The pipeline ends at the migration. It ships code and moves the schema, and it does
-# not judge whether the feature works: that is the operator check of D3, which a person
-# runs against the deployed address (`pnpm test:e2e:deployed`, then their own eyes).
-# Amended from D9 on 2026-09-09, which had ended the pipeline with that check. Two
-# reasons: a deploy step that exercises the product writes runs into the domain tables
-# on every merge, which on prod means writing product data forever; and D3 is a slot's
-# acceptance criterion, a thing proven once, not a permanent step of every release.
+# The pipeline ends by checking what it deployed. After the migration it runs
+# `pnpm test:e2e:deployed` against the development address, and a failure fails the job:
+# CloudFormation reporting success is not the same as the environment working, and a
+# deploy that breaks DNS, the certificate or the distribution used to be reported
+# successful until a person looked. D9 described this step in a comment and never made
+# it real; D20 does, on 2026-09-10.
 #
-# The consequence, accepted with the choice: CloudFormation reporting success is not
-# the same as the environment working, so a deploy that breaks DNS, the certificate or
-# the distribution is reported successful until a person looks.
+# What made it unrunnable before was what it drove: the run skeleton, so every merge
+# wrote runs into the domain tables, which on prod means writing product data as a side
+# effect of shipping. The health route reads and writes nothing, so the objection is
+# gone with the skeleton.
 #
 # WHAT THIS FILE DOES THAT A TEMPLATE CANNOT (D17, ID52). `infra/` is CloudFormation
 # YAML, so the two jobs the CDK L2 constructs did from inside a stack are steps here
@@ -224,3 +224,16 @@ jobs:
           echo "::add-mask::$DATABASE_URL"
           export DATABASE_URL
           pnpm --filter @app/db run db:migrate
+
+      # Playwright ships no browser with the package and the runner refuses to start
+      # without the one its projects could use, so it is installed here rather than for
+      # every job in `check.yml`, which runs no Playwright project at all.
+      - name: Install the browser the deployed check runs in
+        run: pnpm exec playwright install --with-deps chromium
+
+      # The last word on the deploy, and the only step that asks the environment rather
+      # than the API that built it: does the address answer, is a real database behind
+      # it, does a stream survive the distribution. It takes about a minute, most of it
+      # one stream watched past the distribution's origin read timeout.
+      - name: Check the deployed environment
+        run: pnpm test:e2e:deployed

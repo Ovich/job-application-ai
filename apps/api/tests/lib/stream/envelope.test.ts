@@ -41,7 +41,7 @@ const readEvent = (chunk: string) => {
 };
 
 const someText: Leaf = { kind: "text", text: "reading the offer" };
-const someProgress: Leaf = { kind: "progress", seq: 2, status: "done" };
+const someMoreText: Leaf = { kind: "text", text: "and the next line of it" };
 
 describe("the catalogue", () => {
   it("is versioned, so a frame written today still says which catalogue wrote it", () => {
@@ -49,22 +49,20 @@ describe("the catalogue", () => {
     expect(catalogueVersion).toBeGreaterThanOrEqual(1);
   });
 
-  it("knows the two leaves the foundation ships and nothing else", () => {
+  /**
+   * One leaf, since the `progress` leaf went with the run it reported on (SL10, D20).
+   * The discriminator is still what does the work: an unknown kind is not a leaf at
+   * all, whether the catalogue holds one shape or ten.
+   */
+  it("knows the leaf the foundation ships and nothing else", () => {
     expect(leafSchema.safeParse(someText).success).toBe(true);
-    expect(leafSchema.safeParse(someProgress).success).toBe(true);
     expect(leafSchema.safeParse({ kind: "sparkline", points: [1, 2] }).success).toBe(false);
   });
 
-  it("accepts every status a unit can reach and no other", () => {
-    for (const status of ["pending", "done", "failed"]) {
-      expect(leafSchema.safeParse({ kind: "progress", seq: 1, status }).success).toBe(true);
-    }
-    expect(leafSchema.safeParse({ kind: "progress", seq: 1, status: "nearly" }).success).toBe(
-      false,
-    );
+  it("refuses a known kind whose own shape is wrong", () => {
     // A known kind with a missing field is as wrong as an unknown kind.
-    expect(leafSchema.safeParse({ kind: "progress", seq: 1 }).success).toBe(false);
     expect(leafSchema.safeParse({ kind: "text" }).success).toBe(false);
+    expect(leafSchema.safeParse({ kind: "text", text: 42 }).success).toBe(false);
   });
 });
 
@@ -84,12 +82,12 @@ describe("framing", () => {
     const envelope = createEnvelope(write);
 
     const first = await envelope.send(someText);
-    const second = await envelope.send(someProgress);
+    const second = await envelope.send(someMoreText);
 
     expect([first.seq, second.seq]).toEqual([1, 2]);
-    // The two sequences are different counters and both are needed: the frame's is its
-    // position in the stream, the progress leaf's is the unit's position in the run.
-    expect(second.leaf).toEqual({ kind: "progress", seq: 2, status: "done" });
+    // The sequence is the frame's position in the stream and belongs to the envelope:
+    // a leaf never carries it and never chooses it.
+    expect(second.leaf).toEqual(someMoreText);
   });
 
   it("resumes after the last sequence a browser saw, so a reconnect asks for the rest", async () => {
@@ -105,7 +103,7 @@ describe("framing", () => {
     const { chunks, write } = sink();
     const envelope = createEnvelope(write);
 
-    const frame = await envelope.send(someProgress);
+    const frame = await envelope.send(someMoreText);
 
     const [chunk] = chunks;
     expect(chunk).toBeDefined();
@@ -123,7 +121,7 @@ describe("framing", () => {
     const envelope = createEnvelope(write);
 
     await expect(envelope.send({ kind: "sparkline", points: [1, 2] })).rejects.toThrow();
-    await expect(envelope.send({ kind: "progress", seq: 1, status: "nearly" })).rejects.toThrow();
+    await expect(envelope.send({ kind: "text", text: 42 })).rejects.toThrow();
 
     expect(chunks).toEqual([]);
     // The rejected leaves consumed nothing: the first leaf the catalogue accepts is 1.
