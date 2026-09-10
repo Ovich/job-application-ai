@@ -62,9 +62,9 @@ so the certificate is a stack of its own.
 ## The three constraints everything else follows from
 
 **Idle cost under CHF 10 a month** (`F15`, rule 17). This is what forbids a NAT gateway
-(~CHF 35/month), an RDS proxy, an API Gateway, and always-on database capacity. Twelve
-tests in `tests/invariants.test.ts` assert each of those absences, because each was one
-line of configuration away from being undone silently.
+(~CHF 35/month), an RDS proxy, an API Gateway, and always-on database capacity.
+`tests/invariants.test.ts` asserts each of those absences, because each was one line of
+configuration away from being undone silently.
 
 **Replies must stream.** The chat's answers arrive over server-sent events, which
 survives only if nothing between the function and the browser buffers the response.
@@ -261,7 +261,7 @@ why it is retained, and why `import-runbook.md` exists.
 | `ApiInvokeFromDistribution` | `AWS::Lambda::Permission` | Lets one distribution, and only that one, invoke the function |
 | `WebBucket`, `WebBucketPolicy` | `AWS::S3::Bucket`, `::BucketPolicy` | The Angular bundle. Readable only by the distribution |
 | `WebOriginAccessControl`, `ApiOriginAccessControl` | `AWS::CloudFront::OriginAccessControl` | Sign requests to each origin |
-| `Distribution` | `AWS::CloudFront::Distribution` | The front door |
+| `Distribution` | `AWS::CloudFront::Distribution` | The front door. Maps a bucket's 403 to `/index.html` for deep links, and **only** 403: a 404 from the API passes through as itself (`S9.3`) |
 | `AliasRecord` | `AWS::Route53::RecordSet` | `dev.job-application.app` at the distribution |
 
 ## What actually runs, and when
@@ -294,7 +294,7 @@ stateDiagram-v2
   Idle --> Page: GET /
   Page --> Idle: response sent
   Idle --> Waking: first GET or POST /api/* after a pause
-  Page --> Waking: the page's first query
+  Page --> Waking: a screen's first query (none today, the shell is empty)
   Waking --> Working: the Neon compute resumes
   Working --> Working: further requests, no wait
   Working --> Idle: no query for a while
@@ -334,7 +334,8 @@ stateDiagram-v2
 **The transition worth knowing is `Page --> Waking`, and that it is not automatic.**
 Loading the page costs a CloudFront request and an S3 read and nothing else; only a call
 to `/api/*` reaches the function, and only a query reaches the database. So a visitor who
-looks and leaves never wakes it.
+looks and leaves never wakes it. Today the page is an empty shell that calls nothing, so
+the only thing that reaches `/api/*` is the operator check below.
 
 **`Waking` is barely a wait any more.** Neon's compute resumes in roughly half a second,
 where the paused Aurora Serverless v2 cluster it replaced took seconds and the request
@@ -379,7 +380,19 @@ behaviour serving the web bundle has `Compress: true`, where it is pure gain.
 A **write** carries `x-amz-content-sha256`. Origin access control signs the request that
 reaches the function and the signature covers a hash of the body, which CloudFront does
 not compute — the sender states it. `apps/web/src/app/lib/api.ts` does this for every
-write, and anything calling the deployed API from outside the page must do the same.
+write, and anything calling the deployed API from outside the page must do the same;
+`e2e/support/api.ts` is the one other caller and does.
+
+A third property is not on the diagram because it shows in what does *not* happen. The
+distribution's `CustomErrorResponses` map a bucket's 403 — what a missing key answers
+behind origin access control, and so what every deep link answers — to `/index.html`
+with status 200, so the router can resolve the path in the browser. They are
+distribution-wide and cannot be scoped to one behaviour, so they used to map 404 as
+well, and `/api/runs/<unknown>/stream` came back as the page with status 200. Only 403
+is mapped now (`S9.3`): the API answers 404 for what it cannot find and never a bare 403,
+so its errors pass through as themselves. The residual is written beside the mapping in
+`App-dev.yaml`: an unsigned request refused by the function URL is a 403, and that one
+still reads as the page, which is why the header above is not optional.
 
 ## How code reaches the account
 
@@ -387,7 +400,7 @@ Phasing: the order a merge is applied in, and where it stops.
 
 ```mermaid
 flowchart TB
-  merge["merge to main"] --> check["check: biome, tsc, 71 + 14 tests, cfn-lint"]
+  merge["merge to main"] --> check["check: biome, tsc, 52 + 3 tests, cfn-lint"]
   check --> oidc["assume DeployRole by OIDC"]
   oidc --> shared["Deploy, Dns"]
   shared --> cert["Cert-dev, us-east-1"]
@@ -407,6 +420,18 @@ against the deployed address. The consequence, accepted: CloudFormation reportin
 is not the same as the environment working, so a deploy that breaks DNS, the certificate
 or the distribution is reported successful until somebody looks.
 
+**The operator check** is `pnpm test:e2e:deployed`: four specs in `e2e/` that drive the
+deployed API with Playwright's `request` fixture and read its stream raw, and never open
+a page. A run is created and read back (a deploy happened and a real database is behind
+it); its events arrive one at a time (nothing between the function and the reader
+buffers); a stream with nothing to say stays open past the origin read timeout (the
+heartbeat reaches the distribution); a cut stream resumes after the sequence the client
+names (a unit's result outlives the connection). What they drive is the **run
+skeleton** — `run` and `run_unit` in `packages/db`, the `/api/runs` routes and
+`lib/stream` in `apps/api` — which exists for this check alone and stays until board
+`D11`'s `message` table replaces it with the conversation. The web app carries nothing
+for it: it is an empty shell until the first real screen.
+
 **Migrations run after the application**, so new code must tolerate the old schema for
 the minute between them, and a failed migration leaves working code with the deploy
 already reported successful. Recovering is re-tagging, not a rollback.
@@ -416,8 +441,8 @@ stack in a state the next run has to clean up by hand.
 
 ## What is not here
 
-**No prod.** `Cert-prod`, `Data-prod` and `App-prod` are a second copy of the same three
-templates; `Deploy` and `Dns` are already shared. The pipeline deploys dev on a merge and
+**No prod.** `Cert-prod` and `App-prod` are a second copy of the same two templates;
+`Deploy` and `Dns` are already shared. The pipeline deploys dev on a merge and
 prod on a tag, and the prod job sits behind a GitHub environment with a required
 reviewer.
 

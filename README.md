@@ -5,9 +5,12 @@ then, per job offer, a tailored CV and cover letter through one conversation tha
 invents a claim.
 
 This repository is at its foundation: the smallest deployable system the features stand
-on. What runs today is one page showing a run and its units, read out of PostgreSQL,
-through Drizzle, through a Hono handler, into an Angular page, with no hand-written type
-anywhere along that chain.
+on, with nothing on it yet. The web app is an empty shell: a router outlet, the typed
+RPC client and the UI kit, with the root route free for the first real screen. The API
+keeps one thing, the **operator check**: a run and its units, written to PostgreSQL
+through Drizzle and streamed back by a Hono handler, which is how a person proves that
+a deploy, the database and the stream still work. It stays until board `D11`'s `message`
+table replaces it with the conversation. Along that chain there is no hand-written type.
 
 ## Before you start
 
@@ -29,24 +32,26 @@ pnpm dev
 
 That brings up PostgreSQL 18 in a container, waits for it to be healthy, applies the
 migrations, and serves the API on port 3000 and the web app on port 4200 together.
-Open `http://localhost:4200`.
+`http://localhost:4200` serves the shell, which shows nothing yet.
 
 The major is the deployed database's: the Neon project answers PostgreSQL 18.6 and
 cannot change major, so the container follows it. A clone that ran the 17 container
 before 2026-09-10 has a volume with a 17 cluster in it; `docker compose down -v` drops
 it, and the next `pnpm dev` starts a fresh 18 cluster. Nothing in it was worth keeping.
 
-An empty database shows the empty state, which is correct rather than broken. To put
-something on the page:
+The operator check is driven at the API. Create a run, read it back, watch it stream:
 
 ```sh
 curl -X POST http://localhost:3000/api/runs \
   -H "content-type: application/json" \
   -d '{"kind":"demo","units":3}'
+curl http://localhost:3000/api/runs/latest
+curl -N http://localhost:3000/api/runs/<id>/stream
 ```
 
-Every unit will read `pending`, and will stay there. Nothing processes units yet; that
-arrives with the resumable run later in the foundation.
+The stream does the units one at a time, writes each as it finishes and says so as a
+server-sent event; a second read with `?after=<seq>` resumes after the last frame the
+first one saw. `pnpm test:e2e` asks the same questions of the local stack.
 
 Stopping `pnpm dev` leaves the container up, so your data survives a restart. To stop
 the database too:
@@ -67,9 +72,10 @@ docker compose down
 ## How it reaches the internet
 
 Nobody deploys from a laptop. A merge to `main` runs `.github/workflows/deploy.yml`,
-which builds the bundle, deploys the stacks, migrates and then proves the result with a
-browser check against `https://dev.job-application.app`. A deploy that finishes without
-that check passing is not a deploy that worked.
+which builds the bundle, deploys the stacks and migrates, and ends there. Whether the
+result works is the operator check, run by a person against
+`https://dev.job-application.app` with `pnpm test:e2e:deployed`: four specs that drive
+the deployed API and read its stream raw, and never open a page.
 
 GitHub holds no AWS key. Actions presents a signed token naming the repository and the
 branch, and the deployment role trusts exactly `refs/heads/main`, so no other branch and
@@ -84,20 +90,22 @@ nothing rolls back, and recovering means shipping a fix.
 
 ```sh
 cd infra && cfn-lint     # the templates against CloudFormation's own specification
-pnpm test:e2e            # the browser specs against your local stack
-pnpm test:e2e:deployed   # the deploy check, against the development address
+pnpm test:e2e            # the end-to-end checks against your local stack, at the API
+pnpm test:e2e:deployed   # the operator check, against the development address
 ```
 
 `pnpm check` already runs the tests in `infra/tests`: the invariants of rule 17 — no NAT
-gateway, no API Gateway, no RDS proxy, no VPC at all, compression off on `/api/*`. Each
-was proven to bite by making the violation and watching the test go red. `cfn-lint` is a
-Python tool and is the one check `pnpm check` leaves
-to CI, so that a laptop with only Node on it can still run everything else.
+gateway, no API Gateway, no RDS proxy, no VPC at all, compression off on `/api/*` — and
+the one that keeps an API error an error: the distribution maps only a bucket's 403 to
+the page, never a 404, so `/api/runs/<unknown>/stream` answers 404 and JSON rather than
+`index.html` and 200. Each was proven to bite by making the violation and watching the
+test go red. `cfn-lint` is a Python tool and is the one check `pnpm check` leaves to CI,
+so that a laptop with only Node on it can still run everything else.
 
 ## The layout
 
 ```text
-apps/web      Angular 22, standalone, signals, zoneless
+apps/web      Angular 22, standalone, signals, zoneless; an empty shell today
 apps/api      Hono on Node today, on Lambda in the cloud
 packages/db   the Drizzle schema, the single source of truth for data shapes
 infra         CloudFormation YAML: Deploy and Dns once, Cert-dev and App-dev per environment
