@@ -1,9 +1,19 @@
-import { describe, expect, it } from "vitest";
+import { serializeSigned } from "hono/utils/cookie";
+import { describe, expect, it, vi } from "vitest";
 import { app } from "../src/app";
+import { auth } from "../src/lib/auth";
 
 /**
- * What the application answers when no route matches.
+ * What the application answers at its edges: an unknown path, and the paths it hands
+ * to the authentication library.
  *
+ * The database is a real PostgreSQL in this process, built from the project's own
+ * migrations (`tests/support/database.ts`), so the library's tables are the ones the
+ * deploy will create and nothing here describes them a second time.
+ */
+vi.mock("../src/lib/db", async () => ({ db: (await import("./support/database")).testDb }));
+
+/**
  * Hono's default is `text/plain`, which was invisible while every `/api` path belonged
  * to a handler that wrote its own JSON error. With the runs routes gone, an unknown
  * `/api` path reached that default and the deployed check caught it: a client that
@@ -16,5 +26,50 @@ describe("an unknown path", () => {
     expect(answer.status).toBe(404);
     expect(answer.headers.get("content-type")).toContain("application/json");
     expect(await answer.json()).toEqual({ error: "no such route" });
+  });
+});
+
+/**
+ * The library's own routes, reached through the one mount the API gives them (ID59):
+ * there is no `/api/me` and no sign-in route of ours, and "who am I" is the library's
+ * `get-session`. Two answers are what US4's isolation and SL5's cookie question will
+ * be written against: nothing without a cookie, the person with one.
+ */
+describe("the library's routes, mounted at /api/auth", () => {
+  it("answers get-session with nothing when no cookie is presented", async () => {
+    const answer = await app.request("/api/auth/get-session");
+
+    expect(answer.status).toBe(200);
+    expect(await answer.json()).toBeNull();
+  });
+
+  it("answers get-session with the person whose session the cookie carries", async () => {
+    // A person and a session the library made through its own adapter, so no row is
+    // hand-written to a shape the library might not read back. Nobody's data: the
+    // fixture is a name and an address at the reserved example domain.
+    const context = await auth.$context;
+    const user = await context.internalAdapter.createUser(
+      { email: "someone@example.com", name: "Someone", emailVerified: true },
+      // Where the person came from, as far as the library is concerned: a Google
+      // sign-in, which is the only door this product has.
+      { method: "oauth", oauth: { providerId: "google" } },
+    );
+    const session = await context.internalAdapter.createSession(user.id);
+
+    // The cookie a sign-in would have ended with: the library's own name for it, the
+    // session's token, signed with the library's secret. Hono's signed-cookie format
+    // is the one better-call, the library's router, inherited from it: `token.signature`,
+    // the signature base64 of an HMAC-SHA256, the whole percent-encoded.
+    const cookie = await serializeSigned(
+      context.authCookies.sessionToken.name,
+      session.token,
+      context.secret,
+    );
+
+    const answer = await app.request("/api/auth/get-session", { headers: { cookie } });
+
+    expect(answer.status).toBe(200);
+    const body = (await answer.json()) as { user: { id: string; email: string } };
+    expect(body.user).toMatchObject({ id: user.id, email: "someone@example.com" });
   });
 });
