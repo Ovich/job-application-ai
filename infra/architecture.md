@@ -215,15 +215,19 @@ The last two replace CDK's bootstrap (`cdk-hnb659fds-cfn-exec-role` and its asse
 bucket), which deleting CDK deleted.
 
 
-**The application register.** `Deploy` also declares an AppRegistry application called
-`job-application`, and `Deploy`, `Dns` and `App-dev` each associate themselves with it —
-a stack owns the statement that it belongs, so deleting the stack takes the statement
-with it. AWS then tags every resource of those stacks `awsApplication`, which is what
-fills the `Application` column in Resource Explorer. `Cert-dev` cannot join: AppRegistry
-is regional and that stack is in `us-east-1`. The point is separation rather than
-decoration — an account holds roughly thirty resources AWS creates by itself, from
-MemoryDB parameter groups to default KMS keys, and without this the console cannot tell
-them from the eleven that are ours.
+**No application register, and why it was tried.** Resource Explorer has an
+`Application` column, filled from an AWS Service Catalog AppRegistry application, and on
+2026-09-10 three stacks were changed to declare one. The deploy failed: *"AWS Service
+Catalog AppRegistry is in maintenance mode and is no longer available to new customers as
+of July 30, 2026"*, a 403 at create time. The resource type is still in CloudFormation's
+schema and still in the documentation, so `cfn-lint` passed and nothing local could have
+known; only a deploy could. `Deploy` rolled back cleanly and the change was reverted.
+
+What does the job instead is the tags above. `tag:Project=job-application` in Resource
+Explorer separates our eleven resources from the thirty AWS creates in every account by
+itself — MemoryDB parameter groups, default KMS keys, an Athena workgroup, a default
+event bus — which was the point. The `Application` column stays empty, and that is a
+cosmetic loss.
 
 ### `Dns` — the domain and the spend alarm
 
