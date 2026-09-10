@@ -1,17 +1,23 @@
 import { defineConfig } from "@playwright/test";
 
 /**
- * The browser checks. They sit outside the unit suite on purpose: the root Vitest
+ * The end-to-end checks. They sit outside the unit suite on purpose: the root Vitest
  * config excludes `e2e/`, so the two runners never collect each other's files, and
  * nothing here runs inside `pnpm check`, which must stay green with no server up.
  *
+ * No spec opens a page. The web app is an empty shell (S9.1), and what the four checks
+ * were ever measuring is the API: a run created and read back, events arriving one at
+ * a time, a silent stream staying open, a cut stream resuming. Each spec drives the API
+ * with Playwright's `request` fixture and reads a stream raw (`e2e/support/stream.ts`),
+ * which also sees the heartbeat a browser hides.
+ *
  * Two projects, because the specs answer questions at two different addresses. `local`
  * runs against the dev server, which forwards `/api` to the API on port 3000, so a
- * spec makes same-origin requests exactly as one distribution will serve page and
- * function together. `deployed` runs against the development environment, which is the
- * only place the questions about the distribution itself — did a push put this page on
- * the internet, is a real database behind it, does a stream survive the thing between
- * the function and the browser — can be asked at all.
+ * spec makes the same request a page served by that dev server would, through the one
+ * proxy that the first real screen will depend on. `deployed` runs against the
+ * development environment, which is the only place the questions about the distribution
+ * itself — did a push put this on the internet, is a real database behind it, does a
+ * stream survive the thing between the function and the reader — can be asked at all.
  *
  * Each project names the files it collects, so neither ever collects the other's work.
  * `stream` is named by both: arrival is worth measuring in the quick loop and it is
@@ -42,11 +48,11 @@ export default defineConfig({
       testMatch: /(foundation|stream|idle)\.spec\.ts$/,
       use: { baseURL: "https://dev.job-application.app" },
       // One worker, and the reason is the environment rather than the tests. Every spec
-      // here creates a run against ONE shared development database, and the page shows
-      // "the latest run" — so two specs running at once make each other's latest wrong.
-      // foundation.spec passes alone and fails beside stream.spec, which is a race the
+      // here creates a run against ONE shared development database, and foundation.spec
+      // reads back "the latest run" — so two specs running at once make each other's
+      // latest wrong. It passes alone and fails beside stream.spec, which is a race the
       // suite acquired when the join put three run-creating specs into this project.
-      // Locally each spec has the database to itself, so `local` stays parallel.
+      // Locally no spec reads the latest run, so `local` stays parallel.
       fullyParallel: false,
       workers: 1,
     },

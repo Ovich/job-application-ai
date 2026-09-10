@@ -2,17 +2,17 @@ import { expect, test } from "@playwright/test";
 import { startRun } from "./support/api";
 
 /**
- * Whether a push put this on the internet. The subject is the deployed development
- * address and nothing else: the page served from the cloud, the function behind the
- * same name, and a real database under both. Every one of those exists locally
- * already, so nothing here would be worth asserting against `localhost` — this spec
- * is the one that fails until a pipeline has run.
+ * Whether a push put this on the internet (US1, US3). The subject is the deployed
+ * development address and nothing else: the function behind the name, and a real
+ * database under it. Every one of those exists locally already, so nothing here would
+ * be worth asserting against `localhost`; this spec is the one that fails until a
+ * pipeline has run.
  *
  * It writes before it reads, on purpose. A run is created through the deployed API and
- * the page is then asked to show that same run, so a page that merely loaded, an empty
- * state, or a run whose units never made it out of the database all fail here. The
- * count and the sequence numbers are checked because "some units are on the screen" is
- * exactly the assertion that would pass against a half-working read.
+ * the API is then asked for the latest run, so a function that merely answers, an empty
+ * database, or a run whose units never made it into the database all fail here. The
+ * count and the sequence numbers are checked because "some units came back" is exactly
+ * the assertion that would pass against a half-working read.
  *
  * The address is the project's, in `playwright.config.ts`, under the `deployed`
  * project; run it with `pnpm test:e2e:deployed`.
@@ -29,36 +29,30 @@ import { startRun } from "./support/api";
 const units = 3;
 
 /**
- * What this run is called. It is the one thing the page prints back that identifies
- * the run this spec created, so it names the check rather than the demonstration.
+ * What this run is called. It is the one thing the API prints back that identifies the
+ * run this spec created, so it names the check rather than the demonstration.
  */
 const kind = "deploy-check";
 
-test("the deployed page shows a run and its units", async ({ page, request }) => {
-  await startRun(request, kind, units);
+test("the deployed API creates a run and reads it back as the latest", async ({ request }) => {
+  const id = await startRun(request, kind, units);
 
-  await page.goto("/");
+  // The run this spec just created is the latest one, and its id is what says the read
+  // found this run and not one another spec left behind.
+  const latest = await request.get("/api/runs/latest");
+  expect(latest.status()).toBe(200);
+  const run = (await latest.json()) as {
+    id: string;
+    kind: string;
+    units: { seq: number; status: string }[];
+  };
+  expect(run.id).toBe(id);
+  expect(run.kind).toBe(kind);
 
-  // The run this spec just created is the latest one, and the summary is where the
-  // page says which run it is reading. Waiting on it is also what waits for the read
-  // to have happened at all.
-  await expect(page.locator("run-summary")).toContainText(kind);
-
-  // The empty state and the units are mutually exclusive answers, and a page that
-  // rendered the wrong one still renders something, so both are stated.
-  await expect(page.locator("no-run-yet")).toHaveCount(0);
-
-  const rows = page.locator("unit-row");
-  await expect(rows).toHaveCount(units);
-
-  // Numbered from one, in order: the units belong to a run, and a run in the wrong
-  // order is not the run that was created.
-  const sequences = await Promise.all(
-    Array.from({ length: units }, (_unit, index) =>
-      rows.nth(index).locator("span").first().innerText(),
-    ),
+  // Numbered from one, in order, and untouched: the units belong to a run nobody has
+  // streamed yet, and a run in the wrong order is not the run that was created.
+  expect(run.units.map(({ seq }) => seq)).toEqual(
+    Array.from({ length: units }, (_unit, index) => index + 1),
   );
-  expect(sequences.map((text) => text.trim())).toEqual(
-    Array.from({ length: units }, (_unit, index) => String(index + 1)),
-  );
+  expect(run.units.map(({ status }) => status)).toEqual(Array(units).fill("pending"));
 });
