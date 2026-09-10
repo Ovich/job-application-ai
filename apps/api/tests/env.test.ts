@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 /**
- * The configuration, read once at boot (rule 12).
+ * The configuration, read once at boot.
  *
  * Both runtimes are asked for the same five connection fields, because `lib/db` builds
  * one options object out of them and no branch below it (D16). What differs is where

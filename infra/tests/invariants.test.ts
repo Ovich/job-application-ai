@@ -3,7 +3,7 @@
  *
  * Each of these was one line of CDK — `natGateways: 0`, `compress: false` — and each is
  * a decision recorded in the foundation that a later edit could undo without anything
- * noticing. They are the reason rule 17 exists
+ * noticing. They are the reason the cost posture exists
  * and the reason F15 holds, and until this file they were defended by nobody: `infra/`
  * had no tests, and CI never so much as synthesised a template.
  *
@@ -52,7 +52,7 @@ describe("the templates are all here", () => {
   });
 });
 
-describe("the cost posture (rule 17, F15)", () => {
+describe("the cost posture (F15)", () => {
   it("has no NAT gateway anywhere, which would be about CHF 35 a month before any traffic", () => {
     for (const [name, template] of templates) {
       expect([name, typesIn(template).filter((type) => type === "AWS::EC2::NatGateway")]).toEqual([
@@ -172,7 +172,7 @@ describe("the database that is no longer AWS's (D19, S7.5)", () => {
     expect(imported).toEqual([]);
   });
 
-  it("hands the function its connection string as a Secrets Manager reference, never as a literal (rule 12)", () => {
+  it("hands the function its connection string as a Secrets Manager reference, never as a literal", () => {
     expect(at("App-dev", "Api", "Properties.Environment.Variables.DATABASE_URL")).toMatch(
       /^\{\{resolve:secretsmanager:jobapp\/dev\/database-url:SecretString\}\}$/,
     );

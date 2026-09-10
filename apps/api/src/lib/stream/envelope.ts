@@ -48,7 +48,7 @@ export type Leaf = z.infer<typeof leafSchema>;
 
 /**
  * A leaf as it travels: what was said, where it sits in the stream, and which
- * catalogue said it. A wire shape rather than a row, so rule 5 allows it to be written
+ * catalogue said it. A wire shape rather than a row, so it may be written
  * here; nothing in the database knows about frames.
  */
 export type Frame = {

@@ -67,7 +67,7 @@ jobs:
       APP_STACK: App-dev
       CERT_STACK: Cert-dev
       # Where the development database's connection string lives. Neon issues it, a
-      # person put it here, and nothing in the repository holds it (rule 12, D19).
+      # person put it here, and nothing in the repository holds it (D19).
       DATABASE_SECRET: jobapp/dev/database-url
       # Stamped on every stack, and from there onto every resource that supports a tag.
       # A resource whose identifier AWS assigned (a distribution id, a hosted zone id)

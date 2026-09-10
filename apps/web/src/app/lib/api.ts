@@ -12,7 +12,7 @@ import { hc } from "hono/client";
  *
  * Types travel from the Drizzle schema through the API's `AppType` and arrive here
  * inferred. Nothing about a response is declared in this application: a caller reads a
- * shape with `InferResponseType<typeof api.…$get, 200>` (rule 4).
+ * shape with `InferResponseType<typeof api.…$get, 200>`.
  */
 
 const textEncoder = new TextEncoder();

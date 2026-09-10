@@ -13,7 +13,7 @@ import {
  * keeps the connection from falling silent. Everything here is exercised through a
  * write sink the test owns, so no server, no socket and no database is involved
  * (ID13). Fixtures are obviously synthetic: no stream ever carries a person's data,
- * and neither does a test (rule 18).
+ * and neither does a test.
  */
 
 /** Collects what the envelope wrote, in order, so a test can read the wire. */

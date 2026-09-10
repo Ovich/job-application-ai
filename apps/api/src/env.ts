@@ -4,7 +4,7 @@ import { z } from "zod";
  * The API's configuration. It is read from the process environment once, at module
  * load, and validated by one schema; nothing else in the API reads `process.env`, and
  * a value that is missing or malformed throws here, so a cold start fails rather than
- * a request (rule 12).
+ * a request.
  *
  * The shape is a discriminated union on `APP_RUNTIME` rather than one flat object of
  * optional values, so a runtime cannot be half-configured: the local branch's
@@ -37,8 +37,8 @@ const localRuntime = z.object({
 });
 
 /**
- * The deployed function. Every value is required and none has a default, which is what
- * rule 12 asks for: a function whose configuration is half-set fails its cold start
+ * The deployed function. Every value is required and none has a default, so that
+ * a function whose configuration is half-set fails its cold start
  * with the field named, rather than answering requests against a database on its own
  * loopback interface (ID23).
  *
@@ -47,7 +47,7 @@ const localRuntime = z.object({
  * one, though. Neon issues a single pooled connection string, Secrets Manager holds it,
  * the template hands it over as `DATABASE_URL`, and `partsOf` below is what turns it
  * back into these five (D19). The password is a password now, where the Aurora cluster
- * had an identity token minted per connection; rule 12 already routes secrets this way.
+ * had an identity token minted per connection; secrets reach the function through Secrets Manager.
  */
 const cloudRuntime = z.object({
   APP_RUNTIME: z.literal("cloud"),
@@ -63,7 +63,7 @@ const cloudRuntime = z.object({
  * The connection string, split into the fields above.
  *
  * Split here rather than in `lib/db`, because this is the module that reads the
- * environment and types what it read (rule 12); what the database module receives is
+ * environment and types what it read; what the database module receives is
  * the same five values whichever runtime produced them. A missing port is PostgreSQL's
  * 5432, and the user and the password are percent-decoded, because a URL is where they
  * were escaped and a driver must not be handed them still escaped.

@@ -3,7 +3,7 @@ import { defineConfig } from "vitest/config";
 export default defineConfig({
   test: {
     /*
-     * Tests live in `tests/`, mirroring the source tree they cover (CLAUDE.md rule 15).
+     * Tests live in `tests/`, mirroring the source tree they cover.
      * The pattern names those directories rather than sweeping the tree, so a test file
      * left behind under a `src/` is not quietly collected and the layout is enforced by
      * the tool that runs it. `infra` is named alongside the workspace members although

@@ -61,7 +61,7 @@ so the certificate is a stack of its own.
 
 ## The three constraints everything else follows from
 
-**Idle cost under CHF 10 a month** (`F15`, rule 17). This is what forbids a NAT gateway
+**Idle cost under CHF 10 a month** (`F15`). This is what forbids a NAT gateway
 (~CHF 35/month), an RDS proxy, an API Gateway, and always-on database capacity.
 `tests/invariants.test.ts` asserts each of those absences, because each was one line of
 configuration away from being undone silently.
@@ -190,7 +190,7 @@ flowchart TB
 Neon project in `aws-eu-central-1`, so there is no VPC anywhere in the architecture and
 no NAT gateway to avoid. What defends the hop is TLS and the connection string itself,
 which names one project's pooler, is held in Secrets Manager and is never in this
-repository (`D19`, rule 12). What is given up is stated rather than discovered: the data
+repository (`D19`). What is given up is stated rather than discovered: the data
 sits with a third party, and the credential is a password where the Aurora cluster had
 an identity token minted per connection.
 
