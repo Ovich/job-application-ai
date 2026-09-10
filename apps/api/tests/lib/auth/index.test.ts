@@ -17,7 +17,9 @@ import { describe, expect, it, vi } from "vitest";
  * library's `verification` table before it answers, so a schema that does not carry
  * the library's tables fails here rather than at the first press of the button.
  */
-vi.mock("../../../src/lib/db", async () => ({ db: (await import("../../support/database")).testDb }));
+vi.mock("../../../src/lib/db", async () => ({
+  db: (await import("../../support/database")).testDb,
+}));
 
 const { env } = await import("../../../src/env");
 const { auth } = await import("../../../src/lib/auth");
