@@ -1,0 +1,17 @@
+{
+  // Biome is the repository's formatter and linter (biome.json). The editor follows it,
+  // so what you see on save is what `pnpm check` will accept, and a Prettier or built-in
+  // formatter never reflows a file the repository considers clean.
+  "editor.defaultFormatter": "biomejs.biome",
+  "editor.formatOnSave": true,
+  "editor.codeActionsOnSave": {
+    "source.organizeImports.biome": "explicit"
+  },
+  "[typescript]": { "editor.defaultFormatter": "biomejs.biome" },
+  "[javascript]": { "editor.defaultFormatter": "biomejs.biome" },
+  "[json]": { "editor.defaultFormatter": "biomejs.biome" },
+  "[jsonc]": { "editor.defaultFormatter": "biomejs.biome" },
+  "[css]": { "editor.defaultFormatter": "biomejs.biome" },
+  "prettier.enable": false,
+  "files.eol": "\n"
+}

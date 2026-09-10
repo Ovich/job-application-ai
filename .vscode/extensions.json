@@ -1,0 +1,4 @@
+{
+  "recommendations": ["biomejs.biome", "angular.ng-template"],
+  "unwantedRecommendations": ["esbenp.prettier-vscode"]
+}
