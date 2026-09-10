@@ -12,6 +12,7 @@ import { resetDatabase, testDb } from "../support/database";
 vi.mock("../../src/lib/db", async () => ({ db: (await import("../support/database")).testDb }));
 
 const { app } = await import("../../src/app");
+const { idleProbeKind, idleProbeUnitMs } = await import("../../src/handlers/runs");
 
 const olderRunAt = new Date("2026-09-01T10:00:00.000Z");
 const latestRunAt = new Date("2026-09-08T10:00:00.000Z");
@@ -159,5 +160,77 @@ describe("POST /api/runs", () => {
 
     expect(await testDb.select().from(run)).toHaveLength(0);
     expect(await testDb.select().from(runUnit)).toHaveLength(0);
+  });
+});
+
+describe("GET /api/runs/:id/stream", () => {
+  /**
+   * A run of one unit, of whatever kind, ready to be streamed.
+   */
+  const seedOneUnitRun = async (kind: string): Promise<string> => {
+    const [created] = await testDb.insert(run).values({ kind }).returning();
+    if (!created) {
+      throw new Error("seeding a run returned no row");
+    }
+    await testDb.insert(runUnit).values({ runId: created.id, seq: 1 });
+    return created.id;
+  };
+
+  /**
+   * What the stream said in its first `ms`, then let go of it. Cancelling the reader is
+   * what an abandoned browser does, and the handler stops the run on it, so a test never
+   * leaves a run pacing itself in the background.
+   */
+  const heardWithin = async (id: string, ms: number): Promise<string> => {
+    const response = await app.request(`/api/runs/${id}/stream`);
+    expect(response.status).toBe(200);
+    const body = response.body;
+    if (!body) {
+      throw new Error("the stream had no body");
+    }
+
+    const reader = body.getReader();
+    const decoder = new TextDecoder();
+    let said = "";
+    const listening = (async () => {
+      for (;;) {
+        const { done, value } = await reader.read();
+        if (done) {
+          return;
+        }
+        said += decoder.decode(value, { stream: true });
+      }
+    })().catch(() => undefined);
+
+    await Promise.race([listening, new Promise((resolve) => setTimeout(resolve, ms))]);
+    await reader.cancel();
+    await listening;
+    return said;
+  };
+
+  /** Long enough that an ordinary run has spoken several times over. */
+  const listenMs = 700;
+
+  it("has said something about the run well inside that time", async () => {
+    const id = await seedOneUnitRun("demo");
+
+    expect(await heardWithin(id, listenMs)).toContain('"kind":"progress"');
+  });
+
+  /**
+   * The probe the deployed idle spec creates. It exists so that a stream can be watched
+   * while it has nothing to say: the pace of such a run is longer than any timeout
+   * between the browser and the function, so what holds the connection open for as long
+   * as the spec watches is the heartbeat and nothing else. If this run spoke, the spec
+   * would be measuring a stream that was busy, which proves nothing about a silent one.
+   */
+  it("says nothing at all for an idle probe, so only the heartbeat holds the connection", async () => {
+    const id = await seedOneUnitRun(idleProbeKind);
+
+    expect(await heardWithin(id, listenMs)).toBe("");
+  });
+
+  it("paces the idle probe past the timeout a distribution waits on a silent origin", () => {
+    expect(idleProbeUnitMs).toBeGreaterThan(60_000);
   });
 });

@@ -96,6 +96,61 @@ const streamParams = z.object({ id: z.uuid() });
 const placeholderUnitMs = 150;
 
 /**
+ * The kind of run that says nothing. A stream carrying events proves that events get
+ * through; it proves nothing about a stream that has fallen silent, which is the case a
+ * distribution kills on its origin read timeout and the case the heartbeat exists for.
+ * So one kind of run is paced slower than any timeout between the browser and the
+ * function, and `e2e/idle.spec.ts` watches it say nothing while the connection stays up.
+ *
+ * A kind rather than a query parameter or a header: what a run is doing is a property
+ * of the run, written down with it, and a caller that names this kind is asking for a
+ * probe rather than bending the behaviour of an ordinary run.
+ */
+export const idleProbeKind = "stream-idle";
+
+/**
+ * How long the probe takes over one unit. Two minutes leaves the distribution's thirty
+ * second origin read timeout far behind, with room for a spec that watches for the
+ * better part of a minute, and stays well inside the function's own five.
+ */
+export const idleProbeUnitMs = 120_000;
+
+/** How long a run of this kind spends on one unit before it says anything. */
+const unitPaceMs = (kind: string): number =>
+  kind === idleProbeKind ? idleProbeUnitMs : placeholderUnitMs;
+
+/**
+ * How often a pause looks up to see whether anyone is still listening. A pause is the
+ * only place a run spends time, so waiting one out in a single sleep would leave an
+ * abandoned probe running for two minutes after the browser had gone, and would leave a
+ * test that let go of a stream holding a timer it cannot clear.
+ */
+const abortCheckMs = 250;
+
+/** What a pause needs of the response it is pausing inside: the wait, and the two ways
+ * a stream can already be over. Narrower than the streaming API on purpose, so this
+ * helper says exactly what it touches. */
+type Pausable = {
+  sleep: (ms: number) => Promise<unknown>;
+  readonly aborted: boolean;
+  readonly closed: boolean;
+};
+
+/**
+ * Waits, and says whether it is still worth going on. `false` means the browser left
+ * while the pause was running.
+ */
+const pause = async (response: Pausable, ms: number): Promise<boolean> => {
+  for (let waited = 0; waited < ms; waited += abortCheckMs) {
+    if (response.aborted || response.closed) {
+      return false;
+    }
+    await response.sleep(Math.min(abortCheckMs, ms - waited));
+  }
+  return !(response.aborted || response.closed);
+};
+
+/**
  * The run's units as they progress, streamed as server-sent events. The envelope owns
  * the wire format, the numbering and the keep-alive: this handler chooses what is said
  * and when, and writes nothing to the response itself (ID11, ID31).
@@ -145,11 +200,7 @@ export const streamRun = factory.createHandlers(zValidator("param", streamParams
 
     try {
       for (const unit of units) {
-        if (response.aborted || response.closed) {
-          break;
-        }
-        await response.sleep(placeholderUnitMs);
-        if (response.aborted || response.closed) {
+        if (!(await pause(response, unitPaceMs(found.kind)))) {
           break;
         }
         await envelope.send({ kind: "text", text: `unit ${unit.seq} of ${units.length}\n` });
