@@ -397,6 +397,14 @@ so its errors pass through as themselves. The residual is written beside the map
 `App-dev.yaml`: an unsigned request refused by the function URL is a 403, and that one
 still reads as the page, which is why the header above is not optional.
 
+The API holds up its own half of that bargain in `app.ts`, which answers an unmatched
+path with `{ "error": "no such route" }` as JSON. Hono's own default is `text/plain`, and
+it was invisible for as long as every `/api` path belonged to a handler writing its own
+JSON error; removing the run routes exposed it, and the pipeline's deployed check found
+it within a minute of becoming a real step, on the very merge that added it. A client that
+parses every answer the same way should not meet a syntax error at the one moment it is
+already lost.
+
 ## How code reaches the account
 
 Phasing: the order a merge is applied in, and where it stops.
