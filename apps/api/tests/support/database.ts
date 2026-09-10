@@ -1,7 +1,6 @@
 import { fileURLToPath } from "node:url";
 import * as schema from "@app/db/schema";
 import { PGlite } from "@electric-sql/pglite";
-import { sql } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/pglite";
 import { migrate } from "drizzle-orm/pglite/migrator";
 
@@ -32,16 +31,13 @@ const migrationsFolder = fileURLToPath(new URL("../../../../packages/db/drizzle"
  * The database every test in this package queries through, booted and migrated once
  * per test file. The boot costs about a second; a query on it costs single-digit
  * milliseconds.
+ *
+ * There are no migrations to apply yet and therefore no tables: SL10 removed the run
+ * skeleton and the schema is empty until D11's first table. The migrator still runs, so
+ * the day a migration exists it is this database the tests meet it in, and the health
+ * route's `select version()` is answered by the engine either way. Nothing to empty
+ * between tests, so nothing here empties it.
  */
 export const testDb = drizzle(new PGlite(), { schema });
 
 await migrate(testDb, { migrationsFolder });
-
-/**
- * Empties every table between tests. `run_unit` follows its run through
- * `ON DELETE CASCADE`, so truncating the parent is enough, and `RESTART IDENTITY`
- * keeps one test's rows from numbering the next one's.
- */
-export const resetDatabase = async (): Promise<void> => {
-  await testDb.execute(sql`truncate table ${schema.run} restart identity cascade`);
-};

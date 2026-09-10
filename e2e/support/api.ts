@@ -1,36 +1,16 @@
-import { createHash } from "node:crypto";
-import type { APIRequestContext } from "@playwright/test";
-import { expect } from "@playwright/test";
-
 /**
- * What every browser check needs before it can observe anything: a run to observe.
+ * Where the API is, at whichever address the Playwright project names.
  *
- * It lives here because the same call has to satisfy two different front doors. Against
- * the dev server the header below is surplus and harmless; against the development
- * address it is the difference between a run and a 403, and a spec that got that wrong
- * would fail for a reason that has nothing to do with what it measures.
- *
- * Origin access control signs the request that reaches the function, and the signature
- * covers a SHA-256 of the body, which CloudFront does not compute: the sender states it
- * in `x-amz-content-sha256`. The browser client does this for every write
- * (`apps/web/src/app/lib/api.ts`), and a request made from the test process rather than
- * from the page has to do the same.
+ * Both projects run the same specs against different front doors — the dev server's
+ * proxy and the deployed distribution — so no spec writes a host, and the one place
+ * that turns a path into an address is here. Playwright's `request` fixture resolves a
+ * relative path against the project's `baseURL` by itself; a raw read of a stream
+ * (`e2e/support/stream.ts`) uses the platform's `fetch`, which does not, and that is
+ * what this exists for.
  */
-export const startRun = async (
-  request: APIRequestContext,
-  kind: string,
-  units: number,
-): Promise<string> => {
-  const body = JSON.stringify({ kind, units });
-  const created = await request.post("/api/runs", {
-    data: body,
-    headers: {
-      "content-type": "application/json",
-      "x-amz-content-sha256": createHash("sha256").update(body).digest("hex"),
-    },
-  });
-  expect(created.status()).toBe(201);
-  const { id } = (await created.json()) as { id: string };
-  expect(id).toBeTruthy();
-  return id;
+export const apiUrl = (baseURL: string | undefined, path: string): string => {
+  if (baseURL === undefined) {
+    throw new Error("the Playwright project names no baseURL");
+  }
+  return new URL(path, baseURL).toString();
 };

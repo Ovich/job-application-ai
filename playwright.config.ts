@@ -5,11 +5,11 @@ import { defineConfig } from "@playwright/test";
  * config excludes `e2e/`, so the two runners never collect each other's files, and
  * nothing here runs inside `pnpm check`, which must stay green with no server up.
  *
- * No spec opens a page. The web app is an empty shell (S9.1), and what the four checks
- * were ever measuring is the API: a run created and read back, events arriving one at
- * a time, a silent stream staying open, a cut stream resuming. Each spec drives the API
- * with Playwright's `request` fixture and reads a stream raw (`e2e/support/stream.ts`),
- * which also sees the heartbeat a browser hides.
+ * No spec opens a page. The web app is an empty shell (S9.1), and what the two checks
+ * measure is the API: the health route answering after a real `select version()`, and
+ * its stream beating one frame at a time through whatever stands in between. Each spec
+ * drives the API with Playwright's `request` fixture and reads a stream raw
+ * (`e2e/support/stream.ts`), which also sees the heartbeat a browser hides.
  *
  * Two projects, because the specs answer questions at two different addresses. `local`
  * runs against the dev server, which forwards `/api` to the API on port 3000, so a
@@ -19,13 +19,12 @@ import { defineConfig } from "@playwright/test";
  * itself — did a push put this on the internet, is a real database behind it, does a
  * stream survive the thing between the function and the reader — can be asked at all.
  *
- * Each project names the files it collects, so neither ever collects the other's work.
- * `stream` is named by both: arrival is worth measuring in the quick loop and it is
- * what the distribution can break. `foundation` and `idle` are the deployed project's
- * alone, because a laptop has nothing to say about either. `resume` is the local
- * project's alone: what it asks — is a unit's result there after the connection went,
- * does the run carry on from it — is answered by the function and the database, and
- * neither of those is what the distribution changes.
+ * Each project names the files it collects. `health-stream` is named by both: arrival
+ * is worth measuring in the quick loop and it is what the distribution can break, and
+ * the one test in it that only the distribution can answer skips itself elsewhere.
+ * `health` is the deployed project's alone: a merge reaching the cloud, a database
+ * behind the function and a deep link coming back as the page are all questions a
+ * laptop has nothing to say about.
  *
  * Both addresses are written here rather than read from the environment because
  * nothing outside the API's configuration module and the schema package's generator
@@ -40,19 +39,19 @@ export default defineConfig({
   projects: [
     {
       name: "local",
-      testMatch: /(stream|resume)\.spec\.ts$/,
+      testMatch: /health-stream\.spec\.ts$/,
       use: { baseURL: "http://localhost:4200" },
     },
     {
       name: "deployed",
-      testMatch: /(foundation|stream|idle)\.spec\.ts$/,
+      testMatch: /health(-stream)?\.spec\.ts$/,
       use: { baseURL: "https://dev.job-application.app" },
-      // One worker, and the reason is the environment rather than the tests. Every spec
-      // here creates a run against ONE shared development database, and foundation.spec
-      // reads back "the latest run" — so two specs running at once make each other's
-      // latest wrong. It passes alone and fails beside stream.spec, which is a race the
-      // suite acquired when the join put three run-creating specs into this project.
-      // Locally no spec reads the latest run, so `local` stays parallel.
+      // One worker, and the reason is the environment rather than the tests. Nothing
+      // here writes any more — the health route only reads — but the specs share one
+      // development environment and one measurement is a measurement of time: a
+      // stream watched for forty seconds beside three others is measuring the runner
+      // as much as the distribution. Locally there is one spec, so `local` stays
+      // parallel.
       fullyParallel: false,
       workers: 1,
     },

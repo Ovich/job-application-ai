@@ -131,8 +131,9 @@ describe("an API error reaches the browser as an error (S9.3)", () => {
     // CustomErrorResponses are distribution-wide, so the SPA fallback cannot be scoped
     // to the web behaviour. What keeps the two apart is which codes are mapped: a bucket
     // behind origin access control answers 403, never 404, for a key it does not hold,
-    // and the API answers 404, never 403, for a run it does not know. Mapping 404 as
-    // well turned `GET /api/runs/<unknown>/stream` into the page with status 200.
+    // and the API answers 404, never 403, for a route it does not have. Mapping 404 as
+    // well turned `GET /api/<unknown>` into the page with status 200, which is what
+    // `e2e/health.spec.ts` now asks of the deployed distribution on every merge.
     const mapped = [...leaves(resource("App-dev", "Distribution") as unknown as Json)].filter(
       ([path]) => /CustomErrorResponses\[\d+\]\.ErrorCode$/.test(path),
     );

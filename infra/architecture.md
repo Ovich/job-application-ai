@@ -335,7 +335,7 @@ stateDiagram-v2
 Loading the page costs a CloudFront request and an S3 read and nothing else; only a call
 to `/api/*` reaches the function, and only a query reaches the database. So a visitor who
 looks and leaves never wakes it. Today the page is an empty shell that calls nothing, so
-the only thing that reaches `/api/*` is the operator check below.
+the only thing that reaches `/api/*` is the health check below.
 
 **`Waking` is barely a wait any more.** Neon's compute resumes in roughly half a second,
 where the paused Aurora Serverless v2 cluster it replaced took seconds and the request
@@ -359,7 +359,7 @@ sequenceDiagram
   participant U as ApiFunctionUrl
   participant F as Api (Lambda)
   participant C as Neon (aws-eu-central-1)
-  B->>D: GET dev.job-application.app/api/runs/latest
+  B->>D: GET dev.job-application.app/api/health
   Note over D: /api/* behaviour<br/>Compress FALSE, caching disabled
   D->>U: signed with SigV4 (ApiOriginAccessControl)
   Note over U: AuthType AWS_IAM<br/>rejects anything unsigned
@@ -380,16 +380,19 @@ behaviour serving the web bundle has `Compress: true`, where it is pure gain.
 A **write** carries `x-amz-content-sha256`. Origin access control signs the request that
 reaches the function and the signature covers a hash of the body, which CloudFront does
 not compute — the sender states it. `apps/web/src/app/lib/api.ts` does this for every
-write, and anything calling the deployed API from outside the page must do the same;
-`e2e/support/api.ts` is the one other caller and does.
+write, and anything calling the deployed API from outside the page must do the same.
+Nothing writes today — the health route only reads — so the header is exercised by
+`apps/web`'s own test rather than by a route, and the first write to forget it is a 403
+in the cloud and nothing at all locally.
 
 A third property is not on the diagram because it shows in what does *not* happen. The
 distribution's `CustomErrorResponses` map a bucket's 403 — what a missing key answers
 behind origin access control, and so what every deep link answers — to `/index.html`
 with status 200, so the router can resolve the path in the browser. They are
 distribution-wide and cannot be scoped to one behaviour, so they used to map 404 as
-well, and `/api/runs/<unknown>/stream` came back as the page with status 200. Only 403
-is mapped now (`S9.3`): the API answers 404 for what it cannot find and never a bare 403,
+well, and an unknown API path came back as the page with status 200. Only 403
+is mapped now (`S9.3`), and `e2e/health.spec.ts` asks the deployed distribution about
+both halves of it on every merge: the API answers 404 for what it cannot find and never a bare 403,
 so its errors pass through as themselves. The residual is written beside the mapping in
 `App-dev.yaml`: an unsigned request refused by the function URL is a 403, and that one
 still reads as the page, which is why the header above is not optional.
@@ -400,7 +403,7 @@ Phasing: the order a merge is applied in, and where it stops.
 
 ```mermaid
 flowchart TB
-  merge["merge to main"] --> check["check: biome, tsc, 52 + 3 tests, cfn-lint"]
+  merge["merge to main"] --> check["check: biome, tsc, 42 + 3 tests, cfn-lint"]
   check --> oidc["assume DeployRole by OIDC"]
   oidc --> shared["Deploy, Dns"]
   shared --> cert["Cert-dev, us-east-1"]
@@ -408,29 +411,35 @@ flowchart TB
   bundle --> app["App-dev"]
   app --> sync["s3 sync the web bundle, invalidate /index.html"]
   sync --> migrate["drizzle-kit migrate, on the connection<br/>string read from Secrets Manager"]
-  migrate --> done["the pipeline ends here"]
+  migrate --> checked["pnpm test:e2e:deployed<br/>against dev.job-application.app"]
+  checked --> done["the pipeline ends here"]
 ```
 
 Two steps exist because the L2 constructs that did them are gone: `esbuild` replaced
 `NodejsFunction`'s bundling, and `s3 sync` replaced `BucketDeployment`.
 
-**The pipeline ships and does not judge** (board `D9` as amended, `ID48`). It ends at the
-migration. Whether the feature works is the operator check of `D3`, which a person runs
-against the deployed address. The consequence, accepted: CloudFormation reporting success
-is not the same as the environment working, so a deploy that breaks DNS, the certificate
-or the distribution is reported successful until somebody looks.
+**The pipeline checks what it deployed** (board `D20`, reversing the amendment `D9`
+carried as a comment it never made real). After the migration it runs
+`pnpm test:e2e:deployed` against the development address, and a failing check fails the
+job. CloudFormation reporting success is not the same as the environment working: a
+deploy that breaks DNS, the certificate or the distribution used to be reported
+successful until somebody looked.
 
-**The operator check** is `pnpm test:e2e:deployed`: four specs in `e2e/` that drive the
-deployed API with Playwright's `request` fixture and read its stream raw, and never open
-a page. A run is created and read back (a deploy happened and a real database is behind
-it); its events arrive one at a time (nothing between the function and the reader
-buffers); a stream with nothing to say stays open past the origin read timeout (the
-heartbeat reaches the distribution); a cut stream resumes after the sequence the client
-names (a unit's result outlives the connection). What they drive is the **run
-skeleton** — `run` and `run_unit` in `packages/db`, the `/api/runs` routes and
-`lib/stream` in `apps/api` — which exists for this check alone and stays until board
-`D11`'s `message` table replaces it with the conversation. The web app carries nothing
-for it: it is an empty shell until the first real screen.
+What made that step unrunnable before was what it drove — the run skeleton, so every
+merge wrote rows into the domain tables, which on prod would mean writing product data
+as a side effect of shipping. **The check is the health route now**, which writes
+nothing: `e2e/health.spec.ts` asks the deployed API for `/api/health` and gets the
+database's own answer to `select version()` (a deploy happened and a real database is
+behind it), then asks for an unknown API path and a deep link and gets 404 JSON and 200
+HTML (the distribution keeps the two apart); `e2e/health-stream.spec.ts` reads
+`/api/health/stream` raw and sees beats arriving one at a time (nothing in between
+buffers) and a stream held past the origin read timeout still open (the connection
+survives the distribution). Both drive the API with Playwright's `request` fixture or
+the platform's `fetch`, and neither opens a page: the web app is an empty shell until
+the first real screen.
+
+The `run` and `run_unit` skeleton these questions used to be asked through is at the tag
+**`foundation-skeleton`**; `main` carries nothing that nothing calls (`D20`).
 
 **Migrations run after the application**, so new code must tolerate the old schema for
 the minute between them, and a failed migration leaves working code with the deploy

@@ -1,4 +1,3 @@
-import { runUnitStatus } from "@app/db/schema";
 import { z } from "zod";
 
 /**
@@ -20,6 +19,11 @@ import { z } from "zod";
  * vocabulary it was written against, so a browser reading an old stream can tell that
  * it is old rather than malformed. It moves when a leaf's shape changes, not when one
  * is added: adding is backwards compatible, changing is not.
+ *
+ * It stayed at 1 when the `progress` leaf was removed (SL10), which the rule above
+ * would otherwise move. Nothing has ever stored a frame and no client has ever read
+ * one: version 1 is the only catalogue any reader has seen, and it is the one `main`
+ * declares. The next change to a leaf that a reader could hold moves it.
  */
 export const catalogueVersion = 1;
 
@@ -30,20 +34,14 @@ const textLeaf = z.object({
 });
 
 /**
- * One unit of the run reaching a new state. `seq` here is the unit's position in the
- * run, which is not the frame's position in the stream: the two counters are
- * independent and both are needed. The states are read off the database column rather
- * than listed again, so the wire cannot drift from the schema (rule 6).
+ * Everything a stream may carry. A discriminated union, so an unknown kind is rejected
+ * by the discriminator and a known kind with a missing field by its own shape. One leaf
+ * today: the `progress` leaf that stood beside it reported a unit of a run, and went
+ * with the run (D20). The union stays a union because the next leaf is D11's, and
+ * because the discriminator is what makes an unknown kind a rejection rather than a
+ * frame.
  */
-const progressLeaf = z.object({
-  kind: z.literal("progress"),
-  seq: z.number().int().positive(),
-  status: z.enum(runUnitStatus.enumValues),
-});
-
-/** Everything a stream may carry. A discriminated union, so an unknown kind is rejected
- * by the discriminator and a known kind with a missing field by its own shape. */
-export const leafSchema = z.discriminatedUnion("kind", [textLeaf, progressLeaf]);
+export const leafSchema = z.discriminatedUnion("kind", [textLeaf]);
 
 /** One thing a stream can say. Inferred from the catalogue, never listed twice. */
 export type Leaf = z.infer<typeof leafSchema>;

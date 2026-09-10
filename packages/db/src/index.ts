@@ -1,14 +1,8 @@
+/**
+ * The package's public face: the schema, and the row aliases the API reads it through.
+ *
+ * There are no aliases yet because there are no tables yet (SL10). When the first one
+ * lands, its `typeof <table>.$inferSelect` and `.$inferInsert` are named here rather
+ * than in each caller (rule 2), so a row shape has one name in the repository.
+ */
 export * from "./schema";
-
-import type { run, runUnit } from "./schema";
-
-/** A `run` row as read. */
-export type Run = typeof run.$inferSelect;
-/** A `run` row as written. */
-export type NewRun = typeof run.$inferInsert;
-/** A `run_unit` row as read. */
-export type RunUnit = typeof runUnit.$inferSelect;
-/** A `run_unit` row as written. */
-export type NewRunUnit = typeof runUnit.$inferInsert;
-/** The three states a unit can be in, derived from the column, never listed twice. */
-export type RunUnitStatus = RunUnit["status"];
