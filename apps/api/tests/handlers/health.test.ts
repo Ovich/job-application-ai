@@ -107,7 +107,9 @@ describe("GET /api/health", () => {
       await app.request("/api/health");
 
       expect(asking).toHaveBeenCalledTimes(1);
-      expect(String(asking.mock.calls[0]?.[0])).toContain("version()");
+      // The SQL Drizzle was handed, read as the chunks it is made of rather than as a
+      // string: `SQL` has no `toString`, and `[object Object]` contains anything.
+      expect(JSON.stringify(asking.mock.calls[0]?.[0])).toContain("version()");
     } finally {
       asking.mockRestore();
     }
