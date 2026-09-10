@@ -25,6 +25,15 @@ const shared = {
  * already sets, so a fresh clone answers on localhost with one command and no file to
  * write first. They are not secrets and never reach the cloud branch, whose
  * credentials come from Secrets Manager through the template.
+ *
+ * The Google client is the one thing a fresh clone must be given (ID60): a client
+ * secret has no sensible throwaway value the way the database password does, so there
+ * is no default, and a missing one fails the start with the field named. It comes out
+ * of `apps/api/.env`, which the repository ignores and `.env.example` names the keys
+ * of (ID68). `APP_URL` is where the browser reaches the app, and so the origin Google
+ * sends it back to: the dev server, which forwards `/api` to this process. Registered
+ * at Google as `<APP_URL>/api/auth/callback/google`; a port's difference between the
+ * two is a `redirect_uri_mismatch`.
  */
 const localRuntime = z.object({
   APP_RUNTIME: z.literal("local"),
@@ -34,6 +43,9 @@ const localRuntime = z.object({
   DATABASE_NAME: z.string().min(1).default("jobapp"),
   DATABASE_USER: z.string().min(1).default("jobapp"),
   DATABASE_PASSWORD: z.string().min(1).default("local_dev_only"),
+  APP_URL: z.url().default("http://localhost:4200"),
+  GOOGLE_CLIENT_ID: z.string().min(1),
+  GOOGLE_CLIENT_SECRET: z.string().min(1),
 });
 
 /**
@@ -48,6 +60,14 @@ const localRuntime = z.object({
  * the template hands it over as `DATABASE_URL`, and `partsOf` below is what turns it
  * back into these five (D19). The password is a password now, where the Aurora cluster
  * had an identity token minted per connection; secrets reach the function through Secrets Manager.
+ *
+ * The Google client and the app's address are the exception to "every value is
+ * required", and only until slice 5. A merge to `main` deploys, and the Google secrets
+ * do not exist in Secrets Manager before S5.2: required today, they would fail every
+ * cold start between this slice and that one, the health route with it. So they are
+ * optional here, `lib/auth` mounts with no provider when they are absent, and S5.2
+ * makes them required in the same breath as it puts them in the template (ID60,
+ * amended for SL1 on the orchestrator's instruction, 2026-09-11).
  */
 const cloudRuntime = z.object({
   APP_RUNTIME: z.literal("cloud"),
@@ -57,6 +77,9 @@ const cloudRuntime = z.object({
   DATABASE_NAME: z.string().min(1),
   DATABASE_USER: z.string().min(1),
   DATABASE_PASSWORD: z.string().min(1),
+  APP_URL: z.url().optional(),
+  GOOGLE_CLIENT_ID: z.string().min(1).optional(),
+  GOOGLE_CLIENT_SECRET: z.string().min(1).optional(),
 });
 
 /**
@@ -100,6 +123,9 @@ const {
   DATABASE_NAME,
   DATABASE_USER,
   DATABASE_PASSWORD,
+  APP_URL,
+  GOOGLE_CLIENT_ID,
+  GOOGLE_CLIENT_SECRET,
 } = process.env;
 
 // The discriminator defaults to the local runtime so a clone runs with nothing set; the
@@ -111,6 +137,9 @@ export const env = Object.freeze(
   configuration.parse({
     APP_RUNTIME: runtime,
     PORT,
+    APP_URL,
+    GOOGLE_CLIENT_ID,
+    GOOGLE_CLIENT_SECRET,
     // Where the connection comes from, and the only line the two runtimes disagree on.
     ...(runtime === "cloud"
       ? partsOf(DATABASE_URL)
