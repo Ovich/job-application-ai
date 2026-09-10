@@ -18,6 +18,7 @@
     "@angular/platform-browser": "22.1.5",
     "@angular/router": "22.1.5",
     "@spartan-ng/brain": "1.4.1",
+    "better-auth": "1.7.4",
     "class-variance-authority": "0.7.1",
     "clsx": "2.1.1",
     "hono": "4.13.5",
