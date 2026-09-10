@@ -69,9 +69,9 @@ Resources:
   # which would point the function at a database on its own loopback interface and fail
   # in a way that reads like a network problem rather than a configuration one (ID23).
   #
-  # This stack imports nothing from Data-dev any more, which is what lets that stack be
-  # deleted at all: CloudFormation refuses to delete a stack whose exports are in use
-  # (S7.5, and invariants.test.ts asserts it).
+  # This stack imports nothing from any other stack of this project, and that absence is
+  # what let the data stack be deleted at all: CloudFormation refuses to delete a stack
+  # whose exports are in use (S7.5, and invariants.test.ts asserts it).
   Api:
     Type: AWS::Lambda::Function
     Properties:

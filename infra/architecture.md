@@ -14,15 +14,15 @@ generated artefact, so a resource named here is a resource you can find by name 
 
 | Environment | Address | Stacks | State |
 |---|---|---|---|
-| `dev` | `dev.job-application.app` | `Cert-dev`, `Data-dev`, `App-dev` | the only one deployed |
-| `prod` | `job-application.app` | `Cert-prod`, `Data-prod`, `App-prod` | **not deployed, and the templates do not yet exist** |
+| `dev` | `dev.job-application.app` | `Cert-dev`, `App-dev` | the only one deployed |
+| `prod` | `job-application.app` | `Cert-prod`, `App-prod` | **not deployed, and the templates do not yet exist** |
 
 `Deploy` and `Dns` are shared by both and exist once for the project.
 
-Prod is not a different design: it is a second copy of the same three templates, at the
+Prod is not a different design: it is a second copy of the same two templates, at the
 apex instead of a subdomain. The pipeline deploys `dev` on a merge to `main` and `prod`
 on a `v*` tag, with the prod job behind a GitHub environment and a required reviewer
-(board `D9`). Until someone writes those three templates and pushes a tag, everything
+(board `D9`). Until someone writes those two templates and pushes a tag, everything
 below describes `dev`.
 
 **To read the truth rather than this document**, which drifts the moment anything
@@ -64,7 +64,7 @@ change the account, and it is scoped to one repository and one branch.
 
 ## The stacks
 
-Five, split by what happens if they are destroyed and by how often they change
+Four, split by what happens if they are destroyed and by how often they change
 (board `D8`).
 
 Dependency graph: which stack needs what from which, and so the order they deploy in.
@@ -77,21 +77,20 @@ flowchart TB
   end
   subgraph env["Once per environment"]
     Cert["<b>Cert-dev</b> · us-east-1<br/>the certificate"]
-    Data["<b>Data-dev</b><br/>nothing needs it any more"]
     App["<b>App-dev</b><br/>rebuildable from the repository"]
   end
   Dns -->|"zone id, for validation"| Cert
   Cert -->|"certificate ARN"| App
   Deploy -->|"execution role, artefact bucket"| App
   Dns -->|"zone id, for the alias record"| App
-  Data ~~~ App
 ```
 
-**`Data-dev` is on its way out** (board `D19`). The state is a Neon project now, so
-`App-dev` imports nothing from it and the stack stands unused, still carrying its
-termination protection, until a person turns that off and deletes it. Everything this
-document says about the cluster, the VPC and the public IPv4 describes what is still in
-the account, not what serves a request.
+**There is no data stack** (board `D19`). The state is a Neon project outside the
+account, reached with a connection string Secrets Manager holds, so no stack declares a
+database and none declares a VPC. `Data-dev` — an Aurora Serverless v2 cluster in a VPC
+of its own — was deleted on 2026-09-10 with its sixteen resources, after `App-dev` had
+stopped importing from it; the template, its parity baseline and its invariants went with
+it (`S7.7`, `S7.8`).
 
 ## The tiers a request passes through
 
@@ -122,7 +121,7 @@ flowchart TB
 
   subgraph t4["4 · API — Lambda"]
     ApiFunctionUrl["<b>ApiFunctionUrl</b><br/>AWS_IAM · RESPONSE_STREAM"]
-    Api["<b>Api</b><br/>Hono, every route, outside the VPC"]
+    Api["<b>Api</b><br/>Hono, every route, in no VPC"]
     ApiInvoke["<b>ApiInvokeFromDistribution</b>"]
     ApiRole["<b>ApiRole</b><br/>its own log group, nothing else"]
     ApiLogs["<b>ApiLogs</b>"]
@@ -172,7 +171,7 @@ private, and CloudFront is the only door.
 |---|---|---|
 | `GitHubProvider` | `AWS::IAM::OIDCProvider` | Trusts tokens minted by GitHub Actions. One per URL per account |
 | `DeployRole` | `AWS::IAM::Role` | `github-actions-deploy-dev`. Assumed by the pipeline; trusts one repository and `refs/heads/main` only |
-| `DeployRolePolicy` | `AWS::IAM::Policy` | What the pipeline may do. CloudFormation on these five stacks **by name**, `PassRole` on the execution role, the artefact bucket, the web bucket, and `GetSecretValue` on `jobapp/dev/database-url` alone, which is all the migrate step needs |
+| `DeployRolePolicy` | `AWS::IAM::Policy` | What the pipeline may do. CloudFormation on these four stacks **by name**, `PassRole` on the execution role, the artefact bucket, the web bucket, and `GetSecretValue` on `jobapp/dev/database-url` alone, which is all the migrate step needs |
 | `CloudFormationExecutionRole` | `AWS::IAM::Role` | The rights to **create** resources are held here, not by the pipeline. CloudFormation acts as this role, so a mistake in the workflow reaches only what CloudFormation would have done anyway |
 | `ArtefactBucket` | `AWS::S3::Bucket` | Holds the Lambda bundle the pipeline uploads |
 
@@ -200,32 +199,6 @@ why it is retained, and why `import-runbook.md` exists.
 |---|---|---|
 | `Certificate` | `AWS::CertificateManager::Certificate` | `dev.job-application.app`, validated by DNS against the zone |
 
-### `Data-dev` — deployed, and no longer the state
-
-**Nothing reads any of this.** The rows below are what stands in the account until the
-stack is deleted (`D19`). They are kept here so that a person looking at the console can
-match what they see; the state is the Neon project.
-
-| Logical id | Type | What it is for |
-|---|---|---|
-| `Vpc` | `AWS::EC2::VPC` | `10.0.0.0/16`. **No NAT gateway** |
-| `InternetGateway`, `InternetGatewayAttachment` | `AWS::EC2::InternetGateway`, `::VPCGatewayAttachment` | What makes the subnets public |
-| `PublicSubnet1`, `PublicSubnet2` | `AWS::EC2::Subnet` | Two availability zones because a DB subnet group requires two, not because there is a second instance |
-| `PublicSubnet1RouteTable`, `PublicSubnet2RouteTable` | `AWS::EC2::RouteTable` | |
-| `PublicSubnet1RouteTableAssociation`, `PublicSubnet2RouteTableAssociation` | `AWS::EC2::SubnetRouteTableAssociation` | |
-| `PublicSubnet1DefaultRoute`, `PublicSubnet2DefaultRoute` | `AWS::EC2::Route` | |
-| `ClusterSecurityGroup` | `AWS::EC2::SecurityGroup` | 5432 from anywhere. See the trade below |
-| `ClusterParameters` | `AWS::RDS::DBClusterParameterGroup` | `rds.force_ssl = 1` |
-| `ClusterSubnets` | `AWS::RDS::DBSubnetGroup` | |
-| `Cluster` | `AWS::RDS::DBCluster` | Aurora Serverless v2, PostgreSQL. `MinCapacity 0`, `SecondsUntilAutoPause 300`, IAM authentication on |
-| `ClusterWriter` | `AWS::RDS::DBInstance` | One instance |
-
-**The trade this stack was built for is over.** Lambda outside the VPC reaching a public
-Aurora endpoint bought the absence of a NAT gateway, defended by `rds.force_ssl` and an
-identity token minted per connection. The board reversed the destination rather than the
-posture: `D18` moved the database off Aurora Serverless v2, `D19` made it Neon rather
-than Aurora DSQL, and the same absence of a NAT gateway comes free once there is no VPC.
-
 ### `App-dev` — the application
 
 | Logical id | Type | What it is for |
@@ -251,13 +224,11 @@ cost posture:
 | **Always there** | `Zone`, `WebBucket`, `ArtefactBucket`, `ApiLogs` | A hosted zone is charged by the hour whether or not anything asks for it. Storage is charged by the byte. These are the fixed line |
 | **Runs only when asked** | `Api` (Lambda), `Distribution` (CloudFront) | Per invocation and per request. Nothing at rest |
 | **Asleep by default** | the Neon project | Neon's own free tier, not an AWS line. It scales to nothing when idle and wakes in roughly half a second |
-| **Still billed, and only until the stack goes** | `Cluster` and the public IPv4 its endpoint holds | `Data-dev` is deployed and unused. The IPv4 is charged by the hour until the stack is deleted, which is the last item of `D19` |
-| **Costs nothing, ever** | Every `AWS::IAM::*`, the `Vpc` and its subnets, route tables and gateway, `ClusterSecurityGroup`, `ClusterParameters`, `ClusterSubnets`, both `OriginAccessControl`s, `ApiInvokeFromDistribution`, `MonthlySpend`, `Alerts` | Configuration. It has no runtime |
+| **Costs nothing, ever** | Every `AWS::IAM::*`, both `OriginAccessControl`s, `ApiInvokeFromDistribution`, `MonthlySpend`, `Alerts` | Configuration. It has no runtime |
 
 So on a quiet day the account runs **nothing**: the function is not invoked and the
-distribution serves nobody. What is left is a hosted zone and a few megabytes of S3 —
-which is what makes `F15`'s figure achievable — plus the IPv4 of a cluster nothing reads,
-until that stack is deleted.
+distribution serves nobody. What is left is a hosted zone and a few megabytes of S3,
+which is what makes `F15`'s figure achievable.
 
 State machine: what the account is doing at any moment, and what moves it between.
 
@@ -311,8 +282,8 @@ stateDiagram-v2
 
 **The transition worth knowing is `Page --> Waking`, and that it is not automatic.**
 Loading the page costs a CloudFront request and an S3 read and nothing else; only a call
-to `/api/*` reaches the function, and only a query reaches the cluster. So a visitor who
-looks and leaves never wakes the database.
+to `/api/*` reaches the function, and only a query reaches the database. So a visitor who
+looks and leaves never wakes it.
 
 **`Waking` is barely a wait any more.** Neon's compute resumes in roughly half a second,
 where the paused Aurora Serverless v2 cluster it replaced took seconds and the request
@@ -321,8 +292,7 @@ schema, the `pgEnum` and drizzle-kit work untouched on real PostgreSQL, and the 
 being something a failure table has to price.
 
 One thing costs while idle and is worth knowing by name: the **hosted zone**, which is
-unavoidable because it is the domain. The **public IPv4** of the Aurora endpoint is still
-being charged and should not be — it goes when `Data-dev` does.
+unavoidable because it is the domain. It is the whole fixed line.
 
 `MonthlySpend` watches all of it and mails `Alerts` at the threshold, which is `US7`.
 
@@ -366,13 +336,12 @@ Phasing: the order a merge is applied in, and where it stops.
 
 ```mermaid
 flowchart TB
-  merge["merge to main"] --> check["check: biome, tsc, 81 + 14 tests, cfn-lint"]
+  merge["merge to main"] --> check["check: biome, tsc, 71 + 14 tests, cfn-lint"]
   check --> oidc["assume DeployRole by OIDC"]
   oidc --> shared["Deploy, Dns"]
   shared --> cert["Cert-dev, us-east-1"]
   cert --> bundle["esbuild lambda.ts, upload to ArtefactBucket"]
-  bundle --> data["Data-dev, then termination protection"]
-  data --> app["App-dev"]
+  bundle --> app["App-dev"]
   app --> sync["s3 sync the web bundle, invalidate /index.html"]
   sync --> migrate["drizzle-kit migrate, on the connection<br/>string read from Secrets Manager"]
   migrate --> done["the pipeline ends here"]

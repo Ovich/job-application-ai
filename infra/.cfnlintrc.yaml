@@ -10,13 +10,6 @@
 templates:
   - "**/*.yaml"
 
-# One rule is turned off.
-#
-# W3010, "avoid hardcoding availability zones". Data-dev names eu-central-1a and
-# eu-central-1b instead of calling Fn::GetAZs, and that is deliberate: GetAZs returns the
-# zones in an order AWS may change, a changed order moves a subnet, a moved subnet
-# changes the DB subnet group, and a changed DB subnet group REPLACES the cluster. The
-# template says so where the subnets are declared. The rule is right about portability
-# and wrong about this stack, which exists in one region by decision (D14).
-ignore_checks:
-  - W3010
+# No rule is turned off. One was: W3010, "avoid hardcoding availability zones", because
+# the data stack named eu-central-1a and eu-central-1b rather than call Fn::GetAZs. That
+# stack is deleted and no template names a zone any more (D19, S7.8).

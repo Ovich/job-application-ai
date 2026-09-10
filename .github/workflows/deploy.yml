@@ -64,7 +64,6 @@ jobs:
       CERTIFICATE_REGION: us-east-1
       # The names the templates carry, read here so a reader of this file can see what
       # the commands below are talking about without opening infra/.
-      DATA_STACK: Data-dev
       APP_STACK: App-dev
       CERT_STACK: Cert-dev
       # Where the development database's connection string lives. Neon issues it, a
@@ -171,23 +170,6 @@ jobs:
             --query "Stacks[0].Outputs[?OutputKey=='CertificateArn'].OutputValue" \
             --output text)
           echo "arn=$arn" >> "$GITHUB_OUTPUT"
-
-      # Termination protection is a property of the stack and not of the template, so it
-      # is set here. This is the stack that cannot be recreated from the repository, and
-      # it is the one the flag exists for. Idempotent: setting it when it is already set
-      # succeeds.
-      - name: Deploy the data stack
-        env:
-          EXECUTION_ROLE: ${{ steps.roles.outputs.cloudformation }}
-        run: |
-          set -euo pipefail
-          aws cloudformation deploy \
-            --template-file infra/Data-dev.yaml \
-            --stack-name "$DATA_STACK" \
-            --role-arn "$EXECUTION_ROLE" \
-            --no-fail-on-empty-changeset
-          aws cloudformation update-termination-protection \
-            --stack-name "$DATA_STACK" --enable-termination-protection
 
       - name: Deploy the application
         env:
