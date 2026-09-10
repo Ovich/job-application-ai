@@ -45,6 +45,16 @@ aws cloudformation describe-stacks --region eu-central-1 --query "Stacks[].{Name
 The region is stated in `bin`-less templates and in the workflow, never taken from
 ambient credentials, so a stack cannot deploy wherever a shell happens to point.
 
+**Every stack carries its meaning as tags**, because most of what the account holds is
+named by AWS and can never be renamed: a distribution is `E2U3WHEJ6BCU9M`, a hosted zone
+`Z01268721BDDLWGJVLJS8`, a certificate a bare uuid. The pipeline passes
+`Project=job-application`, `Environment=dev`, `ManagedBy=cloudformation` and a
+`Component` naming the stack on every `cloudformation deploy`, and CloudFormation stamps
+them onto every resource that supports a tag. It is done there rather than by hand for a
+reason learned the hard way: `put-bucket-tagging` replaces the whole tag set and refuses
+to touch a bucket carrying CloudFormation’s own `aws:` system tags, so a tag applied from
+a laptop either fails or is lost at the next deploy.
+
 `Cert-dev` is not a preference. CloudFront reads its certificate from `us-east-1` and
 from nowhere else, whatever region serves the traffic, and a stack lives in one region —
 so the certificate is a stack of its own.
@@ -71,26 +81,52 @@ Dependency graph: which stack needs what from which, and so the order they deplo
 
 ```mermaid
 flowchart TB
-  subgraph project["Once for the project"]
-    Deploy["<b>Deploy</b><br/>who may change the account"]
-    Dns["<b>Dns</b><br/>the domain and the spend alarm"]
+  subgraph project["Once for the project · eu-central-1"]
+    subgraph DeployS["<b>Deploy</b> · who may change the account"]
+      OIDC["GitHubProvider<br/>OIDC, no stored key"]
+      DRole["DeployRole<br/>github-actions-deploy-dev"]
+      XRole["CloudFormationExecutionRole<br/>the rights live here, not in Actions"]
+      ABkt[("<b>ArtefactBucket</b><br/>job-application-artefacts-…<br/>one immutable API bundle per commit")]
+    end
+    subgraph DnsS["<b>Dns</b> · the domain and the money"]
+      Zone["Zone<br/>job-application.app · Z0126…"]
+      Budget["MonthlySpend + Alerts<br/>budget, SNS topic, email"]
+    end
   end
   subgraph env["Once per environment"]
-    Cert["<b>Cert-dev</b> · us-east-1<br/>the certificate"]
-    App["<b>App-dev</b><br/>rebuildable from the repository"]
+    subgraph CertS["<b>Cert-dev</b> · us-east-1"]
+      Cert["Certificate<br/>CloudFront reads it only from here"]
+    end
+    subgraph AppS["<b>App-dev</b> · rebuildable from the repository"]
+      Fn["Api + ApiRole + ApiLogs<br/>one Lambda, every route, streaming"]
+      FnUrl["ApiFunctionUrl<br/>AWS_IAM, unreachable except via CloudFront"]
+      WBkt[("<b>WebBucket</b><br/>job-application-web-dev-…<br/>the built SPA, re-synced each deploy")]
+      Dist["Distribution<br/>E2U3WHEJ6BCU9M"]
+      OACs["WebOriginAccessControl<br/>ApiOriginAccessControl"]
+      Alias["AliasRecord<br/>dev.job-application.app"]
+    end
   end
-  Dns -->|"zone id, for validation"| Cert
-  Cert -->|"certificate ARN"| App
-  Deploy -->|"execution role, artefact bucket"| App
-  Dns -->|"zone id, for the alias record"| App
+  Neon[("<b>Neon</b> · outside the account<br/>aws-eu-central-1, real PostgreSQL")]
+  Secret["jobapp/dev/database-url<br/>Secrets Manager · in no stack, by hand"]
+  Zone -->|"zone id, for validation"| Cert
+  Cert -->|"certificate ARN"| Dist
+  XRole -->|"applies every template"| AppS
+  ABkt -->|"S3 key, the function's code"| Fn
+  Zone -->|"zone id, for the alias"| Alias
+  Dist -->|"OAC-signed"| WBkt
+  Dist -->|"OAC-signed, /api/*"| FnUrl
+  FnUrl --> Fn
+  Fn -->|"connection string at boot"| Secret
+  Secret -.->|"TLS, pooled"| Neon
+  OACs -.-> Dist
 ```
 
 **There is no data stack** (board `D19`). The state is a Neon project outside the
 account, reached with a connection string Secrets Manager holds, so no stack declares a
 database and none declares a VPC. `Data-dev` — an Aurora Serverless v2 cluster in a VPC
 of its own — was deleted on 2026-09-10 with its sixteen resources, after `App-dev` had
-stopped importing from it; the template, its parity baseline and its invariants went with
-it (`S7.7`, `S7.8`).
+stopped importing from it; the template, its baseline and its invariants went with it
+(`S7.7`, `S7.8`).
 
 ## The tiers a request passes through
 
@@ -177,6 +213,17 @@ private, and CloudFront is the only door.
 
 The last two replace CDK's bootstrap (`cdk-hnb659fds-cfn-exec-role` and its asset
 bucket), which deleting CDK deleted.
+
+
+**The application register.** `Deploy` also declares an AppRegistry application called
+`job-application`, and `Deploy`, `Dns` and `App-dev` each associate themselves with it —
+a stack owns the statement that it belongs, so deleting the stack takes the statement
+with it. AWS then tags every resource of those stacks `awsApplication`, which is what
+fills the `Application` column in Resource Explorer. `Cert-dev` cannot join: AppRegistry
+is regional and that stack is in `us-east-1`. The point is separation rather than
+decoration — an account holds roughly thirty resources AWS creates by itself, from
+MemoryDB parameter groups to default KMS keys, and without this the console cannot tell
+them from the eleven that are ours.
 
 ### `Dns` — the domain and the spend alarm
 
@@ -374,8 +421,15 @@ reviewer.
 writes each unit of its work as that unit finishes, so a cut connection loses only the
 unit in flight.
 
-**No `CDKToolkit`.** The stack of that name still stands in the account and nothing uses
-it; it is CDK's bootstrap, left from before the conversion.
+**No `CDKToolkit`, and no VPC anywhere.** Both were true of the account rather than of
+the templates, and both were cleaned out on 2026-09-10. CDK’s bootstrap went with its two
+asset buckets, its container registry, its version parameter and its ten roles — the
+buckets needed their object *versions* deleted first, since the bootstrap sets
+`DeletionPolicy: Retain` and the stack delete only orphans them. The default VPC AWS
+creates in every region went too, in both `eu-central-1` and `us-east-1`, with its
+subnets, gateway, route tables, ACL and security group. `describe-vpcs` now answers
+nothing in either region, which is the strongest statement of `F10` there is: the
+architecture has no private network because the account has none.
 
 ## Two failures worth not repeating
 
@@ -401,7 +455,10 @@ few: the original bootstrap, and step 5 of `import-runbook.md`, both of which cr
 identity the pipeline needs in order to exist.
 
 Before changing a template, know that `tests/invariants.test.ts` will refuse a change
-that undoes a foundation decision, and `tests/parity.test.ts` will refuse any difference
-from what CDK produced that is not declared with its reason. The second is a migration
-check and is expected to retire once the conversion has proven itself (`ID53`); the first
-is permanent.
+that undoes a foundation decision. It is the permanent half of what `infra/tests` once
+held. The other half, `parity.test.ts`, compared every template against the CDK synth it
+was converted from; it was deleted on 2026-09-10 (`ID53`) once the pipeline had deployed
+green, because its oracle was a frozen 1,847-line snapshot from a tool no longer in this
+repository, so every legitimate future change could only lengthen its list of declared
+exceptions. It did its job first: seen failing twice, it caught real omissions and forced
+every difference from CDK to be justified in writing.

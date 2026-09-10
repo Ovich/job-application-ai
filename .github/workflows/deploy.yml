@@ -69,6 +69,11 @@ jobs:
       # Where the development database's connection string lives. Neon issues it, a
       # person put it here, and nothing in the repository holds it (rule 12, D19).
       DATABASE_SECRET: jobapp/dev/database-url
+      # Stamped on every stack, and from there onto every resource that supports a tag.
+      # A resource whose identifier AWS assigned (a distribution id, a hosted zone id)
+      # can never say what it is; its tags are the only place that meaning can live, and
+      # a tag applied by hand is gone the next time the stack is deployed.
+      STACK_TAGS: "Project=job-application Environment=dev ManagedBy=cloudformation"
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
 
@@ -119,6 +124,7 @@ jobs:
               --stack-name "$stack" \
               --role-arn "$EXECUTION_ROLE" \
               --capabilities CAPABILITY_NAMED_IAM \
+              --tags $STACK_TAGS "Component=$stack" \
               --no-fail-on-empty-changeset
           done
 
@@ -159,6 +165,7 @@ jobs:
             --template-file infra/Cert-dev.yaml \
             --stack-name "$CERT_STACK" \
             --role-arn "$EXECUTION_ROLE" \
+            --tags $STACK_TAGS "Component=certificate" \
             --no-fail-on-empty-changeset
 
       - name: Read the certificate ARN
@@ -183,6 +190,7 @@ jobs:
             --stack-name "$APP_STACK" \
             --role-arn "$EXECUTION_ROLE" \
             --capabilities CAPABILITY_IAM \
+            --tags $STACK_TAGS "Component=application" \
             --no-fail-on-empty-changeset \
             --parameter-overrides \
               "ApiArtefactKey=$ARTEFACT_KEY" \

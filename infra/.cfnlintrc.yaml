@@ -1,7 +1,7 @@
 # cfn-lint reads the templates in this directory against CloudFormation's own resource
-# specification, which is the half of a template's correctness the parity harness cannot
-# see: the harness compares two templates and would happily agree on a property that does
-# not exist. Run it from here — `cd infra && cfn-lint` — which is where it looks for this
+# specification, which is the half of a template's correctness the invariants cannot see:
+# they assert what must not appear, and would happily agree on a property that does not
+# exist. Run it from here — `cd infra && cfn-lint` — which is where it looks for this
 # file. CI does the same (.github/workflows/check.yml).
 #
 # The glob rather than a list, so a stack added later is linted without anybody

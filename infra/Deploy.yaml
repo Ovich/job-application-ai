@@ -218,6 +218,30 @@ Resources:
             Status: Enabled
             ExpirationInDays: 90
 
+  # What makes the console readable. Almost nothing in this account is named by us: a
+  # distribution is E2U3WHEJ6BCU9M, a hosted zone Z0126…, a certificate a bare uuid, and
+  # none of them can ever be renamed. An AppRegistry application is the one mechanism AWS
+  # provides for saying which of them belong together: every stack associated below has
+  # its resources tagged awsApplication, which is what fills Resource Explorer's
+  # Application column and lets one filter separate our eleven resources from the thirty
+  # AWS creates in every account by default.
+  Application:
+    Type: AWS::ServiceCatalogAppRegistry::Application
+    Properties:
+      Name: job-application
+      Description: The AI job-seeker platform. Every stack of the development environment associates itself here.
+
+  # A stack associates itself, rather than Deploy associating the others: an association
+  # belongs to the stack it describes, so deleting that stack takes its association with
+  # it. Cert-dev cannot join — AppRegistry is regional and that stack lives in us-east-1,
+  # where CloudFront requires its certificate.
+  ApplicationAssociation:
+    Type: AWS::ServiceCatalogAppRegistry::ResourceAssociation
+    Properties:
+      Application: !Ref Application
+      Resource: !Ref AWS::StackName
+      ResourceType: CFN_STACK
+
 Outputs:
   ArtefactBucketName:
     Description: The bucket the pipeline uploads the API bundle to.
