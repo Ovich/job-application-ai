@@ -41,6 +41,14 @@ export default defineConfig({
       name: "deployed",
       testMatch: /(foundation|stream|idle)\.spec\.ts$/,
       use: { baseURL: "https://dev.job-application.app" },
+      // One worker, and the reason is the environment rather than the tests. Every spec
+      // here creates a run against ONE shared development database, and the page shows
+      // "the latest run" — so two specs running at once make each other's latest wrong.
+      // foundation.spec passes alone and fails beside stream.spec, which is a race the
+      // suite acquired when the join put three run-creating specs into this project.
+      // Locally each spec has the database to itself, so `local` stays parallel.
+      fullyParallel: false,
+      workers: 1,
     },
   ],
 });
