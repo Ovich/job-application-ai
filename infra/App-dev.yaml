@@ -287,14 +287,25 @@ Resources:
             # arrival.
             Compress: false
         # The page is a single-page application: a deep link is a path S3 has no object
-        # for, and the router resolves it in the browser. Both codes are mapped because a
-        # bucket behind origin access control answers 403 for a missing key rather than
-        # 404, so mapping only the latter would leave every deep link broken.
+        # for, and the router resolves it in the browser. A bucket behind origin access
+        # control answers 403 for a missing key, never 404 (the distribution may read an
+        # object, not list the bucket), so 403 is the one code that means "a deep link".
+        #
+        # ONLY 403, and this is a decision rather than an omission (S9.3). These mappings
+        # are distribution-wide: CloudFront cannot scope them to one behaviour, so a code
+        # mapped here is mapped for /api/* too. With 404 mapped as well, a run the API
+        # does not know answered the page with status 200, and the browser could not
+        # tell an error from a screen. The API answers 404 for what it cannot find and
+        # never a bare 403, so keeping the 403 mapping alone lets every API error pass
+        # through as itself. The one 403 that can still come back as the page is not the
+        # API's: the function URL refuses an unsigned request with 403, which is what a
+        # body sent without x-amz-content-sha256 looks like — and why the client and the
+        # deploy check both set that header. A CloudFront Function on the API behaviour
+        # would remove even that case at the price of a second resource and code that
+        # only a deploy can prove; this shape is one line shorter and provable from the
+        # template, which tests/invariants.test.ts does.
         CustomErrorResponses:
           - ErrorCode: 403
-            ResponseCode: 200
-            ResponsePagePath: /index.html
-          - ErrorCode: 404
             ResponseCode: 200
             ResponsePagePath: /index.html
 

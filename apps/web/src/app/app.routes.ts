@@ -1,15 +1,8 @@
 import type { Routes } from "@angular/router";
 
 /**
- * The application's routes. There is one screen so far, the latest run, and the root
- * leads to it: nothing else is worth landing on yet. The page is loaded on demand, so
- * the shell stays the shell the day a second screen arrives.
+ * The application's routes. None yet: the runs page that stood here only ever proved
+ * the foundation, and the root is kept free for the first real screen (`accounts-login`).
+ * The shell renders an empty outlet until then.
  */
-export const routes: Routes = [
-  {
-    path: "runs",
-    loadComponent: async () => (await import("./runs/runs-page")).RunsPage,
-    title: "Latest run",
-  },
-  { path: "", pathMatch: "full", redirectTo: "runs" },
-];
+export const routes: Routes = [];

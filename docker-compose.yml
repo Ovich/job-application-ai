@@ -2,9 +2,14 @@
 # the container listens on localhost and holds nothing but development data. The
 # deployed database is a Neon project and takes its connection string from Secrets
 # Manager. This container is not used by the test suite, which runs against mocks.
+#
+# The major is Neon's (D19, S9.4): the deployed database answers PostgreSQL 18.6 and a
+# Neon project cannot change major after creation, so the container follows it rather
+# than the other way round. A schema proven on 17 and run on 18 is a schema proven on
+# the wrong engine.
 services:
   postgres:
-    image: postgres:17-alpine
+    image: postgres:18-alpine
     container_name: jobapp-postgres
     restart: unless-stopped
     environment:
@@ -14,7 +19,12 @@ services:
     ports:
       - "5432:5432"
     volumes:
-      - jobapp-postgres-data:/var/lib/postgresql/data
+      # The parent, not `/data`: from 18 the image keeps its cluster under
+      # `/var/lib/postgresql/18/docker` and declares `/var/lib/postgresql` as the volume.
+      # A volume mounted at the old `/data` path would sit beside the cluster, empty, and
+      # every restart would start from nothing. The 17 volume this replaced held nothing
+      # worth keeping; `docker compose down -v` is how the cluster is recreated.
+      - jobapp-postgres-data:/var/lib/postgresql
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U jobapp -d jobapp"]
       interval: 5s
