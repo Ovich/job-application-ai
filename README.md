@@ -27,9 +27,14 @@ pnpm install
 pnpm dev
 ```
 
-That brings up PostgreSQL in a container, waits for it to be healthy, applies the
+That brings up PostgreSQL 18 in a container, waits for it to be healthy, applies the
 migrations, and serves the API on port 3000 and the web app on port 4200 together.
 Open `http://localhost:4200`.
+
+The major is the deployed database's: the Neon project answers PostgreSQL 18.6 and
+cannot change major, so the container follows it. A clone that ran the 17 container
+before 2026-09-10 has a volume with a 17 cluster in it; `docker compose down -v` drops
+it, and the next `pnpm dev` starts a fresh 18 cluster. Nothing in it was worth keeping.
 
 An empty database shows the empty state, which is correct rather than broken. To put
 something on the page:
