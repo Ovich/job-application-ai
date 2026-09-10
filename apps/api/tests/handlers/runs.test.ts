@@ -1,5 +1,5 @@
 import { run, runUnit } from "@app/db";
-import { sql } from "drizzle-orm";
+import { asc, eq, sql } from "drizzle-orm";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { resetDatabase, testDb } from "../support/database";
 
@@ -232,5 +232,190 @@ describe("GET /api/runs/:id/stream", () => {
 
   it("paces the idle probe past the timeout a distribution waits on a silent origin", () => {
     expect(idleProbeUnitMs).toBeGreaterThan(60_000);
+  });
+});
+
+describe("GET /api/runs/:id/stream, resumed", () => {
+  /** One frame as it left the envelope, parsed back out of the wire format. */
+  type Frame = {
+    seq: number;
+    version: number;
+    leaf: { kind: string; seq?: number; status?: string; text?: string };
+  };
+
+  /** How long a run of four units takes: four paces of 150 ms, plus room. */
+  const wholeRunMs = 2_000;
+
+  /**
+   * How long two units read back out of the database may take to reach a reopened
+   * client. Comfortably under one unit's pace, so a stream that produced them by doing
+   * the units again cannot come in under it.
+   */
+  const replayMs = 100;
+
+  /** A run of four units, all pending, ready to be streamed. */
+  const seedFourUnitRun = async (): Promise<string> => {
+    const [created] = await testDb.insert(run).values({ kind: "demo" }).returning();
+    if (!created) {
+      throw new Error("seeding a run returned no row");
+    }
+    await testDb
+      .insert(runUnit)
+      .values(Array.from({ length: 4 }, (_unit, index) => ({ runId: created.id, seq: index + 1 })));
+    return created.id;
+  };
+
+  /** The frames in what a stream has said so far. A block with no `data:` line is a
+   * heartbeat comment, and carries no frame. */
+  const framesIn = (said: string): Frame[] =>
+    said
+      .split("\n\n")
+      .flatMap((block) => block.split("\n").filter((line) => line.startsWith("data: ")))
+      .map((line) => JSON.parse(line.slice("data: ".length)) as Frame);
+
+  /**
+   * Listens to a run's stream and lets go of it. `after` is the sequence the client
+   * says it already saw, `frames` how many frames to take before cutting the
+   * connection: cutting is what a closed laptop does, and the handler stops the run on
+   * it, so nothing is left pacing in the background.
+   */
+  const listen = async (
+    id: string,
+    options: { after?: number; frames?: number } = {},
+  ): Promise<Frame[]> => {
+    const query = options.after === undefined ? "" : `?after=${options.after}`;
+    const response = await app.request(`/api/runs/${id}/stream${query}`);
+    expect(response.status).toBe(200);
+    const body = response.body;
+    if (!body) {
+      throw new Error("the stream had no body");
+    }
+
+    const reader = body.getReader();
+    const decoder = new TextDecoder();
+    let said = "";
+    let seen: Frame[] = [];
+    const listening = (async () => {
+      for (;;) {
+        const { done, value } = await reader.read();
+        if (done) {
+          return;
+        }
+        said += decoder.decode(value, { stream: true });
+        seen = framesIn(said);
+        if (options.frames !== undefined && seen.length >= options.frames) {
+          return;
+        }
+      }
+    })().catch(() => undefined);
+
+    await Promise.race([listening, new Promise((resolve) => setTimeout(resolve, wholeRunMs))]);
+    await reader.cancel().catch(() => undefined);
+    await listening;
+    return seen;
+  };
+
+  /** The run's units as the database holds them, in sequence order. */
+  const unitsOf = async (id: string) =>
+    await testDb.select().from(runUnit).where(eq(runUnit.runId, id)).orderBy(asc(runUnit.seq));
+
+  /**
+   * The property the whole slice exists for. The connection is cut after the second
+   * unit reported, and what the two finished units left behind is already in the
+   * database: a run that wrote its results at the end would have nothing here.
+   */
+  it("has written each finished unit before the run is over", async () => {
+    const id = await seedFourUnitRun();
+
+    await listen(id, { frames: 4 });
+
+    const units = await unitsOf(id);
+    expect(units.map(({ status }) => status)).toEqual(["done", "done", "pending", "pending"]);
+    expect(units[0]?.result).toBeTruthy();
+    expect(units[0]?.doneAt).toBeInstanceOf(Date);
+    expect(units[2]?.result).toBeNull();
+    expect(units[2]?.doneAt).toBeNull();
+  });
+
+  /**
+   * "After sequence N", the contract the envelope already chose: the client names the
+   * last frame it saw and the next frame it receives is N + 1. Four frames is two
+   * finished units, so the run carries on at the third.
+   */
+  it("resumes after the sequence the client names, at the first unit it has not seen", async () => {
+    const id = await seedFourUnitRun();
+    await listen(id, { frames: 4 });
+
+    const resumed = await listen(id, { after: 4 });
+
+    expect(resumed.at(0)?.seq).toBe(5);
+    expect(resumed.at(0)?.leaf.kind).toBe("text");
+    expect(resumed.map(({ leaf }) => leaf).filter(({ kind }) => kind === "progress")).toEqual([
+      { kind: "progress", seq: 3, status: "done" },
+      { kind: "progress", seq: 4, status: "done" },
+    ]);
+  });
+
+  /**
+   * The off-by-one this is where it hides. An odd sequence means the client saw a
+   * unit's text and not its progress, so the progress is what it has not seen, and
+   * repeating the text would put the same line on the page twice.
+   */
+  it("sends only the progress of a unit whose text the client already saw", async () => {
+    const id = await seedFourUnitRun();
+    await listen(id, { frames: 4 });
+
+    const resumed = await listen(id, { after: 3 });
+
+    expect(resumed.at(0)).toMatchObject({
+      seq: 4,
+      leaf: { kind: "progress", seq: 2, status: "done" },
+    });
+  });
+
+  /**
+   * A reopened page has seen nothing, so it receives the whole run: the units that
+   * finished are replayed from what they wrote, exactly as they were said the first
+   * time, and the run carries on from the first one that did not.
+   *
+   * The clock is the assertion that the replay is a replay. Two units read back out of
+   * the database land in one another's tick; two units done again would take a pace
+   * each, and would leave the same eight frames behind for a test that only compared
+   * them.
+   */
+  it("replays the finished units without doing them again", async () => {
+    const id = await seedFourUnitRun();
+    const first = await listen(id, { frames: 4 });
+
+    const startedAt = Date.now();
+    const reopened = await listen(id, { after: 0, frames: 4 });
+
+    expect(reopened).toEqual(first);
+    expect(Date.now() - startedAt).toBeLessThan(replayMs);
+  });
+
+  /**
+   * Two tabs on one run. The pair (run, sequence) is the primary key, so a unit is one
+   * row whoever writes it, and the second writer finds the first one's result rather
+   * than replacing it: the same row, the same `doneAt`, the same text on both pages.
+   */
+  it("cannot write a unit twice when two clients stream the same run", async () => {
+    const id = await seedFourUnitRun();
+
+    const [oneTab, otherTab] = await Promise.all([listen(id), listen(id)]);
+
+    const units = await unitsOf(id);
+    expect(units).toHaveLength(4);
+    expect(units.every(({ status }) => status === "done")).toBe(true);
+    expect(oneTab).toEqual(otherTab);
+  });
+
+  /** A run that has said everything has nothing left to say to a client that saw it all. */
+  it("says nothing to a client that already saw the whole run", async () => {
+    const id = await seedFourUnitRun();
+    const whole = await listen(id);
+    expect(whole).toHaveLength(8);
+
+    expect(await listen(id, { after: 8 })).toEqual([]);
   });
 });
