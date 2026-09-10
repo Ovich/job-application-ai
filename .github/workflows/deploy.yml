@@ -67,9 +67,9 @@ jobs:
       DATA_STACK: Data-dev
       APP_STACK: App-dev
       CERT_STACK: Cert-dev
-      DATABASE_NAME: jobapp
-      DATABASE_USER: api
-      DATABASE_PORT: "5432"
+      # Where the development database's connection string lives. Neon issues it, a
+      # person put it here, and nothing in the repository holds it (rule 12, D19).
+      DATABASE_SECRET: jobapp/dev/database-url
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
 
@@ -124,9 +124,9 @@ jobs:
           done
 
       # What NodejsFunction did. esbuild bundles the entry point with nothing treated as
-      # already present on the platform — which AWS SDK packages the Node 24 runtime ships
-      # is a runtime detail that changes without notice, and the identity-token signer is
-      # the one package a wrong guess would break in the cloud only.
+      # already present on the platform: which packages the Node 24 runtime ships is a
+      # runtime detail that changes without notice, and a wrong guess breaks in the cloud
+      # only.
       #
       # The key is the commit SHA, so an artefact is traceable to the code it came from
       # and a redeploy of the same commit changes nothing in the stack.
@@ -222,76 +222,15 @@ jobs:
           aws s3 sync apps/web/dist/web/browser "s3://${bucket}" --delete
           aws cloudfront create-invalidation --distribution-id "$distribution" --paths /index.html
 
-      - name: Find the cluster
-        id: cluster
-        run: |
-          set -euo pipefail
-          # The stack names the cluster it made, and the cluster names its own endpoint
-          # and the secret RDS manages for it. Two lookups rather than one because the
-          # secret's name is chosen by RDS and is not knowable from the template.
-          identifier=$(aws cloudformation describe-stacks --stack-name "$DATA_STACK" \
-            --query "Stacks[0].Outputs[?OutputKey=='ClusterIdentifier'].OutputValue" \
-            --output text)
-          cluster=$(aws rds describe-db-clusters --db-cluster-identifier "$identifier" \
-            --query 'DBClusters[0]' --output json)
-          echo "endpoint=$(echo "$cluster" | jq -r '.Endpoint')" >> "$GITHUB_OUTPUT"
-          echo "secret=$(echo "$cluster" | jq -r '.MasterUserSecret.SecretArn')" >> "$GITHUB_OUTPUT"
-
-      # Declared rather than assumed present in the runner image. This one statement is
-      # the only place a PostgreSQL client is needed — the migrate step below uses the
-      # driver from this repository — and an image that quietly stopped shipping one
-      # would otherwise break a deploy for a reason nothing in this file mentions.
-      - name: Install the PostgreSQL client
-        run: sudo apt-get update && sudo apt-get install --yes --no-install-recommends postgresql-client
-
-      # The one step in the whole system that uses a password, and it uses it to make
-      # every other connection passwordless. PostgreSQL will only accept an identity
-      # token for a role that has been granted `rds_iam`, and only somebody already
-      # connected can grant it; RDS generates and rotates the master password itself, so
-      # this reads it, runs three statements, and never stores it. Idempotent: it runs on
-      # every deploy and does nothing on all but the first.
-      - name: Create the database role the function authenticates as
-        env:
-          SECRET_ARN: ${{ steps.cluster.outputs.secret }}
-          PGHOST: ${{ steps.cluster.outputs.endpoint }}
-          PGPORT: ${{ env.DATABASE_PORT }}
-          PGDATABASE: ${{ env.DATABASE_NAME }}
-          PGSSLMODE: require
-        run: |
-          set -euo pipefail
-          secret=$(aws secretsmanager get-secret-value --secret-id "$SECRET_ARN" \
-            --query SecretString --output text)
-          PGUSER=$(echo "$secret" | jq -r '.username')
-          PGPASSWORD=$(echo "$secret" | jq -r '.password')
-          export PGUSER PGPASSWORD
-          psql --set=ON_ERROR_STOP=1 --quiet <<'SQL'
-          DO $$
-          BEGIN
-            IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'api') THEN
-              CREATE ROLE api LOGIN;
-            END IF;
-          END
-          $$;
-          GRANT rds_iam TO api;
-          -- CREATE on the database because the migration tool keeps its own record in a
-          -- schema of its own. The migrations then run AS this role, so every table they
-          -- make is owned by it and no grant is ever needed for a table added later.
-          GRANT CONNECT, CREATE ON DATABASE jobapp TO api;
-          GRANT ALL ON SCHEMA public TO api;
-          SQL
-
-      # As the application's own role, with the application's own kind of credential: if
-      # a token cannot migrate, a token cannot serve requests either, and this is where
-      # that is found out.
+      # As the application does, with the application's own credential: if this string
+      # cannot migrate, it cannot serve requests either, and this is where that is found
+      # out. It is the only step that reads the secret, and the deploy role may read no
+      # other. The mask is what keeps a later step or a stack trace from printing it.
       - name: Migrate
-        env:
-          PGHOST: ${{ steps.cluster.outputs.endpoint }}
         run: |
           set -euo pipefail
-          token=$(aws rds generate-db-auth-token \
-            --hostname "$PGHOST" --port "$DATABASE_PORT" --username "$DATABASE_USER")
-          # The token is a signed query string and is full of characters a URL treats as
-          # structure, so it is encoded rather than pasted.
-          encoded=$(node -e 'process.stdout.write(encodeURIComponent(process.argv[1]))' "$token")
-          export DATABASE_URL="postgres://${DATABASE_USER}:${encoded}@${PGHOST}:${DATABASE_PORT}/${DATABASE_NAME}?sslmode=require"
+          DATABASE_URL=$(aws secretsmanager get-secret-value \
+            --secret-id "$DATABASE_SECRET" --query SecretString --output text)
+          echo "::add-mask::$DATABASE_URL"
+          export DATABASE_URL
           pnpm --filter @app/db run db:migrate
