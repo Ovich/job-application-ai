@@ -9,6 +9,7 @@
   "scripts": {
     "check:types": "tsc -p tsconfig.json --noEmit",
     "db:generate": "drizzle-kit generate",
+    "db:generate:auth": "node generate-auth-schema.mjs",
     "db:migrate": "drizzle-kit migrate"
   },
   "dependencies": {
