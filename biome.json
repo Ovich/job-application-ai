@@ -131,11 +131,7 @@
       }
     },
     {
-      "includes": [
-        "apps/api/src/env.ts",
-        "packages/db/drizzle.config.ts",
-        "packages/db/generate-auth-schema.mjs"
-      ],
+      "includes": ["apps/api/src/env.ts", "packages/db/drizzle.config.ts"],
       "linter": {
         "rules": {
           "style": {
