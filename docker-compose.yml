@@ -1,6 +1,6 @@
 # Local development only. These credentials are throwaway values committed on purpose:
 # the container listens on localhost and holds nothing but development data. The
-# deployed database is Aurora Serverless v2 and takes its credentials from Secrets
+# deployed database is a Neon project and takes its connection string from Secrets
 # Manager. This container is not used by the test suite, which runs against mocks.
 services:
   postgres:
