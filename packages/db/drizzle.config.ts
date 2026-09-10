@@ -11,7 +11,10 @@ const { DATABASE_URL } = process.env;
 
 export default defineConfig({
   dialect: "postgresql",
-  schema: "./src/schema.ts",
+  // Both files, or drizzle-kit writes a migration that creates nothing (ID67): the
+  // product's own tables, and the authentication library's, which its generator emits
+  // into a file of their own (ID56).
+  schema: ["./src/schema.ts", "./src/auth-schema.ts"],
   out: "./drizzle",
   dbCredentials: {
     url: DATABASE_URL ?? "postgres://jobapp:local_dev_only@localhost:5432/jobapp",

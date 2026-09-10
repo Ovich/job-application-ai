@@ -1,5 +1,5 @@
 import { fileURLToPath } from "node:url";
-import * as schema from "@app/db/schema";
+import * as schema from "@app/db";
 import { PGlite } from "@electric-sql/pglite";
 import { drizzle } from "drizzle-orm/pglite";
 import { migrate } from "drizzle-orm/pglite/migrator";
