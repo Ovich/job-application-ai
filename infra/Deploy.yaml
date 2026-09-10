@@ -106,7 +106,6 @@ Resources:
               - arn:aws:cloudformation:*:917993967998:stack/Deploy/*
               - arn:aws:cloudformation:*:917993967998:stack/Dns/*
               - arn:aws:cloudformation:*:917993967998:stack/Cert-dev/*
-              - arn:aws:cloudformation:*:917993967998:stack/Data-dev/*
               - arn:aws:cloudformation:*:917993967998:stack/App-dev/*
 
           # `aws cloudformation deploy` calls ValidateTemplate, which takes no resource.

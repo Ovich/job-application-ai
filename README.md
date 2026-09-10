@@ -95,7 +95,7 @@ to CI, so that a laptop with only Node on it can still run everything else.
 apps/web      Angular 22, standalone, signals, zoneless
 apps/api      Hono on Node today, on Lambda in the cloud
 packages/db   the Drizzle schema, the single source of truth for data shapes
-infra         CloudFormation YAML: Deploy and Dns once, Cert-dev, Data-dev and App-dev per environment
+infra         CloudFormation YAML: Deploy and Dns once, Cert-dev and App-dev per environment
 ```
 
 Types flow one way and are never written twice: the Drizzle schema defines the row

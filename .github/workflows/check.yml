@@ -60,8 +60,8 @@ jobs:
       # of a template's correctness the parity harness cannot see: the harness compares
       # two templates and would happily agree on a property that does not exist.
       #
-      # No arguments: which templates and which rule is turned off are both in
-      # `infra/.cfnlintrc.yaml`, and cfn-lint looks for that in the directory it runs in.
+      # No arguments: which templates to read is in `infra/.cfnlintrc.yaml`, and
+      # cfn-lint looks for that in the directory it runs in.
       # Pinned like every action here, and for the same reason.
       - name: Lint the CloudFormation templates
         working-directory: infra

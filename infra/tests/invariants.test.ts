@@ -1,9 +1,9 @@
 /**
  * The properties that are not preferences.
  *
- * Each of these was one line of CDK — `natGateways: 0`, `compress: false`,
- * `serverlessV2MinCapacity: 0` — and each is a decision recorded in the foundation that
- * a later edit could undo without anything noticing. They are the reason rule 17 exists
+ * Each of these was one line of CDK — `natGateways: 0`, `compress: false` — and each is
+ * a decision recorded in the foundation that a later edit could undo without anything
+ * noticing. They are the reason rule 17 exists
  * and the reason F15 holds, and until this file they were defended by nobody: `infra/`
  * had no tests, and CI never so much as synthesised a template.
  *
@@ -42,11 +42,10 @@ const at = (stack: string, id: string, path: string): Json | undefined =>
   leaves(resource(stack, id) as unknown as Json).get(path);
 
 describe("the templates are all here", () => {
-  it("finds the five stacks", () => {
+  it("finds the four stacks", () => {
     expect(templates.map(([name]) => name).sort()).toEqual([
       "App-dev.yaml",
       "Cert-dev.yaml",
-      "Data-dev.yaml",
       "Deploy.yaml",
       "Dns.yaml",
     ]);
@@ -72,7 +71,7 @@ describe("the cost posture (rule 17, F15)", () => {
     }
   });
 
-  it("has no RDS proxy anywhere, which is always-on capacity in front of a paused cluster", () => {
+  it("has no RDS proxy anywhere, which is always-on capacity in front of a database", () => {
     for (const [name, template] of templates) {
       expect([name, typesIn(template).filter((type) => type === "AWS::RDS::DBProxy")]).toEqual([
         name,
@@ -86,17 +85,6 @@ describe("the cost posture (rule 17, F15)", () => {
       (path) => path.startsWith("Properties.VpcConfig"),
     );
     expect(inTheVpc).toEqual([]);
-  });
-
-  it("lets the cluster scale to nothing and pause after five idle minutes", () => {
-    expect({
-      minimum: at("Data-dev", "Cluster", "Properties.ServerlessV2ScalingConfiguration.MinCapacity"),
-      pauseAfter: at(
-        "Data-dev",
-        "Cluster",
-        "Properties.ServerlessV2ScalingConfiguration.SecondsUntilAutoPause",
-      ),
-    }).toEqual({ minimum: 0, pauseAfter: 300 });
   });
 });
 
@@ -138,49 +126,12 @@ describe("the front door (F10)", () => {
   });
 });
 
-describe("the public database endpoint (D5)", () => {
-  it("refuses a connection that has not negotiated TLS", () => {
-    expect(at("Data-dev", "ClusterParameters", "Properties.Parameters.rds.force_ssl")).toBe("1");
-  });
-
-  it("authenticates the application by identity token rather than by password", () => {
-    expect(at("Data-dev", "Cluster", "Properties.EnableIAMDatabaseAuthentication")).toBe(true);
-  });
-});
-
 describe("the zone that cannot be recreated", () => {
   it("survives the deletion of the stack that declares it", () => {
     expect({
       onDelete: resource("Dns", "Zone").DeletionPolicy,
       onReplace: resource("Dns", "Zone").UpdateReplacePolicy,
     }).toEqual({ onDelete: "Retain", onReplace: "Retain" });
-  });
-});
-
-describe("what EC2 will accept in a rule description", () => {
-  // EC2 takes a security group rule description only from this set, and rejects the
-  // whole stack otherwise. The first deploy of Data-dev died here after twelve minutes
-  // of Aurora provisioning, on the apostrophe in "pipeline's": a character legal
-  // everywhere else in the template, in a field that reads like a comment. cfn-lint does
-  // not know the rule, so nothing before CloudFormation catches it.
-  const allowed = /^[a-zA-Z0-9. _\-:/()#,@[\]+=&;{}!$*]*$/;
-
-  it("accepts every ingress and egress description in Data-dev", () => {
-    const group = resource("Data-dev", "ClusterSecurityGroup").Properties as Record<
-      string,
-      { Description?: string }[]
-    >;
-    const rules = [
-      ...(group["SecurityGroupIngress"] ?? []),
-      ...(group["SecurityGroupEgress"] ?? []),
-    ];
-    expect(rules.length).toBeGreaterThan(0);
-    for (const rule of rules) {
-      expect({
-        description: rule.Description,
-        legal: allowed.test(rule.Description ?? ""),
-      }).toEqual({ description: rule.Description, legal: true });
-    }
   });
 });
 

@@ -143,51 +143,6 @@ const conversions: readonly Conversion[] = [
     },
   },
   {
-    stack: "Data-dev",
-    names: {
-      Vpc: "Vpc8378EB38",
-      PublicSubnet1: "VpcpublicSubnet1Subnet2BB74ED7",
-      PublicSubnet1RouteTable: "VpcpublicSubnet1RouteTable15C15F8E",
-      PublicSubnet1RouteTableAssociation: "VpcpublicSubnet1RouteTableAssociation4E83B6E4",
-      PublicSubnet1DefaultRoute: "VpcpublicSubnet1DefaultRouteB88F9E93",
-      PublicSubnet2: "VpcpublicSubnet2SubnetE34B022A",
-      PublicSubnet2RouteTable: "VpcpublicSubnet2RouteTableC5A6DF77",
-      PublicSubnet2RouteTableAssociation: "VpcpublicSubnet2RouteTableAssociationCCE257FF",
-      PublicSubnet2DefaultRoute: "VpcpublicSubnet2DefaultRoute732F0BEB",
-      InternetGateway: "VpcIGWD7BA715C",
-      InternetGatewayAttachment: "VpcVPCGWBF912B6E",
-      ClusterSecurityGroup: "ClusterSecurityGroup94AE9AAE",
-      ClusterParameters: "ClusterParametersB0AF7FD1",
-      ClusterSubnets: "ClusterSubnetsDCFA5CB7",
-      Cluster: "ClusterEB0386A7",
-      ClusterWriter: "ClusterWriterA91BB273",
-    },
-    scaffolding: { ...cdkPreamble },
-    differences: {
-      ...cdkPreamblePaths,
-      "Resources.ClusterSecurityGroup.Properties.SecurityGroupIngress[0].Description":
-        "Reworded to carry no apostrophe. EC2 accepts a rule description only from a-zA-Z0-9. _-:/()#,@[]+=&;{}!$*, and rejected the whole stack on the one in \"pipeline's\" — the first deploy of Data-dev died there on 2026-09-09 after twelve minutes of Aurora provisioning. CDK's template carried the same apostrophe and would have failed identically. invariants.test.ts asserts the character set now.",
-      "Resources.Vpc.Properties.Tags":
-        "A Name tag whose value was the construct path, Data-dev/Vpc.",
-      "Resources.PublicSubnet1.Properties.Tags":
-        "The same, plus aws-cdk:subnet-name and aws-cdk:subnet-type, which existed so CDK's own subnet selection could find the subnet again. Nothing selects subnets any more; they are named here.",
-      "Resources.PublicSubnet2.Properties.Tags": "The same.",
-      "Resources.PublicSubnet1RouteTable.Properties.Tags": "The same construct-path Name tag.",
-      "Resources.PublicSubnet2RouteTable.Properties.Tags": "The same.",
-      "Resources.InternetGateway.Properties.Tags": "The same.",
-      "Outputs.ClusterResourceId":
-        "The export App-dev reads, under a name a person can read. CDK called it ExportsOutputFnGetAttClusterEB0386A7DBClusterResourceId77E0EA54.",
-      "Outputs.ClusterEndpointAddress": "The same, for the endpoint's address.",
-      "Outputs.ClusterEndpointPort": "The same, for its port.",
-      "Outputs.ExportsOutputFnGetAttClusterEB0386A7DBClusterResourceId77E0EA54":
-        "Replaced by Outputs.ClusterResourceId above.",
-      "Outputs.ExportsOutputFnGetAttClusterEB0386A7EndpointAddress0B87592A":
-        "Replaced by Outputs.ClusterEndpointAddress above.",
-      "Outputs.ExportsOutputFnGetAttClusterEB0386A7EndpointPortC64D6DE0":
-        "Replaced by Outputs.ClusterEndpointPort above.",
-    },
-  },
-  {
     stack: "App-dev",
     names: {
       ApiLogs: "ApiLogs3D05D88B",
