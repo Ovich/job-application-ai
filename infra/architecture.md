@@ -77,18 +77,21 @@ flowchart TB
   end
   subgraph env["Once per environment"]
     Cert["<b>Cert-dev</b> · us-east-1<br/>the certificate"]
-    Data["<b>Data-dev</b><br/>holds the state"]
+    Data["<b>Data-dev</b><br/>nothing needs it any more"]
     App["<b>App-dev</b><br/>rebuildable from the repository"]
   end
   Dns -->|"zone id, for validation"| Cert
   Cert -->|"certificate ARN"| App
-  Data -->|"cluster endpoint, resource id"| App
   Deploy -->|"execution role, artefact bucket"| App
   Dns -->|"zone id, for the alias record"| App
+  Data ~~~ App
 ```
 
-`Data-dev` carries termination protection and `App-dev` does not: the application can be
-torn down and redeployed from the repository, the database cannot.
+**`Data-dev` is on its way out** (board `D19`). The state is a Neon project now, so
+`App-dev` imports nothing from it and the stack stands unused, still carrying its
+termination protection, until a person turns that off and deletes it. Everything this
+document says about the cluster, the VPC and the public IPv4 describes what is still in
+the account, not what serves a request.
 
 ## The tiers a request passes through
 
@@ -121,14 +124,13 @@ flowchart TB
     ApiFunctionUrl["<b>ApiFunctionUrl</b><br/>AWS_IAM · RESPONSE_STREAM"]
     Api["<b>Api</b><br/>Hono, every route, outside the VPC"]
     ApiInvoke["<b>ApiInvokeFromDistribution</b>"]
-    ApiRole["<b>ApiRole</b> + <b>ApiRolePolicy</b><br/>mints the rds-db:connect token"]
+    ApiRole["<b>ApiRole</b><br/>its own log group, nothing else"]
     ApiLogs["<b>ApiLogs</b>"]
   end
 
-  subgraph t5["5 · Data — RDS, inside the VPC"]
-    SG["<b>ClusterSecurityGroup</b><br/>5432, TLS forced"]
-    Cluster["<b>Cluster</b><br/>Aurora Serverless v2, pauses at 0 ACU"]
-    ClusterWriter["<b>ClusterWriter</b>"]
+  subgraph t5["5 · Data — Neon, outside AWS"]
+    Neon["<b>Neon project</b> · aws-eu-central-1<br/>PostgreSQL, pooled endpoint, TLS"]
+    Secret["<b>jobapp/dev/database-url</b><br/>Secrets Manager"]
   end
 
   browser -->|"resolve"| AliasRecord
@@ -136,9 +138,8 @@ flowchart TB
   Distribution -->|"default behaviour"| WebBucket
   Distribution -->|"/api/* signed SigV4"| ApiFunctionUrl
   ApiFunctionUrl --> Api
-  Api -->|"postgres.js, token as password"| SG
-  SG --> Cluster
-  Cluster --- ClusterWriter
+  Api -->|"postgres.js, TLS, over the internet"| Neon
+  Secret -.->|"read by CloudFormation at deploy,<br/>set as DATABASE_URL"| Api
 
   AliasRecord -.-> Zone
   Certificate -.->|"TLS for the alias"| Distribution
@@ -150,10 +151,13 @@ flowchart TB
   Api -.->|"writes"| ApiLogs
 ```
 
-**Tier 4 sits outside the VPC and tier 5 inside it.** That is the unusual seam: the
-function reaches the database over the public endpoint rather than through the network,
-which is what removes the NAT gateway. `ClusterSecurityGroup` is the boundary, and TLS
-plus a per-connection identity token are what defend it.
+**Tier 5 is not in the account at all.** That is the unusual seam: the database is a
+Neon project in `aws-eu-central-1`, so there is no VPC anywhere in the architecture and
+no NAT gateway to avoid. What defends the hop is TLS and the connection string itself,
+which names one project's pooler, is held in Secrets Manager and is never in this
+repository (`D19`, rule 12). What is given up is stated rather than discovered: the data
+sits with a third party, and the credential is a password where the Aurora cluster had
+an identity token minted per connection.
 
 **Nothing skips a tier.** The browser cannot reach `ApiFunctionUrl` — it is `AWS_IAM` and
 rejects anything the distribution has not signed. It cannot reach `WebBucket` — the
@@ -168,7 +172,7 @@ private, and CloudFront is the only door.
 |---|---|---|
 | `GitHubProvider` | `AWS::IAM::OIDCProvider` | Trusts tokens minted by GitHub Actions. One per URL per account |
 | `DeployRole` | `AWS::IAM::Role` | `github-actions-deploy-dev`. Assumed by the pipeline; trusts one repository and `refs/heads/main` only |
-| `DeployRolePolicy` | `AWS::IAM::Policy` | What the pipeline may do. CloudFormation on these five stacks **by name**, `PassRole` on the execution role, the artefact bucket, the web bucket, and the four statements the migrate step needs |
+| `DeployRolePolicy` | `AWS::IAM::Policy` | What the pipeline may do. CloudFormation on these five stacks **by name**, `PassRole` on the execution role, the artefact bucket, the web bucket, and `GetSecretValue` on `jobapp/dev/database-url` alone, which is all the migrate step needs |
 | `CloudFormationExecutionRole` | `AWS::IAM::Role` | The rights to **create** resources are held here, not by the pipeline. CloudFormation acts as this role, so a mistake in the workflow reaches only what CloudFormation would have done anyway |
 | `ArtefactBucket` | `AWS::S3::Bucket` | Holds the Lambda bundle the pipeline uploads |
 
@@ -196,7 +200,11 @@ why it is retained, and why `import-runbook.md` exists.
 |---|---|---|
 | `Certificate` | `AWS::CertificateManager::Certificate` | `dev.job-application.app`, validated by DNS against the zone |
 
-### `Data-dev` — the state
+### `Data-dev` — deployed, and no longer the state
+
+**Nothing reads any of this.** The rows below are what stands in the account until the
+stack is deleted (`D19`). They are kept here so that a person looking at the console can
+match what they see; the state is the Neon project.
 
 | Logical id | Type | What it is for |
 |---|---|---|
@@ -212,21 +220,19 @@ why it is retained, and why `import-runbook.md` exists.
 | `Cluster` | `AWS::RDS::DBCluster` | Aurora Serverless v2, PostgreSQL. `MinCapacity 0`, `SecondsUntilAutoPause 300`, IAM authentication on |
 | `ClusterWriter` | `AWS::RDS::DBInstance` | One instance |
 
-**The trade, stated plainly.** Lambda runs outside the VPC, so it reaches the database
-over the public endpoint and the security group opens 5432 to the internet. That is what
-buys the absence of a NAT gateway. Three things carry the weight instead: `rds.force_ssl`
-refuses any connection that has not negotiated TLS, authentication is an identity token
-minted per connection with no password anywhere in the cloud, and the cluster is paused
-most of the time. AWS's own linter flags the public endpoint (`W9011`); it is a decision
-(`D5`), not an oversight.
+**The trade this stack was built for is over.** Lambda outside the VPC reaching a public
+Aurora endpoint bought the absence of a NAT gateway, defended by `rds.force_ssl` and an
+identity token minted per connection. The board reversed the destination rather than the
+posture: `D18` moved the database off Aurora Serverless v2, `D19` made it Neon rather
+than Aurora DSQL, and the same absence of a NAT gateway comes free once there is no VPC.
 
 ### `App-dev` — the application
 
 | Logical id | Type | What it is for |
 |---|---|---|
 | `ApiLogs` | `AWS::Logs::LogGroup` | Two weeks' retention |
-| `ApiRole`, `ApiRolePolicy` | `AWS::IAM::Role`, `::Policy` | What the function may do: `rds-db:connect` as the `api` user, and its own log group |
-| `Api` | `AWS::Lambda::Function` | Hono. One function for **every** route |
+| `ApiRole` | `AWS::IAM::Role` | What the function may do: write its own log group, and nothing else. The database is not an AWS resource, so there is no right to grant on it |
+| `Api` | `AWS::Lambda::Function` | Hono. One function for **every** route. `DATABASE_URL` is a `{{resolve:secretsmanager:...}}` reference CloudFormation reads while it applies the stack, so the function makes no call to read it and a rotated secret arrives on the next deploy |
 | `ApiFunctionUrl` | `AWS::Lambda::Url` | `AuthType: AWS_IAM`, `InvokeMode: RESPONSE_STREAM` |
 | `ApiInvokeFromDistribution` | `AWS::Lambda::Permission` | Lets one distribution, and only that one, invoke the function |
 | `WebBucket`, `WebBucketPolicy` | `AWS::S3::Bucket`, `::BucketPolicy` | The Angular bundle. Readable only by the distribution |
@@ -242,14 +248,16 @@ cost posture:
 
 | | Resources | Cost shape |
 |---|---|---|
-| **Always there** | `Zone`, `WebBucket`, `ArtefactBucket`, `ApiLogs`, and the public IPv4 the cluster's endpoint holds | A hosted zone and a public IPv4 are each charged by the hour whether or not anything asks for them. Storage is charged by the byte. These are the fixed line |
+| **Always there** | `Zone`, `WebBucket`, `ArtefactBucket`, `ApiLogs` | A hosted zone is charged by the hour whether or not anything asks for it. Storage is charged by the byte. These are the fixed line |
 | **Runs only when asked** | `Api` (Lambda), `Distribution` (CloudFront) | Per invocation and per request. Nothing at rest |
-| **Asleep by default** | `Cluster` (Aurora Serverless v2) | `MinCapacity 0` with `SecondsUntilAutoPause 300`: five idle minutes and it scales to nothing. The first request after that waits while it wakes |
+| **Asleep by default** | the Neon project | Neon's own free tier, not an AWS line. It scales to nothing when idle and wakes in roughly half a second |
+| **Still billed, and only until the stack goes** | `Cluster` and the public IPv4 its endpoint holds | `Data-dev` is deployed and unused. The IPv4 is charged by the hour until the stack is deleted, which is the last item of `D19` |
 | **Costs nothing, ever** | Every `AWS::IAM::*`, the `Vpc` and its subnets, route tables and gateway, `ClusterSecurityGroup`, `ClusterParameters`, `ClusterSubnets`, both `OriginAccessControl`s, `ApiInvokeFromDistribution`, `MonthlySpend`, `Alerts` | Configuration. It has no runtime |
 
-So on a quiet day the account runs **nothing**: the cluster is paused, the function is
-not invoked, and the distribution serves nobody. What is left is a hosted zone, an IPv4
-address, and a few megabytes of S3 — which is what makes `F15`'s figure achievable.
+So on a quiet day the account runs **nothing**: the function is not invoked and the
+distribution serves nobody. What is left is a hosted zone and a few megabytes of S3 —
+which is what makes `F15`'s figure achievable — plus the IPv4 of a cluster nothing reads,
+until that stack is deleted.
 
 State machine: what the account is doing at any moment, and what moves it between.
 
@@ -265,16 +273,15 @@ stateDiagram-v2
   Page --> Idle: response sent
   Idle --> Waking: first GET or POST /api/* after a pause
   Page --> Waking: the page's first query
-  Waking --> Working: cluster resumes
+  Waking --> Working: the Neon compute resumes
   Working --> Working: further requests, no wait
-  Working --> Idle: 300 s with no query
+  Working --> Idle: no query for a while
 
   note left of Idle
     Route 53 · Zone — answers DNS
-    EC2 · the cluster's public IPv4 — reserved
     S3 · WebBucket, ArtefactBucket — hold bytes
     CloudWatch Logs · ApiLogs — holds bytes
-    RDS · Cluster — PAUSED, 0 ACU
+    Neon · the project — idle, scaled to nothing
     Lambda · Api — not invoked
     CloudFront · Distribution — serving nobody
   end note
@@ -284,21 +291,20 @@ stateDiagram-v2
       Compress true, CachingOptimized
     S3 · WebBucket — read through
       WebOriginAccessControl
-    RDS · Cluster — still paused, untouched
+    Neon · the project — still idle, untouched
   end note
   note right of Waking
-    RDS · Cluster — resuming from 0 ACU
+    Neon · the project — resuming, about 500 ms
     Lambda · Api — invoked, holding the request
-    The only slow path. This request waits;
-    the ones behind it do not.
+    The only slow path, and a short one. This
+    request waits; the ones behind it do not.
   end note
   note right of Working
     CloudFront · Distribution — /api/* behaviour,
       Compress FALSE, caching disabled
     Lambda · Api + ApiFunctionUrl — RESPONSE_STREAM,
       signed by ApiOriginAccessControl
-    IAM · ApiRole — mints the rds-db:connect token
-    RDS · Cluster + ClusterWriter — billed per ACU-second
+    Neon · the project — serving, billed by Neon
     CloudWatch Logs · ApiLogs — written to
   end note
 ```
@@ -308,16 +314,15 @@ Loading the page costs a CloudFront request and an S3 read and nothing else; onl
 to `/api/*` reaches the function, and only a query reaches the cluster. So a visitor who
 looks and leaves never wakes the database.
 
-**And `Waking` is a real wait**, not a warm-up. A paused Aurora Serverless v2 cluster
-takes seconds to resume, and the request that triggers it pays for all of them. That is
-the cost of `MinCapacity 0`, accepted knowingly: on dev nobody minds, and `D5` says the
-pause interval is raised on prod once users arrive so that only the first visitor after a
-quiet stretch waits.
+**`Waking` is barely a wait any more.** Neon's compute resumes in roughly half a second,
+where the paused Aurora Serverless v2 cluster it replaced took seconds and the request
+that triggered it paid for all of them (`D19`). That is most of why the board moved: the
+schema, the `pgEnum` and drizzle-kit work untouched on real PostgreSQL, and the wait stops
+being something a failure table has to price.
 
-The two that do cost while idle are worth knowing by name. The **hosted zone** is
-unavoidable: it is the domain. The **public IPv4** is the price of the trade below —
-Lambda outside the VPC reaching a public endpoint — and is roughly a tenth of what a NAT
-gateway would cost to avoid it.
+One thing costs while idle and is worth knowing by name: the **hosted zone**, which is
+unavoidable because it is the domain. The **public IPv4** of the Aurora endpoint is still
+being charged and should not be — it goes when `Data-dev` does.
 
 `MonthlySpend` watches all of it and mails `Alerts` at the threshold, which is `US7`.
 
@@ -331,15 +336,15 @@ sequenceDiagram
   participant D as Distribution
   participant U as ApiFunctionUrl
   participant F as Api (Lambda)
-  participant C as Cluster
+  participant C as Neon (aws-eu-central-1)
   B->>D: GET dev.job-application.app/api/runs/latest
   Note over D: /api/* behaviour<br/>Compress FALSE, caching disabled
   D->>U: signed with SigV4 (ApiOriginAccessControl)
   Note over U: AuthType AWS_IAM<br/>rejects anything unsigned
   U->>F: RESPONSE_STREAM
-  F->>F: mint an identity token as ApiRole
-  F->>C: TLS, token as the password
-  Note over C: paused? first request waits<br/>while it wakes
+  Note over F: DATABASE_URL is already set:<br/>CloudFormation resolved the<br/>secret at deploy
+  F->>C: TLS, the pooled connection string
+  Note over C: idle? the compute resumes<br/>in about half a second
   C-->>F: rows
   F-->>B: streamed through the distribution
 ```
@@ -361,7 +366,7 @@ Phasing: the order a merge is applied in, and where it stops.
 
 ```mermaid
 flowchart TB
-  merge["merge to main"] --> check["check: biome, tsc, 68 + 14 tests, cfn-lint"]
+  merge["merge to main"] --> check["check: biome, tsc, 81 + 14 tests, cfn-lint"]
   check --> oidc["assume DeployRole by OIDC"]
   oidc --> shared["Deploy, Dns"]
   shared --> cert["Cert-dev, us-east-1"]
@@ -369,8 +374,7 @@ flowchart TB
   bundle --> data["Data-dev, then termination protection"]
   data --> app["App-dev"]
   app --> sync["s3 sync the web bundle, invalidate /index.html"]
-  sync --> role["create the api role, GRANT rds_iam"]
-  role --> migrate["drizzle-kit migrate, as api, by token"]
+  sync --> migrate["drizzle-kit migrate, on the connection<br/>string read from Secrets Manager"]
   migrate --> done["the pipeline ends here"]
 ```
 

@@ -98,7 +98,7 @@ const conversions: readonly Conversion[] = [
       "Resources.DeployRolePolicy.Properties.PolicyName":
         "A readable name in place of the hashed one CDK derived from the construct path.",
       "Resources.DeployRolePolicy.Properties.PolicyDocument.Statement":
-        "The pipeline no longer assumes CDK's bootstrap roles, so the rights those roles held are held here instead: CloudFormation, PassRole on the execution role, and the artefact bucket (S6.4). The migrate step's four statements are unchanged.",
+        "The pipeline no longer assumes CDK's bootstrap roles, so the rights those roles held are held here instead: CloudFormation, PassRole on the execution role, and the artefact bucket (S6.4). The migrate step's four statements — describe the cluster, read the master password, mint a token, connect as api — became one: read the Neon connection string from Secrets Manager (D19, S7.6).",
       "Resources.CloudFormationExecutionRole":
         "New. CDK's bootstrap created cdk-hnb659fds-cfn-exec-role and CloudFormation acted as it; deleting CDK deletes that, and this is it, declared where a reader can see it. Keeping it separate is what keeps the pipeline's own identity narrow.",
       "Resources.ArtefactBucket":
@@ -192,7 +192,6 @@ const conversions: readonly Conversion[] = [
     names: {
       ApiLogs: "ApiLogs3D05D88B",
       ApiRole: "ApiServiceRole1BD550DA",
-      ApiRolePolicy: "ApiServiceRoleDefaultPolicyB24862FE",
       Api: "ApiF70053CD",
       ApiFunctionUrl: "ApiFunctionUrl46E4ABDE",
       WebBucket: "WebBucket12880F5B",
@@ -206,6 +205,8 @@ const conversions: readonly Conversion[] = [
     },
     scaffolding: {
       ...cdkPreamble,
+      ApiServiceRoleDefaultPolicyB24862FE:
+        "The function's rds-db:connect on the Aurora cluster. The database is Neon now, outside the account, reached with a connection string rather than an identity token, so there is no AWS resource left to grant a right on (D19, S7.5).",
       WebBucketAutoDeleteObjectsCustomResource9C1A079F:
         "CDK's autoDeleteObjects: a Lambda that empties the bucket so the stack can delete it. The pipeline's s3 sync --delete keeps it free of stale objects, and nothing deletes this stack automatically.",
       CustomS3AutoDeleteObjectsCustomResourceProviderRole3B1BD092: "That Lambda's role.",
@@ -231,20 +232,21 @@ const conversions: readonly Conversion[] = [
       "Parameters.CertificateArn":
         "New. Read from Cert-dev's output by the pipeline, in place of the cross-region reader.",
       "Resources.Api.DependsOn":
-        "CDK named both the role and its policy. The role is already ordered ahead of the function by the Fn::GetAtt on its ARN, so naming it again says nothing; cfn-lint reports the redundancy as W3005.",
+        "CDK named the role and its policy. There is no policy any more, and the role is already ordered ahead of the function by the Fn::GetAtt on its ARN, so naming it again would say nothing; cfn-lint reports that redundancy as W3005.",
       "Resources.Api.Properties.Code.S3Bucket":
         "The project's artefact bucket in place of CDK's bootstrap asset bucket.",
       "Resources.Api.Properties.Code.S3Key":
         "The parameter above in place of the synth-time content hash.",
       "Resources.Api.Properties.Environment.Variables.DATABASE_HOST":
-        "The same import from Data-dev, under the export's readable name.",
-      "Resources.Api.Properties.Environment.Variables.DATABASE_PORT": "The same.",
+        "Gone. The cluster's endpoint, imported from Data-dev. The function is told one connection string now, and env.ts splits it (D19, S7.5).",
+      "Resources.Api.Properties.Environment.Variables.DATABASE_PORT": "Gone, with it.",
+      "Resources.Api.Properties.Environment.Variables.DATABASE_NAME":
+        "Gone, with it: the database's name is inside the connection string.",
+      "Resources.Api.Properties.Environment.Variables.DATABASE_USER": "Gone, and so is the user's.",
+      "Resources.Api.Properties.Environment.Variables.DATABASE_URL":
+        "New. A {{resolve:secretsmanager:...}} dynamic reference to jobapp/dev/database-url, which CloudFormation reads while it applies the stack. The secret is never in this repository (rule 12) and the function makes no call to read it.",
       "Resources.ApiInvokeFunctionFromDistribution":
         "New, and required. Since October 2025 a function URL behind origin access control needs lambda:InvokeFunction as well as lambda:InvokeFunctionUrl, or CloudFront is refused with 403 before the function is invoked at all. CDK granted only the latter, which is what every guide written before that date says; the first deploy failed on exactly this, with a textbook configuration and an empty log group.",
-      "Resources.ApiRolePolicy.Properties.PolicyName":
-        "A readable name in place of the hashed one.",
-      "Resources.ApiRolePolicy.Properties.PolicyDocument.Statement[0].Resource":
-        "The same ARN, built from Data-dev's renamed export.",
       "Resources.WebBucket.Properties.BucketName":
         "Named rather than generated. The Deploy stack grants the pipeline the right to sync into this bucket, and an IAM policy in another stack cannot name a bucket CloudFormation has not invented yet.",
       "Resources.WebBucket.Properties.Tags":

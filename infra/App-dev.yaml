@@ -59,27 +59,6 @@ Resources:
             - !Ref AWS::Partition
             - ":iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
 
-  # What lets the function authenticate as a database role without holding a secret. The
-  # ARN names the role: a token minted for any other PostgreSQL user is refused.
-  ApiRolePolicy:
-    Type: AWS::IAM::Policy
-    Properties:
-      PolicyName: api-connects-to-the-database
-      Roles:
-        - !Ref ApiRole
-      PolicyDocument:
-        Version: "2012-10-17"
-        Statement:
-          - Effect: Allow
-            Action: rds-db:connect
-            Resource: !Join
-              - ""
-              - - "arn:"
-                - !Ref AWS::Partition
-                - ":rds-db:eu-central-1:917993967998:dbuser:"
-                - !ImportValue Data-dev:ClusterResourceId
-                - "/api"
-
   # The API. One function for every route, in response-streaming invoke mode from the
   # first deploy rather than from the slice that needs streaming (ID9): a streaming
   # function serves an ordinary buffered JSON response perfectly well, so splitting into
@@ -89,18 +68,19 @@ Resources:
   # APP_RUNTIME has to be set explicitly: an unset one falls back to the local runtime,
   # which would point the function at a database on its own loopback interface and fail
   # in a way that reads like a network problem rather than a configuration one (ID23).
+  #
+  # This stack imports nothing from Data-dev any more, which is what lets that stack be
+  # deleted at all: CloudFormation refuses to delete a stack whose exports are in use
+  # (S7.5, and invariants.test.ts asserts it).
   Api:
     Type: AWS::Lambda::Function
-    # The policy only, and not the role: the role is already ordered ahead of the
-    # function by the GetAtt below, and naming it twice is what cfn-lint's W3005 is
-    # about. CDK named both.
-    DependsOn: ApiRolePolicy
     Properties:
       Runtime: nodejs24.x
       Handler: index.handler
       MemorySize: 512
-      # Long enough for a run that streams and for a cluster that has to wake, which the
-      # spec's failure table prices at about fifteen seconds.
+      # Long enough for a run that streams. Waking the database no longer figures in it:
+      # Neon's compute answers in roughly half a second where the paused Aurora cluster
+      # took fifteen (D19).
       Timeout: 300
       Role: !GetAtt ApiRole.Arn
       LoggingConfig:
@@ -111,10 +91,14 @@ Resources:
       Environment:
         Variables:
           APP_RUNTIME: cloud
-          DATABASE_HOST: !ImportValue Data-dev:ClusterEndpointAddress
-          DATABASE_PORT: !ImportValue Data-dev:ClusterEndpointPort
-          DATABASE_NAME: jobapp
-          DATABASE_USER: api
+          # The pooled connection string of the Neon project in aws-eu-central-1, held
+          # in Secrets Manager and never in this repository (rule 12, D19). A dynamic
+          # reference: CloudFormation reads the secret while it applies the stack, so
+          # the function needs no right on Secrets Manager and makes no call to it at
+          # cold start. The consequence, and it is the reason the name is written here
+          # rather than passed as a parameter: a rotated secret reaches the function on
+          # the next deploy, not on the rotation.
+          DATABASE_URL: "{{resolve:secretsmanager:jobapp/dev/database-url:SecretString}}"
 
   # The URL is unreachable except through the distribution, which signs every request it
   # forwards. An unauthenticated function URL would be a second, public front door to the

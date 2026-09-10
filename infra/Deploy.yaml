@@ -154,28 +154,15 @@ Resources:
             Action: cloudfront:CreateInvalidation
             Resource: arn:aws:cloudfront::917993967998:distribution/*
 
-          # Where the cluster is, and which secret RDS manages its master password in.
-          - Sid: FindTheCluster
-            Effect: Allow
-            Action: rds:DescribeDBClusters
-            Resource: "*"
-
-          # One statement, once: creating the `api` role and granting it rds_iam, which
-          # only a password login can do. Scoped to the secrets RDS itself manages, so
-          # this cannot read any secret the application ever holds.
-          - Sid: ReadTheMasterPasswordRdsManages
+          # The one secret this identity may read, and the one step that needs it: the
+          # migration, which connects as the application does. Named down to the secret,
+          # so the rights of the pipeline do not grow with the account's secrets. The
+          # trailing wildcard is Secrets Manager's own six-character suffix, which it
+          # appends to every secret's ARN and which nothing here chooses.
+          - Sid: ReadTheDatabaseConnectionString
             Effect: Allow
             Action: secretsmanager:GetSecretValue
-            Resource: arn:aws:secretsmanager:*:917993967998:secret:rds!cluster-*
-
-          # The database user is named in the resource, so a token minted for any other
-          # PostgreSQL role is refused. The cluster's resource id is not known here: it
-          # is created by a stack this stack knows nothing about, and it changes if the
-          # cluster is ever restored from a snapshot.
-          - Sid: MigrateAsTheApplicationsOwnRole
-            Effect: Allow
-            Action: rds-db:connect
-            Resource: arn:aws:rds-db:*:917993967998:dbuser:*/api
+            Resource: arn:aws:secretsmanager:*:917993967998:secret:jobapp/dev/database-url-*
 
   # Who CloudFormation is while it deploys. Every stack is applied with --role-arn
   # naming this role, so the rights to create a distribution or a database cluster live

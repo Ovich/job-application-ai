@@ -183,3 +183,25 @@ describe("what EC2 will accept in a rule description", () => {
     }
   });
 });
+
+describe("the database that is no longer AWS's (D19, S7.5)", () => {
+  it("leaves the application importing nothing from the data stack, which is what makes that stack deletable", () => {
+    const imported = [...leaves(readYamlTemplate(infra("App-dev.yaml")) as unknown as Json)]
+      .filter(([path]) => path.endsWith("Fn::ImportValue"))
+      .map(([path, value]) => `${path} = ${JSON.stringify(value)}`);
+    expect(imported).toEqual([]);
+  });
+
+  it("hands the function its connection string as a Secrets Manager reference, never as a literal (rule 12)", () => {
+    expect(at("App-dev", "Api", "Properties.Environment.Variables.DATABASE_URL")).toMatch(
+      /^\{\{resolve:secretsmanager:jobapp\/dev\/database-url:SecretString\}\}$/,
+    );
+  });
+
+  it("grants the function no right on any database, because there is no AWS database to grant one on", () => {
+    const granted = [...leaves(readYamlTemplate(infra("App-dev.yaml")) as unknown as Json)]
+      .filter(([, value]) => typeof value === "string" && value.startsWith("rds-db:"))
+      .map(([path]) => path);
+    expect(granted).toEqual([]);
+  });
+});
