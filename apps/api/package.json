@@ -7,7 +7,7 @@
     ".": "./src/app.ts"
   },
   "scripts": {
-    "dev": "tsx watch src/local.ts",
+    "dev": "tsx watch --env-file-if-exists=.env src/local.ts",
     "check:types": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
