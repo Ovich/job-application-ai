@@ -47,34 +47,24 @@ import { db } from "../db";
  * after the user row is gone cannot be rolled back with it (ID65b). What this product
  * owns beyond those tables goes in `beforeDelete`, below.
  *
- * The cloud runtime may lack a provider's client until S5.2 (see `env.ts`), and then
- * that provider is not configured: the routes still mount and answer, there is just no
- * button that leads anywhere, which is the state the deployed environment is in until
- * slice 5.
+ * The three providers are configured unconditionally, wherever this runs. Until S5.2 the
+ * cloud could lack a client and mounted without that provider; `env.ts` now requires
+ * every value in both branches, so there is nothing left to tolerate and the helpers
+ * that tolerated it are gone (ID60). A value that is missing fails the cold start with
+ * the field named, which is where a half-configured environment has to be found out.
+ *
+ * The secret is the fourth thing this file decides, and the one that is easiest to get
+ * silently wrong (ID71): `secret` is passed in from `env.ts` rather than left to the
+ * library, which would otherwise read `BETTER_AUTH_SECRET` from the process environment
+ * itself (1.7.4, `create-context`) — a second reader behind the boundary `env.ts` holds,
+ * with the value right and the boundary wrong. Omitted entirely, the library signs every
+ * session cookie with its own public default and merely warns, unless `NODE_ENV` is
+ * `production`, which the deployed function does not set.
  *
  * This is also the file the schema generator reads (ID56b): `auth generate` imports
  * it to know which tables to emit, which is why the configuration exists before the
  * schema does.
  */
-
-/** A provider's client, when both halves were given; nothing when either is missing. */
-const clientOf = (clientId: string | undefined, clientSecret: string | undefined) =>
-  clientId === undefined || clientSecret === undefined ? undefined : { clientId, clientSecret };
-
-/**
- * The entries whose value was given. The library skips an absent provider by itself; what
- * needs this is the type, which under `exactOptionalPropertyTypes` refuses an explicit
- * `undefined` where the key is optional. Gone with `clientOf` at S5.2, once the cloud
- * branch of `env.ts` requires the values too and none of them can be absent.
- */
-const given = <T extends object>(entries: T) =>
-  Object.fromEntries(Object.entries(entries).filter(([, value]) => value !== undefined)) as {
-    [K in keyof T]?: Exclude<T[K], undefined>;
-  };
-
-const google = clientOf(env.GOOGLE_CLIENT_ID, env.GOOGLE_CLIENT_SECRET);
-const microsoft = clientOf(env.MICROSOFT_CLIENT_ID, env.MICROSOFT_CLIENT_SECRET);
-const linkedin = clientOf(env.LINKEDIN_CLIENT_ID, env.LINKEDIN_CLIENT_SECRET);
 
 /**
  * Everything this product owns beyond the library's tables, erased before the library
@@ -97,14 +87,27 @@ const beforeDelete = async (): Promise<void> => {};
 
 export const auth = betterAuth({
   baseURL: env.APP_URL,
+  // Configuration, never the library's own reading of the environment (ID71, and the
+  // note above). Every session cookie this instance issues is signed with it.
+  secret: env.BETTER_AUTH_SECRET,
   database: drizzleAdapter(db, { provider: "pg" }),
-  socialProviders: given({
-    google,
-    // `common` is the library's default too; written out because it is the decision
-    // (D4), and `organizations` would turn personal accounts away at Microsoft's door.
-    microsoft: microsoft && { ...microsoft, tenantId: "common" as const },
-    linkedin,
-  }),
+  socialProviders: {
+    google: {
+      clientId: env.GOOGLE_CLIENT_ID,
+      clientSecret: env.GOOGLE_CLIENT_SECRET,
+    },
+    microsoft: {
+      clientId: env.MICROSOFT_CLIENT_ID,
+      clientSecret: env.MICROSOFT_CLIENT_SECRET,
+      // `common` is the library's default too; written out because it is the decision
+      // (D4), and `organizations` would turn personal accounts away at Microsoft's door.
+      tenantId: "common",
+    },
+    linkedin: {
+      clientId: env.LINKEDIN_CLIENT_ID,
+      clientSecret: env.LINKEDIN_CLIENT_SECRET,
+    },
+  },
   // Off its default (D20), see the note above: ID72.
   account: { accountLinking: { trustedProviders: ["microsoft"] } },
   user: { deleteUser: { enabled: true, beforeDelete } },
