@@ -198,22 +198,32 @@ describe("the database that is no longer AWS's (D19, S7.5)", () => {
  * only a deploy can say.
  */
 describe("what the function signs people in with (ID60, ID71)", () => {
-  /** The seven the library needs, as the template hands them over. */
+  /**
+   * The seven the library needs: the variable the function reads, and the key inside
+   * `jobapp/dev/auth` it is resolved from. The two spellings differ and neither is free
+   * — the variable is `env.ts`'s, the key is the entry's as the person created it
+   * (ID100) — so each pair is written out and asserted whole. A pattern over the key
+   * would pass on any spelling, which is exactly the failure this pins: a key that does
+   * not exist resolves to nothing and fails `aws cloudformation deploy`, not a test.
+   */
   const secretValues = [
-    "GOOGLE_CLIENT_ID",
-    "GOOGLE_CLIENT_SECRET",
-    "MICROSOFT_CLIENT_ID",
-    "MICROSOFT_CLIENT_SECRET",
-    "LINKEDIN_CLIENT_ID",
-    "LINKEDIN_CLIENT_SECRET",
-    "BETTER_AUTH_SECRET",
-  ];
+    ["GOOGLE_CLIENT_ID", "googleClientId"],
+    ["GOOGLE_CLIENT_SECRET", "googleClientSecret"],
+    ["MICROSOFT_CLIENT_ID", "microsoftClientId"],
+    ["MICROSOFT_CLIENT_SECRET", "microsoftClientSecret"],
+    ["LINKEDIN_CLIENT_ID", "linkedinClientId"],
+    ["LINKEDIN_CLIENT_SECRET", "linkedinClientSecret"],
+    ["BETTER_AUTH_SECRET", "betterAuthSecret"],
+  ] as const;
 
-  it.each(secretValues)("hands the function %s as a Secrets Manager reference", (name) => {
-    expect(at("App-dev", "Api", `Properties.Environment.Variables.${name}`)).toMatch(
-      /^\{\{resolve:secretsmanager:jobapp\/dev\/auth:SecretString:[A-Z_]+\}\}$/,
-    );
-  });
+  it.each(secretValues)(
+    "hands the function %s, resolved from the entry's own key %s",
+    (name, key) => {
+      expect(at("App-dev", "Api", `Properties.Environment.Variables.${name}`)).toBe(
+        `{{resolve:secretsmanager:jobapp/dev/auth:SecretString:${key}}}`,
+      );
+    },
+  );
 
   it("writes the app's address plainly, because it is not a secret", () => {
     expect(at("App-dev", "Api", "Properties.Environment.Variables.APP_URL")).toBe(
