@@ -64,7 +64,8 @@
           "builder": "@angular/build:unit-test",
           "options": {
             "tsConfig": "tsconfig.spec.json",
-            "include": ["../tests/**/*.spec.ts"]
+            "include": ["../tests/**/*.spec.ts"],
+            "setupFiles": ["tests/support/session.ts"]
           }
         }
       },
