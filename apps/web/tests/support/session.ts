@@ -16,9 +16,12 @@ import type { Provider } from "../../src/app/auth/session";
  * The answers are the library's at its defaults (D20): `get-session` answers `null`
  * with no session and `{ session, user }` with one; `list-accounts` lists the linked
  * providers as the library does; `sign-in/social` answers `{ url: null, redirect: false }`
- * so nothing leaves the page; `sign-out` answers ok and thereafter there is no session.
- * A route not stood in for throws, naming the address, so a test cannot pass by
- * accident on a request nobody expected.
+ * so nothing leaves the page; `sign-out` answers ok and thereafter there is no session;
+ * `delete-user` answers `{ success: true, message: "User deleted" }` and thereafter there
+ * is no session either, since the library clears the cookie itself. A route told to fail
+ * answers its status as the library would, until reset (ID91). A route not stood in for
+ * throws, naming the address, so a test cannot pass by accident on a request nobody
+ * expected.
  */
 
 export type Identity = { name: string; email: string; providers: Provider[] };
@@ -33,6 +36,9 @@ let who: Identity | null = null;
 
 /** Whether the library can be reached at all. */
 let reachable = true;
+
+/** The routes told to fail, and the status each answers. */
+let failures = new Map<string, number>();
 
 /** What has left for each library route, in order of leaving. */
 let sent = new Map<string, Sent[]>();
@@ -74,7 +80,21 @@ const accountsOf = (identity: Identity) =>
     }))
     .reverse();
 
+/** The library's error answer: a JSON body with a code and a message, and the status. */
+const failure = (status: number): Response =>
+  new Response(
+    JSON.stringify({ code: "STOOD_IN_FOR_FAILURE", message: "stood in for a failure" }),
+    {
+      status,
+      headers: { "content-type": "application/json" },
+    },
+  );
+
 const answer = (route: string): Response => {
+  const status = failures.get(route);
+  if (status !== undefined) {
+    return failure(status);
+  }
   switch (route) {
     case "get-session":
       return json(who === null ? null : sessionOf(who));
@@ -85,6 +105,9 @@ const answer = (route: string): Response => {
     case "sign-out":
       who = null;
       return json({ success: true });
+    case "delete-user":
+      who = null;
+      return json({ success: true, message: "User deleted" });
     default:
       throw new Error(`no stand-in for the library route ${basePath}${route}`);
   }
@@ -126,6 +149,11 @@ export const unreachable = (): void => {
   reachable = false;
 };
 
+/** That route answers `status`, as the library would, until reset. */
+export const failing = (route: string, status: number): void => {
+  failures.set(route, status);
+};
+
 /** What left for one library route, in order. */
 export const sentTo = (route: string): Sent[] => sent.get(route) ?? [];
 
@@ -133,6 +161,7 @@ export const sentTo = (route: string): Sent[] => sent.get(route) ?? [];
 export const reset = (): void => {
   who = null;
   reachable = true;
+  failures = new Map();
   sent = new Map();
   standIn.mockClear();
 };
