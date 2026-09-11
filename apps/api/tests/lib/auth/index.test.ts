@@ -1,4 +1,5 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { type Provider, subjectAt } from "../../support/providers";
 
 /**
  * The library's instance, at its interface (ID57): `auth`, configured, and nothing
@@ -23,6 +24,7 @@ vi.mock("../../../src/lib/db", async () => ({
 
 const { env } = await import("../../../src/env");
 const { auth } = await import("../../../src/lib/auth");
+const { cookiesSetBy, signedInAs, signInThrough } = await import("../../support/sign-in");
 
 describe("lib/auth", () => {
   it("has no session to answer when no cookie is presented", async () => {
@@ -105,5 +107,114 @@ describe("lib/auth", () => {
    */
   it("trusts Microsoft's email by name, and no other provider's", async () => {
     expect((await auth.$context).trustedProviders).toEqual(["microsoft"]);
+  });
+});
+
+/**
+ * Deletion (US5, D8, seam A of SL4): the library's own, switched on in `lib/auth` and
+ * reached through `auth.api.deleteUser` with the session's cookie, as the web app's
+ * client reaches `delete-user` (ID65, ID70). What goes is the library's tables' rows
+ * for that person: the user, every session, every provider link.
+ *
+ * Each person signs in through the whole round trip (`tests/support/sign-in.ts`), so
+ * the session is one the library opened itself. What is read afterwards is the
+ * library's answer, `getSession` and `listUserAccounts`, never a select on its tables:
+ * a person is gone when the library no longer answers for them, and a link is gone
+ * when coming back through a provider finds no user to attach to.
+ */
+describe("lib/auth, deleting the signed-in person (US5)", () => {
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.unstubAllGlobals();
+  });
+
+  /** A person, verified at every door, signing in through `provider`. */
+  const signIn = (provider: Provider, email: string) =>
+    signInThrough(provider, {
+      subject: subjectAt(provider, email),
+      name: "Someone Seeking",
+      email,
+      emailVerified: true,
+    });
+
+  /** The headers a browser holding that sign-in's cookies would send. */
+  const holding = (response: Response) => new Headers({ cookie: cookiesSetBy(response) });
+
+  const deleted = { success: true, message: "User deleted" };
+
+  it("deletes the person the session's cookie names, and that cookie then has no session", async () => {
+    const signedIn = await signIn("google", "deleted-by-cookie@example.com");
+    expect(await signedInAs(signedIn)).not.toBeNull();
+
+    expect(await auth.api.deleteUser({ headers: holding(signedIn), body: {} })).toEqual(deleted);
+
+    expect(await auth.api.getSession({ headers: holding(signedIn) })).toBeNull();
+  });
+
+  it("ends the person's other sessions with it", async () => {
+    const email = "deleted-with-two-sessions@example.com";
+    const laptop = await signIn("google", email);
+    const phone = await signIn("google", email);
+    expect((await signedInAs(phone))?.id).toBe((await signedInAs(laptop))?.id);
+
+    await auth.api.deleteUser({ headers: holding(laptop), body: {} });
+
+    expect(await auth.api.getSession({ headers: holding(phone) })).toBeNull();
+  });
+
+  /**
+   * ID90: deletion needs only a signed-in session. At the library's default a session
+   * older than a day is not "fresh" and the deletion is refused; `freshAge: 0` turns
+   * that check off. The session is opened two days back, and the session itself lives
+   * seven, so it still answers when the deletion is asked for at the real time.
+   */
+  it("deletes from a session opened two days earlier all the same", async () => {
+    const twoDaysAgo = Date.now() - 2 * 24 * 60 * 60 * 1000;
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(twoDaysAgo);
+    const signedIn = await signIn("google", "deleted-two-days-on@example.com");
+    vi.useRealTimers();
+    expect(await signedInAs(signedIn)).not.toBeNull();
+
+    expect(await auth.api.deleteUser({ headers: holding(signedIn), body: {} })).toEqual(deleted);
+
+    expect(await auth.api.getSession({ headers: holding(signedIn) })).toBeNull();
+  });
+
+  /**
+   * Signing in again with the same provider makes a new, empty user (US5). The links
+   * went with the user: had Google's stayed, it would still name the old id, and had
+   * Microsoft's, the person would come back as the user that was deleted.
+   */
+  it("makes a new user with that one link when the person comes back through a provider they had linked", async () => {
+    const email = "deleted-then-back@example.com";
+    await signIn("google", email);
+    const linked = await signIn("microsoft", email);
+    const before = await signedInAs(linked);
+    expect(before).not.toBeNull();
+
+    await auth.api.deleteUser({ headers: holding(linked), body: {} });
+    const back = await signIn("microsoft", email);
+
+    const after = await signedInAs(back);
+    expect(after).not.toBeNull();
+    expect(after?.id).not.toBe(before?.id);
+    const accounts = await auth.api.listUserAccounts({ headers: holding(back) });
+    expect(accounts.map((account) => account.providerId)).toEqual(["microsoft"]);
+  });
+
+  /** US4: a deletion reaches only the person whose session asked for it. */
+  it("deletes nobody without a session, and another person's session still answers them", async () => {
+    const other = await signIn("linkedin", "not-deleted@example.com");
+    const them = await signedInAs(other);
+    expect(them).not.toBeNull();
+
+    await expect(auth.api.deleteUser({ headers: new Headers(), body: {} })).rejects.toMatchObject({
+      statusCode: 401,
+    });
+    const someoneElse = await signIn("google", "deleted-beside-another@example.com");
+    await auth.api.deleteUser({ headers: holding(someoneElse), body: {} });
+
+    expect((await auth.api.getSession({ headers: holding(other) }))?.user.id).toBe(them?.id);
   });
 });
