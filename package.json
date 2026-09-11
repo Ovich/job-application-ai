@@ -12,20 +12,22 @@
     "dev": "pnpm run dev:db && pnpm run dev:migrate && pnpm -r --parallel run dev",
     "dev:db": "docker compose up --detach --wait",
     "dev:migrate": "pnpm --filter @app/db db:migrate",
-    "check": "pnpm run check:lint && pnpm run check:types && pnpm run test",
+    "check": "pnpm run check:format && pnpm run check:lint && pnpm run check:types && pnpm run test",
+    "check:format": "prettier --check .",
     "check:lint": "biome check .",
     "check:types": "tsc -p tsconfig.json --noEmit && pnpm -r run check:types",
     "test": "vitest run --passWithNoTests && pnpm -r run test",
     "test:e2e": "playwright test --project=local",
     "test:e2e:deployed": "playwright test --project=deployed",
-    "format": "biome check --write ."
+    "format": "biome check --write . && prettier --write ."
   },
   "devDependencies": {
-    "@biomejs/biome": "2.5.12",
+    "@biomejs/biome": "2.5.13",
     "@playwright/test": "1.62.1",
     "@tsconfig/strictest": "2.0.8",
     "@types/node": "24.13.3",
     "esbuild": "0.28.2",
+    "prettier": "3.9.6",
     "typescript": "6.0.3",
     "vitest": "4.1.11",
     "yaml": "2.8.1"

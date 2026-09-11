@@ -1,9 +1,9 @@
-# What every push has to pass. It runs the same three commands a laptop runs, in the
+# What every push has to pass. It runs the same four commands a laptop runs, in the
 # same order, so a failure here is reproducible with `pnpm check` and needs no reading
 # of this file to understand.
 #
-# `check:lint` is `biome check`, which is the formatter, the linter and import sorting
-# in one command, so format and lint are both gates here rather than a later surprise.
+# `check:format` is Prettier, the one formatter, every file type; `check:lint` is `biome
+# check`, the linter and import sorting. Both are gates here rather than a later surprise.
 #
 # Nothing here touches AWS and nothing here needs a service running. The query layer is
 # tested against a real PostgreSQL, but one compiled to WebAssembly and running inside
@@ -49,6 +49,7 @@ jobs:
           cache: pnpm
 
       - run: pnpm install --frozen-lockfile
+      - run: pnpm run check:format
 
       - run: pnpm run check:lint
 
