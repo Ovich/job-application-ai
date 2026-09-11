@@ -41,6 +41,8 @@ export const buttonVariants = cva(
         // The design language's control sizes: 16 px for a button, 15 px for a control.
         md: "h-10 px-4 text-ui",
         sm: "h-8 px-3 text-caption",
+        // The button that leads a screen, like a provider's on the entry route (ID98).
+        lg: "h-auto gap-3.5 px-4.5 py-3.5 text-body",
       },
     },
     defaultVariants: { variant: "primary", size: "md" },
