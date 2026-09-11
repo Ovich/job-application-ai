@@ -15,36 +15,9 @@
       }
     </div>
   </div>
-  <button
-    type="button"
-    role="menuitem"
-    uiBox
-    px="md"
-    py="sm"
-    radius="md"
-    uiText
-    variant="ui"
-    align="start"
-    class="block w-full hover:bg-muted"
-    (click)="signOut.emit()"
-  >
-    Sign out
-  </button>
+  <button type="button" uiMenuItem (click)="signOut.emit()">Sign out</button>
   <hr uiSeparator />
-  <button
-    type="button"
-    role="menuitem"
-    uiBox
-    px="md"
-    py="sm"
-    radius="md"
-    uiText
-    variant="ui"
-    tone="danger"
-    align="start"
-    class="block w-full hover:bg-muted"
-    (click)="deleteAccount.emit()"
-  >
+  <button type="button" uiMenuItem tone="danger" (click)="deleteAccount.emit()">
     Delete my account
   </button>
 </div>
