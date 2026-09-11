@@ -27,12 +27,16 @@ import { db } from "../db";
  *   LinkedIn is identity only (D10). The identity is the email (D11), which each
  *   supplies in those default scopes.
  *
- * Linking is the library's default, unconfigured (D17): a second provider attaches to
- * the existing user when the email matches and the provider says it verified it.
- * `trustedProviders` stays empty on purpose; a provider listed there attaches its
- * unverified email too, which is a bypass of that check and not a way to make linking
- * "more reliable". `tests/lib/auth/linking.test.ts` proves the default on this
- * database.
+ * Linking is the library's (D17): a second provider attaches to the existing user when
+ * the email matches and the provider says it verified it. A provider in
+ * `trustedProviders` attaches its email without that claim, which is a bypass of the
+ * check, so the list holds exactly one name and for one reason (ID72, the person's
+ * amendment of 2026-09-11): Entra never issues `email_verified` or
+ * `verified_primary_email` for a personal Microsoft account, so under the bare default
+ * every Hotmail or Outlook user arriving second was refused, as observed on localhost.
+ * Microsoft verifies the address when the account is created, which is what the claim
+ * would have said. Google and LinkedIn send the claim and stay at the default.
+ * `tests/lib/auth/linking.test.ts` proves both halves on this database.
  *
  * The cloud runtime may lack a provider's client until S5.2 (see `env.ts`), and then
  * that provider is not configured: the routes still mount and answer, there is just no
@@ -62,4 +66,6 @@ export const auth = betterAuth({
     ...(microsoft === undefined ? {} : { microsoft: { ...microsoft, tenantId: "common" } }),
     ...(linkedin === undefined ? {} : { linkedin }),
   },
+  // The one option off its default (D20), see the note above: ID72.
+  account: { accountLinking: { trustedProviders: ["microsoft"] } },
 });
