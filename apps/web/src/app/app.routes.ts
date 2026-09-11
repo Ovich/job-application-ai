@@ -1,9 +1,20 @@
 import type { Routes } from "@angular/router";
+import { signedIn, signedOut } from "./auth/session";
 
 /**
- * The application's routes. The root is the sign-in page, bare for now: SL3 draws the
- * entry route in its place, and the signed-in screens arrive with their slots.
+ * The application's routes (ID73): `/` is the entry route and `/profile` the shell,
+ * each behind one of `auth/session`'s guards, so a live session skips the entry route
+ * and no session leaves the shell for it. No logic on either line.
  */
 export const routes: Routes = [
-  { path: "", loadComponent: () => import("./auth/sign-in").then((m) => m.SignIn) },
+  {
+    path: "",
+    canActivate: [signedOut],
+    loadComponent: () => import("./auth/sign-in").then((m) => m.SignIn),
+  },
+  {
+    path: "profile",
+    canActivate: [signedIn],
+    loadComponent: () => import("./shell/app-shell").then((m) => m.AppShell),
+  },
 ];
