@@ -30,6 +30,17 @@ export const PAD = {
 } as const;
 export type Pad = keyof typeof PAD;
 
+/** The space above and below a divider, on the same steps. */
+export const MARGIN_Y: Record<Pad, string> = {
+  none: "my-0",
+  xs: "my-1",
+  sm: "my-2",
+  md: "my-3",
+  lg: "my-4",
+  xl: "my-6",
+  xxl: "my-8",
+};
+
 export const PAD_X: Record<Pad, string> = {
   none: "px-0",
   xs: "px-1",
