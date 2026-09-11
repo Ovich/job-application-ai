@@ -23,7 +23,8 @@ describe("uiContainer", () => {
     expect(classesOf(Defaults)).toEqual(["max-w-3xl", "mx-auto", "px-4", "sm:px-6", "w-full"]);
   });
 
-  it("takes the sm width, the sign-in column", () => {
-    expect(classesOf(Narrow)).toEqual(["max-w-[420px]", "mx-auto", "px-4", "sm:px-6", "w-full"]);
+  /** The width is the outer one, padding included, as with every width: 420 of content, as the mockup draws it, inside 24 a side. */
+  it("takes the sm width, the sign-in column at 420 of content", () => {
+    expect(classesOf(Narrow)).toEqual(["max-w-[468px]", "mx-auto", "px-4", "sm:px-6", "w-full"]);
   });
 });
