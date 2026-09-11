@@ -1,0 +1,64 @@
+<app-acknowledge-action
+  title="Delete your account?"
+  [actionLabel]="acknowledged() ? 'Delete account' : 'Acknowledge'"
+  [destructive]="acknowledged()"
+  [disabled]="acknowledged() && !matches()"
+  [working]="working()"
+  workingLabel="Deleting everything…"
+  (action)="act()"
+  (cancel)="cancel.emit()"
+>
+  <p uiText variant="ui">
+    This permanently deletes your account and everything in it.
+    <span uiText variant="ui" tone="danger" weight="semibold"
+      >It cannot be undone, and nothing can be recovered</span
+    >, by you or by us.
+  </p>
+  @if (providers().length > 0) {
+    <ul uiStack gap="xs">
+      @for (provider of providers(); track provider) {
+        <li uiText variant="caption" tone="muted" class="before:mr-1.5 before:content-['•']">
+          Your sign-in with {{ nameOf(provider) }} goes. Your {{ nameOf(provider) }} account itself
+          is not touched.
+        </li>
+      }
+    </ul>
+  }
+  <app-notice tone="warn" lead="Your membership is cancelled."
+    >Credits you have left are not refunded.</app-notice
+  >
+  @if (failed()) {
+    <app-notice tone="danger" lead="Nothing was deleted."
+      >The deletion did not go through. Try again in a moment.</app-notice
+    >
+  }
+  @if (acknowledged() && !working()) {
+    <p uiText variant="caption" tone="muted">Type this code to confirm:</p>
+    <p
+      uiBox
+      surface="muted"
+      radius="md"
+      py="sm"
+      uiText
+      variant="figure"
+      weight="semibold"
+      align="center"
+      class="select-all font-mono tracking-[0.18em]"
+    >
+      {{ code() }}
+    </p>
+    <input
+      #field
+      type="text"
+      hlmInput
+      class="font-mono uppercase tracking-[0.08em]"
+      placeholder="Type the code"
+      autocomplete="off"
+      autocapitalize="characters"
+      spellcheck="false"
+      [attr.aria-label]="fieldLabel()"
+      [value]="typed()"
+      (input)="onType($event)"
+    />
+  }
+</app-acknowledge-action>

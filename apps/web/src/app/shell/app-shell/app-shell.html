@@ -1,49 +1,19 @@
 <div uiStack gap="none" class="min-h-screen">
   @if (user(); as user) {
     <div class="relative">
-      <app-bar [user]="user" (signOut)="signOut()" (deleteAccount)="openGate()" />
+      <app-bar [user]="user" (signOut)="signOut()" (deleteAccount)="openDeletion()" />
       <!-- Under the account slot, where the menu was: the bar's padding from the right, just below the slot. -->
-      @if (gate(); as open) {
-        <app-confirm-action
+      @if (deletion(); as open) {
+        <app-delete-account
           class="absolute top-[57px] right-4 z-10 max-w-[calc(100%-2rem)]"
-          title="Delete your account?"
-          confirmLabel="Delete account"
-          [code]="true"
+          [providers]="user.providers"
           [working]="open.working"
-          workingLabel="Deleting everything…"
+          [failed]="open.failed"
           (confirm)="deleteAccount()"
-          (cancel)="closeGate()"
-        >
-          <ng-container [ngTemplateOutlet]="deletion" />
-        </app-confirm-action>
+          (cancel)="closeDeletion()"
+        />
       }
     </div>
   }
   <main uiPage><router-outlet /></main>
 </div>
-
-<!-- The deletion's own content, projected into the gate: what goes, and what it costs. -->
-<ng-template #deletion>
-  <p uiText variant="ui">
-    This permanently deletes your account and everything in it.
-    <span uiText variant="ui" tone="danger" weight="semibold"
-      >It cannot be undone, and nothing can be recovered</span
-    >, by you or by us.
-  </p>
-  <ul uiStack gap="xs" uiText variant="caption" tone="muted">
-    @for (provider of gate()?.providers ?? []; track provider) {
-      <li class="before:mr-1.5 before:content-['•']">
-        Your sign-in with {{ nameOf(provider) }} goes. Your {{ nameOf(provider) }} account itself is
-        not touched.
-      </li>
-    }
-  </ul>
-  <app-notice tone="warn" lead="Your membership is cancelled."
-    >Credits you have left are not refunded.</app-notice
-  >
-  @if (gate()?.failed) {
-    <app-notice tone="danger" lead="Nothing was deleted."
-      >The deletion did not go through. Try again in a moment.</app-notice
-    >
-  }
-</ng-template>
