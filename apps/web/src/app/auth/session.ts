@@ -20,9 +20,10 @@ export type Provider = "google" | "microsoft" | "linkedin";
 
 export type SignedIn = { name: string; email: string; providers: Provider[] };
 
-const providers: readonly Provider[] = ["google", "microsoft", "linkedin"];
+const providers: readonly string[] = ["google", "microsoft", "linkedin"];
 
-const isProvider = (id: string): id is Provider => (providers as readonly string[]).includes(id);
+/** Whether a string the library or the address hands over names one of the three. */
+export const isProvider = (id: string): id is Provider => providers.includes(id);
 
 /**
  * The person the library answers for now, or null with no session. Rejects when the
