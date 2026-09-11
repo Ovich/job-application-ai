@@ -12,7 +12,7 @@ export default defineConfig({
      * `apps/web` is excluded because Angular's own test target runs its specs, with
      * the compiler in front of them; it follows the same layout.
      */
-    include: ["{apps/*,packages/*,infra}/tests/**/*.{test,spec}.ts"],
+    include: ["{apps/*,packages/*,infra}/tests/**/*.{test,spec}.ts", "tests/**/*.{test,spec}.ts"],
     exclude: ["**/node_modules/**", "**/dist/**", "e2e/**", "apps/web/**"],
     /*
      * The API's configuration is read at import and refuses to load without the three
