@@ -33,8 +33,8 @@
   <ul uiStack gap="xs" uiText variant="caption" tone="muted">
     @for (provider of gate()?.providers ?? []; track provider) {
       <li class="before:mr-1.5 before:content-['•']">
-        Your sign-in with {{ nameOf(provider) }} goes. Your {{ nameOf(provider) }} account itself
-        is not touched.
+        Your sign-in with {{ nameOf(provider) }} goes. Your {{ nameOf(provider) }} account itself is
+        not touched.
       </li>
     }
   </ul>
