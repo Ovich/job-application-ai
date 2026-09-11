@@ -19,7 +19,7 @@ import { UiText } from "../../../ui/typography/text/text";
 @Component({
   selector: "app-account-menu",
   imports: [ProviderMark, UiBox, UiRow, UiText],
-  host: { role: "menu" },
+  host: { role: "menu", class: "absolute top-11 right-0 z-10 block w-[270px]" },
   templateUrl: "./account-menu.html",
 })
 export class AccountMenu {
