@@ -5,11 +5,12 @@ import { defineConfig } from "@playwright/test";
  * config excludes `e2e/`, so the two runners never collect each other's files, and
  * nothing here runs inside `pnpm check`, which must stay green with no server up.
  *
- * No spec opens a page. The web app is an empty shell (S9.1), and what the two checks
- * measure is the API: the health route answering after a real `select version()`, and
- * its stream beating one frame at a time through whatever stands in between. Each spec
- * drives the API with Playwright's `request` fixture and reads a stream raw
- * (`e2e/support/stream.ts`), which also sees the heartbeat a browser hides.
+ * The health specs open no page: what they measure is the API, the health route
+ * answering after a real `select version()` and its stream beating one frame at a time
+ * through whatever stands in between, so each drives the API with Playwright's
+ * `request` fixture and reads a stream raw (`e2e/support/stream.ts`), which also sees
+ * the heartbeat a browser hides. `auth` is the first spec that opens the page: it
+ * presses the one button the web app has and follows the browser to Google's door.
  *
  * Two projects, because the specs answer questions at two different addresses. `local`
  * runs against the dev server, which forwards `/api` to the API on port 3000, so a
@@ -39,7 +40,9 @@ export default defineConfig({
   projects: [
     {
       name: "local",
-      testMatch: /health-stream\.spec\.ts$/,
+      // `auth` is the local project's alone until S5.5: it opens the page and presses
+      // the button, and the cloud has no client app to press it against before then.
+      testMatch: /(health-stream|auth)\.spec\.ts$/,
       use: { baseURL: "http://localhost:4200" },
     },
     {
