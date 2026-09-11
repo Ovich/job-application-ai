@@ -113,7 +113,7 @@ const doorsOf: Record<Provider, (who: Identity) => Record<string, () => Response
 /** The network, answering at the doors given and nowhere else. */
 const standingInFor =
   (doors: Record<string, () => Response>) =>
-  async (input: RequestInfo | URL): Promise<Response> => {
+  async (input: string | URL | Request): Promise<Response> => {
     const address = new URL(input instanceof Request ? input.url : input);
     const door = doors[`${address.origin}${address.pathname}`];
     if (door === undefined) throw new Error(`nothing stands in for ${address.href}`);
