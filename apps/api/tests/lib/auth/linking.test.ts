@@ -1,6 +1,7 @@
 import { account, user } from "@app/db";
 import { eq } from "drizzle-orm";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { type Provider, subjectAt } from "../../support/providers";
 
 /**
  * One email is one person (US2, D17), whichever button they pressed.
@@ -13,162 +14,17 @@ import { afterEach, describe, expect, it, vi } from "vitest";
  * an address is not a witness to who owns it. That refusal is what `trustedProviders`
  * would switch off, which is why it stays empty (the slice's "watch out").
  *
- * The whole round trip runs, through the library's own routes and against a real
- * PostgreSQL (`tests/support/database.ts`): the sign-in that stores its `state`, then
- * the callback that redeems it, exchanges the code, reads the profile, and links or
- * refuses. Only the providers are stood in for, at the two addresses the callback
- * reaches out to; no code here reproduces a step of the flow, and the assertions read
- * the tables the library wrote.
+ * The whole round trip runs (`tests/support/sign-in.ts`), through the library's own
+ * routes and against a real PostgreSQL (`tests/support/database.ts`), with the
+ * providers stood in for at their doors (`tests/support/providers.ts`). The assertions
+ * read the library's answer through its routes, and the tables it wrote.
  */
 vi.mock("../../../src/lib/db", async () => ({
   db: (await import("../../support/database")).testDb,
 }));
 
 const { testDb } = await import("../../support/database");
-const { auth } = await import("../../../src/lib/auth");
-
-/** Where the browser reaches the app, and so where a provider sends it back to. */
-const appUrl = "http://localhost:4200";
-
-type Provider = "google" | "microsoft" | "linkedin";
-
-/** What a provider says about the person who just signed in at its door. */
-type Identity = { subject: string; name: string; email: string; emailVerified: boolean };
-
-/**
- * The provider's own id for that person, one per address here: an account is keyed on
- * it, and a subject seen before signs in as the user it belongs to, whatever address
- * it carries this time, which is not what these cases ask.
- */
-const subjectAt = (provider: Provider, email: string) => `${provider}:${email}`;
-
-/**
- * An id token as a provider would mint it, decoded by the library and never verified
- * here: the callback trusts what the code exchange returned, because it made that
- * request itself to an address it chose, and the exchange is the thing stood in for.
- */
-const idTokenFor = (claims: Record<string, unknown>) =>
-  `${[{ alg: "none", typ: "JWT" }, claims]
-    .map((part) => Buffer.from(JSON.stringify(part)).toString("base64url"))
-    .join(".")}.stood-in-for`;
-
-const json = (body: unknown) =>
-  new Response(JSON.stringify(body), {
-    status: 200,
-    headers: { "content-type": "application/json" },
-  });
-
-const tokens = (extra: Record<string, unknown> = {}) => ({
-  access_token: "stood-in-for-access-token",
-  token_type: "Bearer",
-  expires_in: 3600,
-  ...extra,
-});
-
-/**
- * Each provider at its doors: the token endpoint the callback exchanges the code at,
- * and wherever the profile comes from. Google and Microsoft put it in the id token
- * (Microsoft under `oid`, and the callback also asks Graph for a photo, which is
- * answered "none"); LinkedIn answers a userinfo request. The verified flag travels the
- * way each provider carries it.
- */
-const doorsOf: Record<Provider, (who: Identity) => Record<string, () => Response>> = {
-  google: (who) => ({
-    "https://oauth2.googleapis.com/token": () =>
-      json(
-        tokens({
-          scope: "openid email profile",
-          id_token: idTokenFor({
-            sub: who.subject,
-            name: who.name,
-            email: who.email,
-            email_verified: who.emailVerified,
-          }),
-        }),
-      ),
-  }),
-  microsoft: (who) => ({
-    "https://login.microsoftonline.com/common/oauth2/v2.0/token": () =>
-      json(
-        tokens({
-          scope: "openid profile email User.Read",
-          id_token: idTokenFor({
-            oid: who.subject,
-            tid: "9188040d-6c67-4c5b-b112-36a304b66dad",
-            name: who.name,
-            email: who.email,
-            email_verified: who.emailVerified,
-          }),
-        }),
-      ),
-    "https://graph.microsoft.com/v1.0/me/photos/48x48/$value": () =>
-      new Response(null, { status: 404 }),
-  }),
-  linkedin: (who) => ({
-    "https://www.linkedin.com/oauth/v2/accessToken": () =>
-      json(tokens({ scope: "openid profile email" })),
-    "https://api.linkedin.com/v2/userinfo": () =>
-      json({
-        sub: who.subject,
-        name: who.name,
-        email: who.email,
-        email_verified: who.emailVerified,
-      }),
-  }),
-};
-
-/** The network, answering at the doors given and nowhere else. */
-const standingInFor =
-  (doors: Record<string, () => Response>) =>
-  async (input: string | URL | Request): Promise<Response> => {
-    const address = new URL(input instanceof Request ? input.url : input);
-    // Decoded, so a door is written the way its documentation writes it (`$value`).
-    const door = doors[`${address.origin}${decodeURIComponent(address.pathname)}`];
-    if (door === undefined) throw new Error(`nothing stands in for ${address.href}`);
-    return door();
-  };
-
-/** The cookies a response set, as the browser would send them back. */
-const cookiesSetBy = (response: Response) =>
-  response.headers
-    .getSetCookie()
-    .map((cookie) => cookie.split(";")[0])
-    .join("; ");
-
-/**
- * The round trip: the press on the button, then the browser coming back from the
- * provider with a code. The `state` travels as the library sends it, in the address
- * it gave the browser and in the cookie it set.
- */
-const signInThrough = async (provider: Provider, who: Identity): Promise<Response> => {
-  const started = await auth.handler(
-    new Request(`${appUrl}/api/auth/sign-in/social`, {
-      method: "POST",
-      headers: { "content-type": "application/json", origin: appUrl },
-      body: JSON.stringify({ provider, callbackURL: "/" }),
-    }),
-  );
-  const { url } = (await started.json()) as { url: string };
-  const state = new URL(url).searchParams.get("state") ?? "";
-
-  vi.stubGlobal("fetch", standingInFor(doorsOf[provider](who)));
-  return auth.handler(
-    new Request(`${appUrl}/api/auth/callback/${provider}?code=stood-in-for-code&state=${state}`, {
-      headers: { cookie: cookiesSetBy(started) },
-    }),
-  );
-};
-
-/** Where the callback sent the browser. */
-const landingOf = (response: Response) => new URL(response.headers.get("location") ?? "", appUrl);
-
-/** Who the callback's cookies say is signed in: the library's own answer. */
-const signedInAs = async (response: Response) => {
-  const session = await auth.api.getSession({
-    headers: new Headers({ cookie: cookiesSetBy(response) }),
-  });
-  return session?.user ?? null;
-};
+const { landingOf, signedInAs, signInThrough } = await import("../../support/sign-in");
 
 const usersAt = (email: string) => testDb.select().from(user).where(eq(user.email, email));
 
