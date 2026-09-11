@@ -67,6 +67,18 @@ export async function fetchWithPayloadHash(
  * the server mounts under is part of the type, so it is part of the path here and is
  * not repeated in the address.
  */
-export const api = hc<AppType>(globalThis.location.origin, {
+/**
+ * The page's own origin, and the empty string while there is no page.
+ *
+ * This module is read during the entry route's prerender since S5.3 (`auth/auth-client`
+ * takes its fetch from here), and a server rendering HTML has no `location`: read
+ * unguarded, it threw at module load and the route answered 500 with nothing rendered —
+ * which `e2e/entry-route.spec.ts` is what caught. The address is only ever used by a
+ * call, and no call is made while the page is being rendered on the server, so the
+ * empty string is never sent anywhere.
+ */
+const pageOrigin = (globalThis as { location?: Location }).location?.origin ?? "";
+
+export const api = hc<AppType>(pageOrigin, {
   fetch: fetchWithPayloadHash,
 }).api;
