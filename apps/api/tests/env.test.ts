@@ -9,11 +9,12 @@ import { afterEach, describe, expect, it, vi } from "vitest";
  * the deployed function's arrive as the single pooled connection string Neon issues and
  * Secrets Manager holds (D19).
  *
- * The Google client is the other thing both runtimes are asked for, and the two answer
- * differently on purpose (ID60, amended for this slice): the laptop must have one,
- * because a client secret has no throwaway value the way a database password does,
- * and the cloud may lack one until slice 5 puts the secrets in Secrets Manager, so a
- * merge in between keeps the health route answering.
+ * The provider clients are the other thing both runtimes are asked for, and the two
+ * answer differently on purpose (ID60, amended for SL1): the laptop must have all
+ * three, because a client secret has no throwaway value the way a database password
+ * does, and the cloud may lack them until slice 5 puts the secrets in Secrets Manager,
+ * so a merge in between keeps the health route answering. SL2 adds Microsoft and
+ * LinkedIn under the same rule as Google.
  *
  * Each case reloads the module, because the environment is read at import and frozen.
  */
@@ -37,6 +38,10 @@ const nothingSet = {
   APP_URL: undefined,
   GOOGLE_CLIENT_ID: undefined,
   GOOGLE_CLIENT_SECRET: undefined,
+  MICROSOFT_CLIENT_ID: undefined,
+  MICROSOFT_CLIENT_SECRET: undefined,
+  LINKEDIN_CLIENT_ID: undefined,
+  LINKEDIN_CLIENT_SECRET: undefined,
 };
 
 /** A registered Google client app, as the person's `.env` names it. Nobody's real one. */
@@ -45,13 +50,26 @@ const googleClient = {
   GOOGLE_CLIENT_SECRET: "test-google-client-secret",
 };
 
+/** The Microsoft Entra app and the LinkedIn app, named the same way. Nobody's either. */
+const microsoftClient = {
+  MICROSOFT_CLIENT_ID: "test-microsoft-client-id",
+  MICROSOFT_CLIENT_SECRET: "test-microsoft-client-secret",
+};
+const linkedinClient = {
+  LINKEDIN_CLIENT_ID: "test-linkedin-client-id",
+  LINKEDIN_CLIENT_SECRET: "test-linkedin-client-secret",
+};
+
+/** All three, which is what a laptop must have (SL2). */
+const everyClient = { ...googleClient, ...microsoftClient, ...linkedinClient };
+
 afterEach(() => {
   vi.unstubAllEnvs();
 });
 
 describe("the local runtime", () => {
-  it("answers on the Docker container with nothing set but the Google client", async () => {
-    const env = await load({ ...nothingSet, ...googleClient });
+  it("answers on the Docker container with nothing set but the provider clients", async () => {
+    const env = await load({ ...nothingSet, ...everyClient });
 
     expect({
       runtime: env.APP_RUNTIME,
@@ -73,7 +91,7 @@ describe("the local runtime", () => {
   it("ignores a connection string, so a shell that has one does not reach the container", async () => {
     const env = await load({
       ...nothingSet,
-      ...googleClient,
+      ...everyClient,
       DATABASE_URL: "postgresql://api:elsewhere@somewhere.neon.tech/neondb",
     });
 
@@ -84,7 +102,7 @@ describe("the local runtime", () => {
   });
 
   it("reads the Google client, and where the browser reaches the app", async () => {
-    const env = await load({ ...nothingSet, ...googleClient });
+    const env = await load({ ...nothingSet, ...everyClient });
 
     expect({
       clientId: env.GOOGLE_CLIENT_ID,
@@ -100,32 +118,50 @@ describe("the local runtime", () => {
   });
 
   /**
+   * SL2: the two providers that join Google, read under the same rule. Their apps are
+   * registered at S2.1 and their callbacks are `<APP_URL>/api/auth/callback/microsoft`
+   * and `.../linkedin`, so the address they share with Google is the one above.
+   */
+  it("reads the Microsoft and LinkedIn clients", async () => {
+    const env = await load({ ...nothingSet, ...everyClient });
+
+    expect({
+      microsoftId: env.MICROSOFT_CLIENT_ID,
+      microsoftSecret: env.MICROSOFT_CLIENT_SECRET,
+      linkedinId: env.LINKEDIN_CLIENT_ID,
+      linkedinSecret: env.LINKEDIN_CLIENT_SECRET,
+    }).toEqual({
+      microsoftId: "test-microsoft-client-id",
+      microsoftSecret: "test-microsoft-client-secret",
+      linkedinId: "test-linkedin-client-id",
+      linkedinSecret: "test-linkedin-client-secret",
+    });
+  });
+
+  /**
    * ID60: a client secret has no sensible throwaway value the way the database
    * password does, so there is no default and the process refuses to start. The error
    * names the field, because "invalid configuration" sends a person reading the
-   * schema and "GOOGLE_CLIENT_ID" sends them to `.env.example`.
+   * schema and "GOOGLE_CLIENT_ID" sends them to `.env.example`. Six fields, one rule.
    */
-  it("refuses to start without a Google client id, and names the field", async () => {
-    await expect(
-      load({ ...nothingSet, GOOGLE_CLIENT_SECRET: googleClient.GOOGLE_CLIENT_SECRET }),
-    ).rejects.toThrow(/GOOGLE_CLIENT_ID/);
-  });
-
-  it("refuses to start without a Google client secret, and names the field", async () => {
-    await expect(
-      load({ ...nothingSet, GOOGLE_CLIENT_ID: googleClient.GOOGLE_CLIENT_ID }),
-    ).rejects.toThrow(/GOOGLE_CLIENT_SECRET/);
-  });
+  it.each(Object.keys(everyClient))(
+    "refuses to start without %s, and names the field",
+    async (field) => {
+      await expect(load({ ...nothingSet, ...everyClient, [field]: undefined })).rejects.toThrow(
+        new RegExp(field),
+      );
+    },
+  );
 
   it("refuses an empty value as it refuses a missing one", async () => {
-    await expect(
-      load({ ...nothingSet, ...googleClient, GOOGLE_CLIENT_SECRET: "" }),
-    ).rejects.toThrow(/GOOGLE_CLIENT_SECRET/);
+    await expect(load({ ...nothingSet, ...everyClient, GOOGLE_CLIENT_SECRET: "" })).rejects.toThrow(
+      /GOOGLE_CLIENT_SECRET/,
+    );
   });
 });
 
 describe("the cloud runtime", () => {
-  /** The one value the template sets today (D19); nothing about Google is in it yet. */
+  /** The one value the template sets today (D19); nothing about a provider is in it yet. */
   const pooledOnly = {
     ...nothingSet,
     APP_RUNTIME: "cloud",
@@ -154,31 +190,43 @@ describe("the cloud runtime", () => {
   });
 
   /**
-   * Until slice 5, and only until then. A merge to `main` deploys, and the Google
+   * Until slice 5, and only until then. A merge to `main` deploys, and the provider
    * secrets do not exist in Secrets Manager before S5.2; a cloud branch that required
    * them today would fail every cold start between this slice and that one, health
    * route included. S5.2 turns these into required fields and this test into its
-   * opposite.
+   * opposite. The rule was set for Google at SL1; SL2's two providers follow it.
    */
-  it("parses without a Google client, until slice 5 puts the secrets in the cloud", async () => {
+  it("parses without any provider client, until slice 5 puts the secrets in the cloud", async () => {
     const env = await load(pooledOnly);
 
-    expect({ clientId: env.GOOGLE_CLIENT_ID, clientSecret: env.GOOGLE_CLIENT_SECRET }).toEqual({
-      clientId: undefined,
-      clientSecret: undefined,
+    expect({
+      google: [env.GOOGLE_CLIENT_ID, env.GOOGLE_CLIENT_SECRET],
+      microsoft: [env.MICROSOFT_CLIENT_ID, env.MICROSOFT_CLIENT_SECRET],
+      linkedin: [env.LINKEDIN_CLIENT_ID, env.LINKEDIN_CLIENT_SECRET],
+    }).toEqual({
+      google: [undefined, undefined],
+      microsoft: [undefined, undefined],
+      linkedin: [undefined, undefined],
     });
     expect(env.APP_URL).toBeUndefined();
   });
 
-  it("reads the Google client and the app's address when the template hands them over", async () => {
+  it("reads the provider clients and the app's address when the template hands them over", async () => {
     const env = await load({
       ...pooledOnly,
-      ...googleClient,
+      ...everyClient,
       APP_URL: "https://dev.job-application.app",
     });
 
-    expect({ clientId: env.GOOGLE_CLIENT_ID, appUrl: env.APP_URL }).toEqual({
-      clientId: "test-google-client-id.apps.googleusercontent.com",
+    expect({
+      googleId: env.GOOGLE_CLIENT_ID,
+      microsoftId: env.MICROSOFT_CLIENT_ID,
+      linkedinId: env.LINKEDIN_CLIENT_ID,
+      appUrl: env.APP_URL,
+    }).toEqual({
+      googleId: "test-google-client-id.apps.googleusercontent.com",
+      microsoftId: "test-microsoft-client-id",
+      linkedinId: "test-linkedin-client-id",
       appUrl: "https://dev.job-application.app",
     });
   });
