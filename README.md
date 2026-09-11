@@ -74,7 +74,7 @@ docker compose down
 | `pnpm dev`                                                | database, migrations, API and web app, together                                  |
 | `pnpm check`                                              | lint, typecheck across every member, and both test suites. This is what CI runs. |
 | `pnpm format`                                             | apply the formatter                                                              |
-| `pnpm --filter @app/db db:generate --name=<what_it_does>` | a new migration. The name is not optional; see the conventions file.             |
+| `pnpm --filter @app/db db:generate --name=<what_it_does>` | a new migration. The name is not optional.                                       |
 
 ## How it reaches the internet
 
@@ -127,7 +127,7 @@ three other boundaries, so a violation fails the build rather than review.
 
 ## Before you change anything
 
-There is no conventions file. The boundaries that matter are enforced by the linter
-(`biome.json`) and by the tests, and each lint message says why its rule exists. The
-technology decisions behind them are recorded with the project's design documents,
-outside this repository.
+The conventions a tool cannot enforce are in `AGENTS.md`. The boundaries that matter are
+enforced by the linter (`biome.json`), the formatter (`.prettierrc.json`) and the tests, and
+each lint message says why its rule exists. The technology decisions behind them are
+recorded with the project's design documents, outside this repository.
