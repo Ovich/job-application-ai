@@ -38,6 +38,15 @@ import { db } from "../db";
  * would have said. Google and LinkedIn send the claim and stay at the default.
  * `tests/lib/auth/linking.test.ts` proves both halves on this database.
  *
+ * Deletion is the library's too (D8, ID65): its `deleteUser` feature, switched on as it
+ * documents, serves `delete-user` under the mount `app.ts` already has, and the web app
+ * calls it through the library's client (ID70). That is using the library, not
+ * overriding it (ID65c). It erases the user, every session and every provider link, and
+ * clears the cookie. `sendDeleteAccountVerification` stays off, because deletion is
+ * immediate and this product sends no email; `afterDelete` stays off, because work done
+ * after the user row is gone cannot be rolled back with it (ID65b). What this product
+ * owns beyond those tables goes in `beforeDelete`, below.
+ *
  * The cloud runtime may lack a provider's client until S5.2 (see `env.ts`), and then
  * that provider is not configured: the routes still mount and answer, there is just no
  * button that leads anywhere, which is the state the deployed environment is in until
@@ -67,6 +76,25 @@ const google = clientOf(env.GOOGLE_CLIENT_ID, env.GOOGLE_CLIENT_SECRET);
 const microsoft = clientOf(env.MICROSOFT_CLIENT_ID, env.MICROSOFT_CLIENT_SECRET);
 const linkedin = clientOf(env.LINKEDIN_CLIENT_ID, env.LINKEDIN_CLIENT_SECRET);
 
+/**
+ * Everything this product owns beyond the library's tables, erased before the library
+ * removes the user (ID65b). Empty in this slot, because nothing beyond those tables
+ * exists yet (ID66). Each later slot extends this one function rather than inventing a
+ * deletion path of its own:
+ *
+ * - the profile, its items, their metas and their provenance, with the profile's slot
+ * - every S3 object belonging to the person, with the first slot that stores one
+ * - the credit balance, with `credits-billing`
+ * - the membership, with `credits-billing`: stopped at the payment provider here, so no
+ *   renewal is ever charged to a person who no longer exists
+ *
+ * A failure in anything put here throws, and is never caught: a hook that failed quietly
+ * would let the library remove the user over data that survived, the one outcome D8
+ * cannot tolerate. The library runs the hook and its own deletes in no transaction
+ * (SL4's F4), which the first slot to put work here has to answer.
+ */
+const beforeDelete = async (): Promise<void> => {};
+
 export const auth = betterAuth({
   baseURL: env.APP_URL,
   database: drizzleAdapter(db, { provider: "pg" }),
@@ -77,6 +105,13 @@ export const auth = betterAuth({
     microsoft: microsoft && { ...microsoft, tenantId: "common" as const },
     linkedin,
   }),
-  // The one option off its default (D20), see the note above: ID72.
+  // Off its default (D20), see the note above: ID72.
   account: { accountLinking: { trustedProviders: ["microsoft"] } },
+  user: { deleteUser: { enabled: true, beforeDelete } },
+  // A stated departure from D20 (ID90): deletion needs only a signed-in session. At the
+  // default, a session older than a day is not "fresh" and `delete-user` refuses it,
+  // which a person signed in with a provider has no password to answer. 0 turns the
+  // check off, as the library documents; no other endpoint this product uses asks for a
+  // fresh session. The gate's typed code and its warning guard against a mistaken delete.
+  session: { freshAge: 0 },
 });
