@@ -99,6 +99,34 @@ Resources:
           # rather than passed as a parameter: a rotated secret reaches the function on
           # the next deploy, not on the rotation.
           DATABASE_URL: "{{resolve:secretsmanager:jobapp/dev/database-url:SecretString}}"
+          # Where the browser reaches this environment, and so the origin each provider
+          # sends it back to: the callback registered at each is
+          # <APP_URL>/api/auth/callback/<provider> (ID60). Written plainly because it is
+          # not a secret, and making it one would hide a public value.
+          APP_URL: https://dev.job-application.app
+          # The three dev client apps and the value the authentication library signs its
+          # session cookies with (ID61, ID71). Dev's registrations are its own, separate
+          # from the localhost ones, so a dev misconfiguration cannot reach real users
+          # and the secrets rotate independently (D9).
+          #
+          # One entry, `jobapp/dev/auth`, with a JSON key per value, resolved the way
+          # DATABASE_URL above is: CloudFormation reads it while it applies the stack, so
+          # the function needs no right on Secrets Manager and makes no call at cold
+          # start, and a rotated secret reaches the function on the next deploy rather
+          # than on the rotation. A person created the entry by hand, as the connection
+          # string was created (D19); no template here creates a secret, so nothing in
+          # this repository ever holds one.
+          #
+          # Absent any of these, the cold start fails naming the field (ID23, and
+          # apps/api/src/env.ts): a function that answered with a provider unconfigured
+          # would serve a button that leads nowhere.
+          GOOGLE_CLIENT_ID: "{{resolve:secretsmanager:jobapp/dev/auth:SecretString:GOOGLE_CLIENT_ID}}"
+          GOOGLE_CLIENT_SECRET: "{{resolve:secretsmanager:jobapp/dev/auth:SecretString:GOOGLE_CLIENT_SECRET}}"
+          MICROSOFT_CLIENT_ID: "{{resolve:secretsmanager:jobapp/dev/auth:SecretString:MICROSOFT_CLIENT_ID}}"
+          MICROSOFT_CLIENT_SECRET: "{{resolve:secretsmanager:jobapp/dev/auth:SecretString:MICROSOFT_CLIENT_SECRET}}"
+          LINKEDIN_CLIENT_ID: "{{resolve:secretsmanager:jobapp/dev/auth:SecretString:LINKEDIN_CLIENT_ID}}"
+          LINKEDIN_CLIENT_SECRET: "{{resolve:secretsmanager:jobapp/dev/auth:SecretString:LINKEDIN_CLIENT_SECRET}}"
+          BETTER_AUTH_SECRET: "{{resolve:secretsmanager:jobapp/dev/auth:SecretString:BETTER_AUTH_SECRET}}"
 
   # The URL is unreachable except through the distribution, which signs every request it
   # forwards. An unauthenticated function URL would be a second, public front door to the

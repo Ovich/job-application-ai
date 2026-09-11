@@ -153,15 +153,27 @@ Resources:
             Action: cloudfront:CreateInvalidation
             Resource: arn:aws:cloudfront::917993967998:distribution/*
 
-          # The one secret this identity may read, and the one step that needs it: the
-          # migration, which connects as the application does. Named down to the secret,
-          # so the rights of the pipeline do not grow with the account's secrets. The
-          # trailing wildcard is Secrets Manager's own six-character suffix, which it
+          # The two secrets this identity may read, and no others. Named down to the
+          # secret, so the rights of the pipeline do not grow with the account's secrets.
+          # The trailing wildcard is Secrets Manager's own six-character suffix, which it
           # appends to every secret's ARN and which nothing here chooses.
-          - Sid: ReadTheDatabaseConnectionString
+          #
+          # The connection string is read by the migration, which connects as the
+          # application does: if this string cannot migrate, it cannot serve requests
+          # either, and the deploy is where that is found out.
+          #
+          # The authentication entry is read twice and for two reasons. CloudFormation
+          # resolves App-dev's `{{resolve:secretsmanager:...}}` references with the
+          # credentials of whoever applies the stack, which is this identity; and the
+          # deployed end-to-end check signs a person in by writing the session itself,
+          # which needs the same secret the function verifies with, since no test can
+          # drive a provider's own sign-in page.
+          - Sid: ReadTheSecretsTheDeployNeeds
             Effect: Allow
             Action: secretsmanager:GetSecretValue
-            Resource: arn:aws:secretsmanager:*:917993967998:secret:jobapp/dev/database-url-*
+            Resource:
+              - arn:aws:secretsmanager:*:917993967998:secret:jobapp/dev/database-url-*
+              - arn:aws:secretsmanager:*:917993967998:secret:jobapp/dev/auth-*
 
   # Who CloudFormation is while it deploys. Every stack is applied with --role-arn
   # naming this role, so the rights to create a distribution or a database cluster live
