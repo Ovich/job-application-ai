@@ -17,13 +17,17 @@ const rendered = <T>(host: new () => T): HTMLElement => {
 
 @Component({
   imports: [Notice],
-  template: `<app-notice tone="danger" lead="Google did not finish signing you in.">Nothing was created.</app-notice>`,
+  template: `<app-notice tone="danger" lead="Google did not finish signing you in."
+    >Nothing was created.</app-notice
+  >`,
 })
 class Failure {}
 
 @Component({
   imports: [Notice],
-  template: `<app-notice tone="ok" lead="Your account is deleted.">Everything it held is gone.</app-notice>`,
+  template: `<app-notice tone="ok" lead="Your account is deleted."
+    >Everything it held is gone.</app-notice
+  >`,
 })
 class Done {}
 

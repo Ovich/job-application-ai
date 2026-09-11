@@ -42,9 +42,7 @@
   },
   "overrides": [
     {
-      "includes": [
-        "apps/web/**"
-      ],
+      "includes": ["apps/web/**"],
       "linter": {
         "rules": {
           "correctness": {
@@ -56,10 +54,7 @@
               "options": {
                 "patterns": [
                   {
-                    "group": [
-                      "@app/db",
-                      "@app/db/**"
-                    ],
+                    "group": ["@app/db", "@app/db/**"],
                     "message": "apps/web must not depend on @app/db. Response shapes reach the web app through the RPC client, inferred from AppType."
                   }
                 ]
@@ -87,9 +82,7 @@
       }
     },
     {
-      "includes": [
-        "apps/api/src/handlers/**"
-      ],
+      "includes": ["apps/api/src/handlers/**"],
       "linter": {
         "rules": {
           "style": {
@@ -98,12 +91,7 @@
               "options": {
                 "patterns": [
                   {
-                    "group": [
-                      "./*",
-                      "./**",
-                      "../handlers/**",
-                      "**/handlers/*"
-                    ],
+                    "group": ["./*", "./**", "../handlers/**", "**/handlers/*"],
                     "message": "A handler must not import another handler. A helper a second file needs moves to apps/api/src/lib/."
                   },
                   {
@@ -117,10 +105,7 @@
                     "message": "A handler must not reach for the AWS SDK. An external service lives behind apps/api/src/lib/<service>/, and the Lambda entry point is the only place that knows it is on AWS."
                   },
                   {
-                    "group": [
-                      "process",
-                      "node:process"
-                    ],
+                    "group": ["process", "node:process"],
                     "message": "A handler must not read the process environment. Configuration is parsed once by apps/api/src/env.ts and imported from there."
                   }
                 ]
@@ -131,10 +116,7 @@
       }
     },
     {
-      "includes": [
-        "apps/api/src/env.ts",
-        "packages/db/drizzle.config.ts"
-      ],
+      "includes": ["apps/api/src/env.ts", "packages/db/drizzle.config.ts"],
       "linter": {
         "rules": {
           "style": {

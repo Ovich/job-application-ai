@@ -23,12 +23,12 @@ foundation-skeleton:apps/api/src/lib/runs/progress.ts`.
 
 Three things trip a first run, and none of them produces an error that names itself.
 
-| What | Why |
-| --- | --- |
-| **Node 24.15 or newer** | Angular 22 refuses to start below it. `.nvmrc` names the version; run `nvm use` in the repository root, elevated on Windows. |
-| **pnpm 11** | The workspace uses pnpm 11's `allowBuilds`, which pnpm 9 and 10 ignore silently. |
-| **Docker Desktop running** | Not merely installed. When it is closed, `docker compose` fails with a pipe error that says nothing about Docker. |
-| **Port 5432 free** | Another PostgreSQL on the default port will take the connection and then fail to find the schema. |
+| What                       | Why                                                                                                                          |
+| -------------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
+| **Node 24.15 or newer**    | Angular 22 refuses to start below it. `.nvmrc` names the version; run `nvm use` in the repository root, elevated on Windows. |
+| **pnpm 11**                | The workspace uses pnpm 11's `allowBuilds`, which pnpm 9 and 10 ignore silently.                                             |
+| **Docker Desktop running** | Not merely installed. When it is closed, `docker compose` fails with a pipe error that says nothing about Docker.            |
+| **Port 5432 free**         | Another PostgreSQL on the default port will take the connection and then fail to find the schema.                            |
 
 ## Run it
 
@@ -69,12 +69,12 @@ docker compose down
 
 ## The commands
 
-| Command | What it does |
-| --- | --- |
-| `pnpm dev` | database, migrations, API and web app, together |
-| `pnpm check` | lint, typecheck across every member, and both test suites. This is what CI runs. |
-| `pnpm format` | apply the formatter |
-| `pnpm --filter @app/db db:generate --name=<what_it_does>` | a new migration. The name is not optional; see the conventions file. |
+| Command                                                   | What it does                                                                     |
+| --------------------------------------------------------- | -------------------------------------------------------------------------------- |
+| `pnpm dev`                                                | database, migrations, API and web app, together                                  |
+| `pnpm check`                                              | lint, typecheck across every member, and both test suites. This is what CI runs. |
+| `pnpm format`                                             | apply the formatter                                                              |
+| `pnpm --filter @app/db db:generate --name=<what_it_does>` | a new migration. The name is not optional; see the conventions file.             |
 
 ## How it reaches the internet
 
@@ -87,7 +87,7 @@ mistaken for the environment working.
 
 GitHub holds no AWS key. Actions presents a signed token naming the repository and the
 branch, and the deployment role trusts exactly `refs/heads/main`, so no other branch and
-no fork can obtain credentials. Two repository *variables* say where to go:
+no fork can obtain credentials. Two repository _variables_ say where to go:
 `AWS_DEPLOY_ROLE_ARN_DEV` and `AWS_REGION`. Neither is a secret; a role name grants
 nothing without a token that matches the trust condition.
 

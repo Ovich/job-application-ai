@@ -12,10 +12,10 @@ generated artefact, so a resource named here is a resource you can find by name 
 
 **One: `dev`.** There is no production.
 
-| Environment | Address | Stacks | State |
-|---|---|---|---|
-| `dev` | `dev.job-application.app` | `Cert-dev`, `App-dev` | the only one deployed |
-| `prod` | `job-application.app` | `Cert-prod`, `App-prod` | **not deployed, and the templates do not yet exist** |
+| Environment | Address                   | Stacks                  | State                                                |
+| ----------- | ------------------------- | ----------------------- | ---------------------------------------------------- |
+| `dev`       | `dev.job-application.app` | `Cert-dev`, `App-dev`   | the only one deployed                                |
+| `prod`      | `job-application.app`     | `Cert-prod`, `App-prod` | **not deployed, and the templates do not yet exist** |
 
 `Deploy` and `Dns` are shared by both and exist once for the project.
 
@@ -34,13 +34,13 @@ aws cloudformation describe-stacks --region eu-central-1 --query "Stacks[].{Name
 
 ## The account and the regions
 
-| | |
-|---|---|
-| Account | `917993967998` |
-| Region | `eu-central-1`, Frankfurt (board `D14`) |
-| Exception | `Cert-dev` in `us-east-1` |
-| Domain | `job-application.app`, development at `dev.job-application.app` |
-| Hosted zone | `Z01268721BDDLWGJVLJS8` |
+|             |                                                                 |
+| ----------- | --------------------------------------------------------------- |
+| Account     | `917993967998`                                                  |
+| Region      | `eu-central-1`, Frankfurt (board `D14`)                         |
+| Exception   | `Cert-dev` in `us-east-1`                                       |
+| Domain      | `job-application.app`, development at `dev.job-application.app` |
+| Hosted zone | `Z01268721BDDLWGJVLJS8`                                         |
 
 The region is stated in `bin`-less templates and in the workflow, never taken from
 ambient credentials, so a stack cannot deploy wherever a shell happens to point.
@@ -203,23 +203,22 @@ private, and CloudFront is the only door.
 
 ### `Deploy` — who may change the account
 
-| Logical id | Type | What it is for |
-|---|---|---|
-| `GitHubProvider` | `AWS::IAM::OIDCProvider` | Trusts tokens minted by GitHub Actions. One per URL per account |
-| `DeployRole` | `AWS::IAM::Role` | `github-actions-deploy-dev`. Assumed by the pipeline; trusts one repository and `refs/heads/main` only |
-| `DeployRolePolicy` | `AWS::IAM::Policy` | What the pipeline may do. CloudFormation on these four stacks **by name**, `PassRole` on the execution role, the artefact bucket, the web bucket, and `GetSecretValue` on `jobapp/dev/database-url` alone, which is all the migrate step needs |
-| `CloudFormationExecutionRole` | `AWS::IAM::Role` | The rights to **create** resources are held here, not by the pipeline. CloudFormation acts as this role, so a mistake in the workflow reaches only what CloudFormation would have done anyway |
-| `ArtefactBucket` | `AWS::S3::Bucket` | Holds the Lambda bundle the pipeline uploads |
+| Logical id                    | Type                     | What it is for                                                                                                                                                                                                                                 |
+| ----------------------------- | ------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `GitHubProvider`              | `AWS::IAM::OIDCProvider` | Trusts tokens minted by GitHub Actions. One per URL per account                                                                                                                                                                                |
+| `DeployRole`                  | `AWS::IAM::Role`         | `github-actions-deploy-dev`. Assumed by the pipeline; trusts one repository and `refs/heads/main` only                                                                                                                                         |
+| `DeployRolePolicy`            | `AWS::IAM::Policy`       | What the pipeline may do. CloudFormation on these four stacks **by name**, `PassRole` on the execution role, the artefact bucket, the web bucket, and `GetSecretValue` on `jobapp/dev/database-url` alone, which is all the migrate step needs |
+| `CloudFormationExecutionRole` | `AWS::IAM::Role`         | The rights to **create** resources are held here, not by the pipeline. CloudFormation acts as this role, so a mistake in the workflow reaches only what CloudFormation would have done anyway                                                  |
+| `ArtefactBucket`              | `AWS::S3::Bucket`        | Holds the Lambda bundle the pipeline uploads                                                                                                                                                                                                   |
 
 The last two replace CDK's bootstrap (`cdk-hnb659fds-cfn-exec-role` and its asset
 bucket), which deleting CDK deleted.
 
-
 **No application register, and why it was tried.** Resource Explorer has an
 `Application` column, filled from an AWS Service Catalog AppRegistry application, and on
-2026-09-10 three stacks were changed to declare one. The deploy failed: *"AWS Service
+2026-09-10 three stacks were changed to declare one. The deploy failed: _"AWS Service
 Catalog AppRegistry is in maintenance mode and is no longer available to new customers as
-of July 30, 2026"*, a 403 at create time. The resource type is still in CloudFormation's
+of July 30, 2026"_, a 403 at create time. The resource type is still in CloudFormation's
 schema and still in the documentation, so `cfn-lint` passed and nothing local could have
 known; only a deploy could. `Deploy` rolled back cleanly and the change was reverted.
 
@@ -231,13 +230,13 @@ cosmetic loss.
 
 ### `Dns` — the domain and the spend alarm
 
-| Logical id | Type | What it is for |
-|---|---|---|
-| `Zone` | `AWS::Route53::HostedZone` | `job-application.app`. **`DeletionPolicy: Retain`** |
-| `Alerts` | `AWS::SNS::Topic` | Where every alarm reports |
-| `AlertsEmailSubscription` | `AWS::SNS::Subscription` | Email. Needs confirming by hand after any recreation |
-| `AlertsPolicy` | `AWS::SNS::TopicPolicy` | Lets AWS Budgets publish to the topic |
-| `MonthlySpend` | `AWS::Budgets::Budget` | USD 20/month. `US7` |
+| Logical id                | Type                       | What it is for                                       |
+| ------------------------- | -------------------------- | ---------------------------------------------------- |
+| `Zone`                    | `AWS::Route53::HostedZone` | `job-application.app`. **`DeletionPolicy: Retain`**  |
+| `Alerts`                  | `AWS::SNS::Topic`          | Where every alarm reports                            |
+| `AlertsEmailSubscription` | `AWS::SNS::Subscription`   | Email. Needs confirming by hand after any recreation |
+| `AlertsPolicy`            | `AWS::SNS::TopicPolicy`    | Lets AWS Budgets publish to the topic                |
+| `MonthlySpend`            | `AWS::Budgets::Budget`     | USD 20/month. `US7`                                  |
 
 **The zone is the one resource here that can take the product off the internet.** Its
 four name servers are typed by hand at the registrar; a replacement zone gets four
@@ -246,23 +245,23 @@ why it is retained, and why `import-runbook.md` exists.
 
 ### `Cert-dev` — the certificate
 
-| Logical id | Type | What it is for |
-|---|---|---|
+| Logical id    | Type                                   | What it is for                                               |
+| ------------- | -------------------------------------- | ------------------------------------------------------------ |
 | `Certificate` | `AWS::CertificateManager::Certificate` | `dev.job-application.app`, validated by DNS against the zone |
 
 ### `App-dev` — the application
 
-| Logical id | Type | What it is for |
-|---|---|---|
-| `ApiLogs` | `AWS::Logs::LogGroup` | Two weeks' retention |
-| `ApiRole` | `AWS::IAM::Role` | What the function may do: write its own log group, and nothing else. The database is not an AWS resource, so there is no right to grant on it |
-| `Api` | `AWS::Lambda::Function` | Hono. One function for **every** route. `DATABASE_URL` is a `{{resolve:secretsmanager:...}}` reference CloudFormation reads while it applies the stack, so the function makes no call to read it and a rotated secret arrives on the next deploy |
-| `ApiFunctionUrl` | `AWS::Lambda::Url` | `AuthType: AWS_IAM`, `InvokeMode: RESPONSE_STREAM` |
-| `ApiInvokeFromDistribution` | `AWS::Lambda::Permission` | Lets one distribution, and only that one, invoke the function |
-| `WebBucket`, `WebBucketPolicy` | `AWS::S3::Bucket`, `::BucketPolicy` | The Angular bundle. Readable only by the distribution |
-| `WebOriginAccessControl`, `ApiOriginAccessControl` | `AWS::CloudFront::OriginAccessControl` | Sign requests to each origin |
-| `Distribution` | `AWS::CloudFront::Distribution` | The front door. Maps a bucket's 403 to `/index.html` for deep links, and **only** 403: a 404 from the API passes through as itself (`S9.3`) |
-| `AliasRecord` | `AWS::Route53::RecordSet` | `dev.job-application.app` at the distribution |
+| Logical id                                         | Type                                   | What it is for                                                                                                                                                                                                                                   |
+| -------------------------------------------------- | -------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `ApiLogs`                                          | `AWS::Logs::LogGroup`                  | Two weeks' retention                                                                                                                                                                                                                             |
+| `ApiRole`                                          | `AWS::IAM::Role`                       | What the function may do: write its own log group, and nothing else. The database is not an AWS resource, so there is no right to grant on it                                                                                                    |
+| `Api`                                              | `AWS::Lambda::Function`                | Hono. One function for **every** route. `DATABASE_URL` is a `{{resolve:secretsmanager:...}}` reference CloudFormation reads while it applies the stack, so the function makes no call to read it and a rotated secret arrives on the next deploy |
+| `ApiFunctionUrl`                                   | `AWS::Lambda::Url`                     | `AuthType: AWS_IAM`, `InvokeMode: RESPONSE_STREAM`                                                                                                                                                                                               |
+| `ApiInvokeFromDistribution`                        | `AWS::Lambda::Permission`              | Lets one distribution, and only that one, invoke the function                                                                                                                                                                                    |
+| `WebBucket`, `WebBucketPolicy`                     | `AWS::S3::Bucket`, `::BucketPolicy`    | The Angular bundle. Readable only by the distribution                                                                                                                                                                                            |
+| `WebOriginAccessControl`, `ApiOriginAccessControl` | `AWS::CloudFront::OriginAccessControl` | Sign requests to each origin                                                                                                                                                                                                                     |
+| `Distribution`                                     | `AWS::CloudFront::Distribution`        | The front door. Maps a bucket's 403 to `/index.html` for deep links, and **only** 403: a 404 from the API passes through as itself (`S9.3`)                                                                                                      |
+| `AliasRecord`                                      | `AWS::Route53::RecordSet`              | `dev.job-application.app` at the distribution                                                                                                                                                                                                    |
 
 ## What actually runs, and when
 
@@ -270,12 +269,12 @@ Most of what is listed above does not run. It exists — a role, a route table, 
 and costs nothing until something uses it. Three groups, and the difference is the whole
 cost posture:
 
-| | Resources | Cost shape |
-|---|---|---|
-| **Always there** | `Zone`, `WebBucket`, `ArtefactBucket`, `ApiLogs` | A hosted zone is charged by the hour whether or not anything asks for it. Storage is charged by the byte. These are the fixed line |
-| **Runs only when asked** | `Api` (Lambda), `Distribution` (CloudFront) | Per invocation and per request. Nothing at rest |
-| **Asleep by default** | the Neon project | Neon's own free tier, not an AWS line. It scales to nothing when idle and wakes in roughly half a second |
-| **Costs nothing, ever** | Every `AWS::IAM::*`, both `OriginAccessControl`s, `ApiInvokeFromDistribution`, `MonthlySpend`, `Alerts` | Configuration. It has no runtime |
+|                          | Resources                                                                                               | Cost shape                                                                                                                         |
+| ------------------------ | ------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
+| **Always there**         | `Zone`, `WebBucket`, `ArtefactBucket`, `ApiLogs`                                                        | A hosted zone is charged by the hour whether or not anything asks for it. Storage is charged by the byte. These are the fixed line |
+| **Runs only when asked** | `Api` (Lambda), `Distribution` (CloudFront)                                                             | Per invocation and per request. Nothing at rest                                                                                    |
+| **Asleep by default**    | the Neon project                                                                                        | Neon's own free tier, not an AWS line. It scales to nothing when idle and wakes in roughly half a second                           |
+| **Costs nothing, ever**  | Every `AWS::IAM::*`, both `OriginAccessControl`s, `ApiInvokeFromDistribution`, `MonthlySpend`, `Alerts` | Configuration. It has no runtime                                                                                                   |
 
 So on a quiet day the account runs **nothing**: the function is not invoked and the
 distribution serves nobody. What is left is a hosted zone and a few megabytes of S3,
@@ -385,7 +384,7 @@ Nothing writes today — the health route only reads — so the header is exerci
 `apps/web`'s own test rather than by a route, and the first write to forget it is a 403
 in the cloud and nothing at all locally.
 
-A third property is not on the diagram because it shows in what does *not* happen. The
+A third property is not on the diagram because it shows in what does _not_ happen. The
 distribution's `CustomErrorResponses` map a bucket's 403 — what a missing key answers
 behind origin access control, and so what every deep link answers — to `/index.html`
 with status 200, so the router can resolve the path in the browser. They are
@@ -470,7 +469,7 @@ unit in flight.
 **No `CDKToolkit`, and no VPC anywhere.** Both were true of the account rather than of
 the templates, and both were cleaned out on 2026-09-10. CDK’s bootstrap went with its two
 asset buckets, its container registry, its version parameter and its ten roles — the
-buckets needed their object *versions* deleted first, since the bootstrap sets
+buckets needed their object _versions_ deleted first, since the bootstrap sets
 `DeletionPolicy: Retain` and the stack delete only orphans them. The default VPC AWS
 creates in every region went too, in both `eu-central-1` and `us-east-1`, with its
 subnets, gateway, route tables, ACL and security group. `describe-vpcs` now answers
