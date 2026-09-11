@@ -1,8 +1,9 @@
+import { NgTemplateOutlet } from "@angular/common";
 import { Component, computed, ElementRef, inject, input, output, signal } from "@angular/core";
 import { RouterLink } from "@angular/router";
-import type { SignedIn } from "../auth/session";
-import { AccountMenu } from "./app-bar/account-menu";
-import { Wordmark } from "./wordmark";
+import type { SignedIn } from "../../auth/session";
+import { Wordmark } from "../wordmark/wordmark";
+import { AccountMenu } from "./account-menu/account-menu";
 
 /**
  * The AppBar (ID64), first drawn here: the wordmark, the nav, the CreditMeter and the
@@ -19,54 +20,14 @@ import { Wordmark } from "./wordmark";
  */
 @Component({
   selector: "app-app-bar",
-  imports: [RouterLink, Wordmark, AccountMenu],
+  imports: [NgTemplateOutlet, RouterLink, Wordmark, AccountMenu],
   host: {
     class:
       "flex h-[60px] shrink-0 items-center gap-2.5 border-b border-border bg-card px-3.5 sm:gap-5 sm:px-5",
     "(document:click)": "closeUnless($event)",
     "(document:keydown.escape)": "close()",
   },
-  template: `
-    <app-wordmark class="text-[18px]" />
-    <nav class="ml-3 hidden gap-1 sm:flex">
-      <a
-        routerLink="/profile"
-        class="rounded-md bg-accent px-3 py-1.5 text-ui font-semibold text-accent-foreground no-underline"
-        aria-current="page"
-      >
-        Profile
-      </a>
-      <span class="rounded-md px-3 py-1.5 text-ui text-muted-foreground" aria-disabled="true">
-        Applications
-      </span>
-      <span class="rounded-md px-3 py-1.5 text-ui text-muted-foreground" aria-disabled="true">
-        Credits
-      </span>
-    </nav>
-    <span class="flex-1"></span>
-    <span class="hidden text-ui text-muted-foreground sm:inline">
-      CHF <span class="font-semibold text-foreground">12.40</span>
-    </span>
-    <div class="relative">
-      <button
-        type="button"
-        class="flex size-[34px] items-center justify-center rounded-full border border-border bg-accent text-caption font-semibold text-accent-foreground"
-        aria-label="Your account"
-        aria-haspopup="menu"
-        [attr.aria-expanded]="menuOpen()"
-        (click)="toggle()"
-      >
-        {{ initials() }}
-      </button>
-      @if (menuOpen()) {
-        <app-account-menu
-          [user]="user()"
-          (signOut)="forward(signOut)"
-          (deleteAccount)="forward(deleteAccount)"
-        />
-      }
-    </div>
-  `,
+  templateUrl: "./app-bar.html",
 })
 export class AppBar {
   public readonly user = input.required<SignedIn>();

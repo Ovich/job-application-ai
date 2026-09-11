@@ -3,11 +3,11 @@ import { Component, computed, inject, signal } from "@angular/core";
 import { toSignal } from "@angular/core/rxjs-interop";
 import { Meta, Title } from "@angular/platform-browser";
 import { ActivatedRoute } from "@angular/router";
-import { Wordmark } from "../shell/wordmark";
-import { authClient } from "./auth-client";
-import { ProviderButton } from "./provider-button";
-import { providerName } from "./provider-mark";
-import { isProvider, type Provider } from "./session";
+import { Wordmark } from "../../shell/wordmark/wordmark";
+import { authClient } from "../auth-client";
+import { ProviderButton } from "../provider-button/provider-button";
+import { providerName } from "../provider-mark/provider-mark";
+import { isProvider, type Provider } from "../session";
 
 /**
  * The entry route (S3.1): no AppBar, one centred column at 420 px. The wordmark, an
@@ -34,56 +34,7 @@ import { isProvider, type Provider } from "./session";
 @Component({
   selector: "app-sign-in",
   imports: [Wordmark, ProviderButton],
-  template: `
-    <main class="grid min-h-screen place-items-center px-5 pt-10 pb-14">
-      <div class="flex w-full max-w-[420px] flex-col gap-7">
-        <app-wordmark class="justify-center text-[20px]" />
-
-        <h1 class="m-0 text-center text-figure font-semibold tracking-[-0.01em] leading-[1.35]">
-          Your job application in the era of AI
-        </h1>
-
-        <p class="-mt-3.5 m-0 text-center text-body text-muted-foreground">
-          A tailored CV and cover letter for every job offer. Let the silence stop.
-        </p>
-
-        @if (failed(); as provider) {
-          <div role="alert" class="flex items-start gap-3 rounded-md bg-danger-soft px-4 py-3.5 text-ui text-danger">
-            <span class="mt-[0.45em] size-2.5 shrink-0 bg-current" aria-hidden="true"></span>
-            <span>
-              <span class="font-semibold">{{ nameOf(provider) }} did not finish signing you in.</span>
-              Nothing was created and nothing was charged. Try again, or continue with another account.
-            </span>
-          </div>
-        }
-
-        @if (deleted()) {
-          <div role="status" class="flex items-start gap-3 rounded-md bg-ok-soft px-4 py-3.5 text-ui text-ok">
-            <span class="mt-[0.45em] size-2.5 shrink-0 rounded-full bg-current" aria-hidden="true"></span>
-            <span>
-              <span class="font-semibold">Your account is deleted.</span>
-              Everything it held is gone. You are welcome back any time, from nothing.
-            </span>
-          </div>
-        }
-
-        <div class="flex flex-col gap-2.5">
-          @for (provider of providers; track provider) {
-            <app-provider-button
-              [provider]="provider"
-              [busy]="pressed() === provider"
-              [disabled]="pressed() !== null && pressed() !== provider"
-              (pressed)="continueWith(provider)"
-            />
-          }
-        </div>
-
-        <p class="m-0 text-center text-caption text-muted-foreground">
-          <a class="underline underline-offset-[3px]">What we keep, and how to delete it</a>
-        </p>
-      </div>
-    </main>
-  `,
+  templateUrl: "./sign-in.html",
 })
 export class SignIn {
   /** The three of D4, in this order: Google first, LinkedIn last. */

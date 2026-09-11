@@ -1,8 +1,8 @@
 import { Component, inject, signal } from "@angular/core";
 import { Router, RouterOutlet } from "@angular/router";
-import { authClient } from "../auth/auth-client";
-import { type SignedIn, session } from "../auth/session";
-import { AppBar } from "./app-bar";
+import { authClient } from "../../auth/auth-client";
+import { type SignedIn, session } from "../../auth/session";
+import { AppBar } from "../app-bar/app-bar";
 
 /**
  * The layout above the signed-in routes (ID75): the AppBar, fed by `session()`, and
@@ -18,12 +18,7 @@ import { AppBar } from "./app-bar";
   selector: "app-shell",
   imports: [RouterOutlet, AppBar],
   host: { class: "flex min-h-screen flex-col" },
-  template: `
-    @if (user(); as user) {
-      <app-app-bar [user]="user" (signOut)="signOut()" />
-    }
-    <main class="flex-1"><router-outlet /></main>
-  `,
+  templateUrl: "./app-shell.html",
 })
 export class AppShell {
   protected readonly user = signal<SignedIn | null>(null);

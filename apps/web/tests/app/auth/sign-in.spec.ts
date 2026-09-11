@@ -2,7 +2,7 @@ import { TestBed } from "@angular/core/testing";
 import { provideRouter } from "@angular/router";
 import { RouterTestingHarness } from "@angular/router/testing";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { SignIn } from "../../../src/app/auth/sign-in";
+import { SignIn } from "../../../src/app/auth/sign-in/sign-in";
 import { reset, sentTo, signedOut } from "../../support/session";
 
 /**

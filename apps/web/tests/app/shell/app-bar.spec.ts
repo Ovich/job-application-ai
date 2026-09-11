@@ -2,7 +2,7 @@ import { TestBed } from "@angular/core/testing";
 import { provideRouter } from "@angular/router";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Provider } from "../../../src/app/auth/session";
-import { AppBar } from "../../../src/app/shell/app-bar";
+import { AppBar } from "../../../src/app/shell/app-bar/app-bar";
 
 /**
  * The AppBar, rendered (seam B): the initials in the account slot, and the menu that

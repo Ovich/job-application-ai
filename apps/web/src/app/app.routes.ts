@@ -10,11 +10,11 @@ export const routes: Routes = [
   {
     path: "",
     canActivate: [signedOut],
-    loadComponent: () => import("./auth/sign-in").then((m) => m.SignIn),
+    loadComponent: () => import("./auth/sign-in/sign-in").then((m) => m.SignIn),
   },
   {
     path: "profile",
     canActivate: [signedIn],
-    loadComponent: () => import("./shell/app-shell").then((m) => m.AppShell),
+    loadComponent: () => import("./shell/app-shell/app-shell").then((m) => m.AppShell),
   },
 ];

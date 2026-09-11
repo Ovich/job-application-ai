@@ -1,0 +1,4 @@
+@if (user(); as user) {
+  <app-app-bar [user]="user" (signOut)="signOut()" />
+}
+<main class="flex-1"><router-outlet /></main>

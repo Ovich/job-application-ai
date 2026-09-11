@@ -12,13 +12,6 @@ import { Component } from "@angular/core";
 @Component({
   selector: "app-wordmark",
   host: { class: "inline-flex items-center gap-2.5 font-semibold" },
-  template: `
-    <svg viewBox="0 0 512 512" class="size-6 shrink-0" aria-hidden="true">
-      <rect width="512" height="512" rx="80" fill="#1d4ed8" />
-      <circle cx="150" cy="256" r="50" fill="#ffffff" />
-      <rect x="230" y="216" width="176" height="80" rx="40" fill="#ffffff" />
-    </svg>
-    <span>job-application<span class="font-normal text-muted-foreground">.app</span></span>
-  `,
+  templateUrl: "./wordmark.html",
 })
 export class Wordmark {}
