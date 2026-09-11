@@ -31,17 +31,32 @@ const canonical = "https://job-application.app/";
 test.describe("the entry route with JavaScript disabled", () => {
   test.use({ javaScriptEnabled: false });
 
-  test("serves the heading in the HTML of /", async ({ page }) => {
+  /**
+   * Both projects ask this, and deployed it is criterion 12: what a crawler receives
+   * from the address people will use, served as an object out of the bucket rather than
+   * rendered by a dev server. The head is read from the document itself, because a
+   * crawler with no JavaScript reads exactly that.
+   */
+  test("serves the heading, the title, the description and the canonical link in the HTML of /", async ({
+    page,
+  }) => {
     await page.goto("/");
 
     await expect(page.locator("h1")).toHaveText(heading);
     await expect(page.getByText(sentence)).toBeVisible();
     await expect(page).toHaveTitle(title);
+    await expect(page.locator('meta[name="description"]')).toHaveAttribute("content", description);
+    await expect(page.locator('link[rel="canonical"]')).toHaveAttribute("href", canonical);
   });
 });
 
 test.describe("the built HTML of /", () => {
-  test("carries the title, the description, the canonical link, the h1 and the sentence", async () => {
+  // biome-ignore lint/correctness/noEmptyPattern: Playwright reads the fixtures a test asks for off its destructuring pattern, so the argument has to be destructured even when it needs none of them.
+  test("carries the title, the description, the canonical link, the h1 and the sentence", async ({}, testInfo) => {
+    test.skip(
+      testInfo.project.name === "deployed",
+      "the built file is what a deploy syncs; what the deployed address serves is read above, over HTTP",
+    );
     const html = await readFile(builtEntryRoute, "utf8").catch(() => {
       throw new Error(
         `no built entry route at ${builtEntryRoute}: run pnpm --filter @app/web build first`,

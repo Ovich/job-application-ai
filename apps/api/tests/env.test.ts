@@ -9,12 +9,18 @@ import { afterEach, describe, expect, it, vi } from "vitest";
  * the deployed function's arrive as the single pooled connection string Neon issues and
  * Secrets Manager holds (D19).
  *
- * The provider clients are the other thing both runtimes are asked for, and the two
- * answer differently on purpose (ID60, amended for SL1): the laptop must have all
- * three, because a client secret has no throwaway value the way a database password
- * does, and the cloud may lack them until slice 5 puts the secrets in Secrets Manager,
- * so a merge in between keeps the health route answering. SL2 adds Microsoft and
- * LinkedIn under the same rule as Google.
+ * The provider clients are the other thing both runtimes are asked for, and since SL5
+ * the two answer the same way (ID60): every one of the six values, `APP_URL` and
+ * `BETTER_AUTH_SECRET` is required in both branches, and a value that is missing fails
+ * the start with the field named. The cloud's exemption was temporary and said so — a
+ * merge deploys, and the provider secrets did not exist in Secrets Manager before S5.2.
+ * They exist now, so the cases that proved a half-configured cloud parses are the
+ * opposite cases below (ID60, ID71).
+ *
+ * `BETTER_AUTH_SECRET` is read here rather than left to the library, which would read
+ * the process environment itself behind this module's back (ID71, F4): the value would
+ * be right and the boundary wrong. Absent, the library signs every session cookie with
+ * its own public default and only warns.
  *
  * Each case reloads the module, because the environment is read at import and frozen.
  */
@@ -42,6 +48,7 @@ const nothingSet = {
   MICROSOFT_CLIENT_SECRET: undefined,
   LINKEDIN_CLIENT_ID: undefined,
   LINKEDIN_CLIENT_SECRET: undefined,
+  BETTER_AUTH_SECRET: undefined,
 };
 
 /** A registered Google client app, as the person's `.env` names it. Nobody's real one. */
@@ -63,13 +70,25 @@ const linkedinClient = {
 /** All three, which is what a laptop must have (SL2). */
 const everyClient = { ...googleClient, ...microsoftClient, ...linkedinClient };
 
+/**
+ * The secret the library signs its session cookies with (ID71). Nobody's: the laptop's
+ * is a committed throwaway (`.env.example`, ID103) and the deployed one is in Secrets
+ * Manager. Long enough that the library does not warn about its length.
+ */
+const authSecret = {
+  BETTER_AUTH_SECRET: "test-better-auth-secret-of-a-decent-length",
+};
+
+/** Everything either runtime must be given beyond its connection (ID60, ID71). */
+const everyValue = { ...everyClient, ...authSecret };
+
 afterEach(() => {
   vi.unstubAllEnvs();
 });
 
 describe("the local runtime", () => {
   it("answers on the Docker container with nothing set but the provider clients", async () => {
-    const env = await load({ ...nothingSet, ...everyClient });
+    const env = await load({ ...nothingSet, ...everyValue });
 
     expect({
       runtime: env.APP_RUNTIME,
@@ -91,7 +110,7 @@ describe("the local runtime", () => {
   it("ignores a connection string, so a shell that has one does not reach the container", async () => {
     const env = await load({
       ...nothingSet,
-      ...everyClient,
+      ...everyValue,
       DATABASE_URL: "postgresql://api:elsewhere@somewhere.neon.tech/neondb",
     });
 
@@ -102,7 +121,7 @@ describe("the local runtime", () => {
   });
 
   it("reads the Google client, and where the browser reaches the app", async () => {
-    const env = await load({ ...nothingSet, ...everyClient });
+    const env = await load({ ...nothingSet, ...everyValue });
 
     expect({
       clientId: env.GOOGLE_CLIENT_ID,
@@ -118,12 +137,24 @@ describe("the local runtime", () => {
   });
 
   /**
+   * ID71: the value the library signs its session cookies with, read here because this
+   * module is the only reader of the process environment (F4). On a laptop it is the
+   * committed throwaway `.env.example` fills in (ID103), so that the end-to-end
+   * fixture and the dev server sign with the same one.
+   */
+  it("reads the secret the library signs its cookies with", async () => {
+    const env = await load({ ...nothingSet, ...everyValue });
+
+    expect(env.BETTER_AUTH_SECRET).toBe("test-better-auth-secret-of-a-decent-length");
+  });
+
+  /**
    * SL2: the two providers that join Google, read under the same rule. Their apps are
    * registered at S2.1 and their callbacks are `<APP_URL>/api/auth/callback/microsoft`
    * and `.../linkedin`, so the address they share with Google is the one above.
    */
   it("reads the Microsoft and LinkedIn clients", async () => {
-    const env = await load({ ...nothingSet, ...everyClient });
+    const env = await load({ ...nothingSet, ...everyValue });
 
     expect({
       microsoftId: env.MICROSOFT_CLIENT_ID,
@@ -142,35 +173,47 @@ describe("the local runtime", () => {
    * ID60: a client secret has no sensible throwaway value the way the database
    * password does, so there is no default and the process refuses to start. The error
    * names the field, because "invalid configuration" sends a person reading the
-   * schema and "GOOGLE_CLIENT_ID" sends them to `.env.example`. Six fields, one rule.
+   * schema and "GOOGLE_CLIENT_ID" sends them to `.env.example`. Seven fields, one rule:
+   * the six halves of the three registrations, and the secret the library signs with
+   * (ID71), whose local value is the throwaway `.env.example` fills in (ID103).
    */
-  it.each(Object.keys(everyClient))(
+  it.each(Object.keys(everyValue))(
     "refuses to start without %s, and names the field",
     async (field) => {
-      await expect(load({ ...nothingSet, ...everyClient, [field]: undefined })).rejects.toThrow(
+      await expect(load({ ...nothingSet, ...everyValue, [field]: undefined })).rejects.toThrow(
         new RegExp(field),
       );
     },
   );
 
   it("refuses an empty value as it refuses a missing one", async () => {
-    await expect(load({ ...nothingSet, ...everyClient, GOOGLE_CLIENT_SECRET: "" })).rejects.toThrow(
+    await expect(load({ ...nothingSet, ...everyValue, GOOGLE_CLIENT_SECRET: "" })).rejects.toThrow(
       /GOOGLE_CLIENT_SECRET/,
     );
   });
 });
 
 describe("the cloud runtime", () => {
-  /** The one value the template sets today (D19); nothing about a provider is in it yet. */
-  const pooledOnly = {
-    ...nothingSet,
-    APP_RUNTIME: "cloud",
+  /** Where the browser reaches the deployed app, and so where each provider sends it back to. */
+  const appUrl = { APP_URL: "https://dev.job-application.app" };
+
+  /** The connection the template hands over as one string (D19). */
+  const connection = {
     DATABASE_URL:
       "postgresql://api:npg_secret@ep-example-pooler.eu-central-1.aws.neon.tech/neondb?sslmode=require&channel_binding=require",
   };
 
-  it("takes the pooled connection string Secrets Manager holds, and nothing else", async () => {
-    const env = await load(pooledOnly);
+  /** Everything the template sets on the function since S5.2: the eight, and the connection. */
+  const deployed = {
+    ...nothingSet,
+    APP_RUNTIME: "cloud",
+    ...connection,
+    ...appUrl,
+    ...everyValue,
+  };
+
+  it("takes the pooled connection string Secrets Manager holds", async () => {
+    const env = await load(deployed);
 
     expect({
       runtime: env.APP_RUNTIME,
@@ -190,50 +233,43 @@ describe("the cloud runtime", () => {
   });
 
   /**
-   * Until slice 5, and only until then. A merge to `main` deploys, and the provider
-   * secrets do not exist in Secrets Manager before S5.2; a cloud branch that required
-   * them today would fail every cold start between this slice and that one, health
-   * route included. S5.2 turns these into required fields and this test into its
-   * opposite. The rule was set for Google at SL1; SL2's two providers follow it.
+   * The opposite of the case that stood here until S5.2, and the same sentence read
+   * the other way round (ID60). The cloud branch was allowed to lack a provider value
+   * only because Secrets Manager did not hold one yet and every merge deploys; now that
+   * the template resolves all eight, an absent one is a half-configured function, and
+   * the cold start is where that has to be found out rather than the first press of a
+   * button (ID23). Eight fields, one rule, and `BETTER_AUTH_SECRET` among them: without
+   * it the library signs every session cookie with its own public default and does not
+   * even throw, because the deployed function sets no `NODE_ENV` (ID71, F7).
    */
-  it("parses without any provider client, until slice 5 puts the secrets in the cloud", async () => {
-    const env = await load(pooledOnly);
+  it.each(Object.keys({ ...everyValue, ...appUrl }))(
+    "fails the cold start without %s, and names the field",
+    async (field) => {
+      await expect(load({ ...deployed, [field]: undefined })).rejects.toThrow(new RegExp(field));
+    },
+  );
 
-    expect({
-      google: [env.GOOGLE_CLIENT_ID, env.GOOGLE_CLIENT_SECRET],
-      microsoft: [env.MICROSOFT_CLIENT_ID, env.MICROSOFT_CLIENT_SECRET],
-      linkedin: [env.LINKEDIN_CLIENT_ID, env.LINKEDIN_CLIENT_SECRET],
-    }).toEqual({
-      google: [undefined, undefined],
-      microsoft: [undefined, undefined],
-      linkedin: [undefined, undefined],
-    });
-    expect(env.APP_URL).toBeUndefined();
-  });
-
-  it("reads the provider clients and the app's address when the template hands them over", async () => {
-    const env = await load({
-      ...pooledOnly,
-      ...everyClient,
-      APP_URL: "https://dev.job-application.app",
-    });
+  it("reads the provider clients, the app's address and the auth secret the template hands over", async () => {
+    const env = await load(deployed);
 
     expect({
       googleId: env.GOOGLE_CLIENT_ID,
       microsoftId: env.MICROSOFT_CLIENT_ID,
       linkedinId: env.LINKEDIN_CLIENT_ID,
       appUrl: env.APP_URL,
+      authSecret: env.BETTER_AUTH_SECRET,
     }).toEqual({
       googleId: "test-google-client-id.apps.googleusercontent.com",
       microsoftId: "test-microsoft-client-id",
       linkedinId: "test-linkedin-client-id",
       appUrl: "https://dev.job-application.app",
+      authSecret: "test-better-auth-secret-of-a-decent-length",
     });
   });
 
   it("reads the port when the string carries one", async () => {
     const env = await load({
-      ...pooledOnly,
+      ...deployed,
       DATABASE_URL: "postgresql://api:npg_secret@ep-example-pooler.neon.tech:6543/neondb",
     });
 
@@ -242,7 +278,7 @@ describe("the cloud runtime", () => {
 
   it("decodes the escapes a password puts in a URL, which a driver must not receive raw", async () => {
     const env = await load({
-      ...pooledOnly,
+      ...deployed,
       DATABASE_URL: "postgresql://api:np%40g%2Fsecret@ep-example-pooler.neon.tech/neondb",
     });
 
@@ -250,12 +286,10 @@ describe("the cloud runtime", () => {
   });
 
   it("fails the cold start when the connection string is missing, rather than a request", async () => {
-    await expect(load({ ...nothingSet, APP_RUNTIME: "cloud" })).rejects.toThrow();
+    await expect(load({ ...deployed, DATABASE_URL: undefined })).rejects.toThrow();
   });
 
   it("fails the cold start when the connection string is not a URL", async () => {
-    await expect(
-      load({ ...nothingSet, APP_RUNTIME: "cloud", DATABASE_URL: "the-secret-was-not-set" }),
-    ).rejects.toThrow();
+    await expect(load({ ...deployed, DATABASE_URL: "the-secret-was-not-set" })).rejects.toThrow();
   });
 });

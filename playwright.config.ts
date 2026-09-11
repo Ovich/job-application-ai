@@ -47,7 +47,13 @@ export default defineConfig({
     },
     {
       name: "deployed",
-      testMatch: /health(-stream)?\.spec\.ts$/,
+      // Widened at S5.5 (ID69): the cloud has client apps of its own now, so the specs
+      // that open the page and the specs that ask the library who is signed in are
+      // questions this address can finally answer — and the only address where origin
+      // access control, the payload hash and the session cookie's road through the
+      // distribution exist at all. A spec collected by both projects skips what only
+      // one address can answer, the way `health-stream` already does.
+      testMatch: /(health(-stream)?|auth|entry-route)\.spec\.ts$/,
       use: { baseURL: "https://dev.job-application.app" },
       // One worker, and the reason is the environment rather than the tests. Nothing
       // here writes any more — the health route only reads — but the specs share one

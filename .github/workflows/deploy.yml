@@ -69,6 +69,13 @@ jobs:
       # Where the development database's connection string lives. Neon issues it, a
       # person put it here, and nothing in the repository holds it (D19).
       DATABASE_SECRET: jobapp/dev/database-url
+      # The three dev client apps and what the function signs its session cookies with,
+      # one entry with a JSON key per value. App-dev.yaml resolves it while the stack is
+      # applied; this workflow reads it once more, for the deployed check, which signs a
+      # person in by writing the session itself and so needs the same secret the function
+      # verifies with (ID101). The deploy role may read this entry and the one above, and
+      # no other.
+      AUTH_SECRET: jobapp/dev/auth
       # Stamped on every stack, and from there onto every resource that supports a tag.
       # A resource whose identifier AWS assigned (a distribution id, a hosted zone id)
       # can never say what it is; its tags are the only place that meaning can live, and
@@ -233,7 +240,27 @@ jobs:
 
       # The last word on the deploy, and the only step that asks the environment rather
       # than the API that built it: does the address answer, is a real database behind
-      # it, does a stream survive the distribution. It takes about a minute, most of it
-      # one stream watched past the distribution's origin read timeout.
+      # it, does a stream survive the distribution, and since S5.5 can a person sign in
+      # — each of the three providers reached at its door, the payload hash a signed
+      # origin demands, and the session cookie's road through the distribution in both
+      # directions.
+      #
+      # Two values are handed to it and neither may be written anywhere (ID102): no test
+      # can drive a provider's own sign-in page, so the fixture writes the session row
+      # itself and mints the cookie, which needs the deployed database and the deployed
+      # secret. Both are masked the way the migration masks its own, so a later step or a
+      # stack trace cannot print them.
       - name: Check the deployed environment
-        run: pnpm test:e2e:deployed
+        run: |
+          set -euo pipefail
+          DEPLOYED_DATABASE_URL=$(aws secretsmanager get-secret-value \
+            --secret-id "$DATABASE_SECRET" --query SecretString --output text)
+          echo "::add-mask::$DEPLOYED_DATABASE_URL"
+          auth=$(aws secretsmanager get-secret-value \
+            --secret-id "$AUTH_SECRET" --query SecretString --output text)
+          echo "::add-mask::$auth"
+          DEPLOYED_BETTER_AUTH_SECRET=$(AUTH_JSON="$auth" node -e \
+            'process.stdout.write(JSON.parse(process.env.AUTH_JSON).betterAuthSecret)')
+          echo "::add-mask::$DEPLOYED_BETTER_AUTH_SECRET"
+          export DEPLOYED_DATABASE_URL DEPLOYED_BETTER_AUTH_SECRET
+          pnpm test:e2e:deployed

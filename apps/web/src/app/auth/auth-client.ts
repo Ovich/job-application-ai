@@ -1,4 +1,5 @@
 import { createAuthClient } from "better-auth/client";
+import { fetchWithPayloadHash } from "../lib/api";
 
 /**
  * The authentication library's client, constructed once (ID62). Every conversation
@@ -11,8 +12,18 @@ import { createAuthClient } from "better-auth/client";
  * and in the cloud the distribution serves page and function under one name, exactly
  * as `lib/api.ts` does for the RPC client.
  *
- * On localhost there is no signed origin, so the client fetches with the platform's
- * own `fetch`. Handing it `fetchWithPayloadHash` is S5.3's (ID58), the day a request
- * from here crosses origin access control.
+ * It fetches with `lib/api`'s wrapper rather than with the platform's own `fetch`
+ * (ID58, D6). Origin access control signs every request that reaches the function and
+ * the signature covers a SHA-256 of the body, which CloudFront does not compute: the
+ * sender states it in `x-amz-content-sha256`. The library ships its own client with its
+ * own fetch, so a sign-in POST would otherwise arrive without the header — a 403 from
+ * the function URL, which the distribution answers as the page with status 200, and
+ * perfect on a laptop, where there is no signed origin at all.
+ *
+ * `customFetchImpl` is the library's own slot for it (1.7.4, `client/config`), so no
+ * header is computed here and no request is assembled here: the wrapper is passed in as
+ * a configuration value, and `tests/app/auth/auth-client.spec.ts` holds it.
  */
-export const authClient = createAuthClient();
+export const authClient = createAuthClient({
+  fetchOptions: { customFetchImpl: fetchWithPayloadHash },
+});
