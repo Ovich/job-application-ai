@@ -134,7 +134,7 @@ describe("the entry route", () => {
       const notices = Array.from(page?.querySelectorAll("[role=alert]") ?? []);
       expect(notices).toHaveLength(1);
       expect(textOf(notices[0] as HTMLElement)).toBe(
-        `${name} did not finish signing you in. Nothing was created and nothing was charged. Try again, or continue with another account.`,
+        `${name} did not finish signing you in. Try again, or continue with another account.`,
       );
     },
   );
