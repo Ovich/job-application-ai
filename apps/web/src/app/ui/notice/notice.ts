@@ -7,11 +7,14 @@ type Tone = "ok" | "warn" | "danger";
 
 const ROLE: Record<Tone, string> = { ok: "status", warn: "note", danger: "alert" };
 
-/** The glyph's shape: a square as drawn, rounded for ok, clipped to a triangle for warn. */
+/**
+ * The glyph, in the tone's colour: a square as drawn, rounded for ok, clipped to a
+ * triangle for warn. It holds no text, so its colour is its own fill, not a text tone.
+ */
 const GLYPH: Record<Tone, string> = {
-  ok: "rounded-full",
-  warn: "[clip-path:polygon(50%_0,100%_100%,0_100%)]",
-  danger: "",
+  ok: "rounded-full bg-ok",
+  warn: "[clip-path:polygon(50%_0,100%_100%,0_100%)] bg-warn",
+  danger: "bg-danger",
 };
 
 const SURFACE: Record<Tone, "ok-soft" | "warn-soft" | "danger-soft"> = {

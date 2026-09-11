@@ -1,22 +1,6 @@
-<div
-  uiRow
-  gap="md"
-  align="start"
-  uiBox
-  [surface]="surface()"
-  radius="md"
-  px="lg"
-  py="md"
-  uiText
-  variant="ui"
-  [tone]="tone()"
->
-  <span
-    class="mt-[0.45em] size-2.5 shrink-0 bg-current"
-    [class]="glyph()"
-    aria-hidden="true"
-  ></span>
-  <span>
+<div uiRow gap="md" align="start" uiBox [surface]="surface()" radius="md" px="lg" py="md">
+  <span class="mt-[0.45em] size-2.5 shrink-0" [class]="glyph()" aria-hidden="true"></span>
+  <span uiText variant="ui" [tone]="tone()">
     <span uiText variant="ui" [tone]="tone()" weight="semibold">{{ lead() }}</span
     >&ngsp;<ng-content />
   </span>
