@@ -138,6 +138,8 @@ test.describe("two people on two browsers", () => {
       await benPage.getByRole("menuitem", { name: "Delete my account" }).click();
       const gate = benPage.getByRole("dialog", { name: "Delete your account?" });
       await expect(gate).toBeVisible();
+      // The warning first, acknowledged, and only then the code (ID95).
+      await gate.getByRole("button", { name: "Acknowledge" }).click();
       await expect(gate.getByRole("button", { name: "Delete account" })).toBeDisabled();
       // A pattern is matched against the element's text as written, its template's
       // line breaks around the code included, so they are allowed for and trimmed.

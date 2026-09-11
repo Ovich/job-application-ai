@@ -71,6 +71,15 @@ describe("the shell", () => {
       menuItem("Delete my account")?.click();
       harness.detectChanges();
     };
+    /** The warning read, Acknowledge pressed: the code and its field appear (ID95). */
+    const acknowledge = () => {
+      const button = gateButton("Acknowledge");
+      if (button === undefined) {
+        throw new Error("no Acknowledge in the gate");
+      }
+      button.click();
+      harness.detectChanges();
+    };
     const typeTheCode = () => {
       const field = gate()?.querySelector("input");
       if (field === null || field === undefined) {
@@ -90,6 +99,7 @@ describe("the shell", () => {
       gateButton,
       shownCode,
       deleteMyAccount,
+      acknowledge,
       typeTheCode,
     };
   };
@@ -150,6 +160,12 @@ describe("the shell", () => {
       expect(textOf(callout)).toBe(
         "Your membership is cancelled. Credits you have left are not refunded.",
       );
+      expect(shell.shownCode()).toBe("");
+      expect(shell.gateButton("Acknowledge")).not.toBeUndefined();
+
+      shell.acknowledge();
+
+      expect(textOf(shell.gate())).toContain("Your membership is cancelled.");
       expect(shell.shownCode()).toMatch(/^[A-Z0-9]{8}$/);
       expect(shell.gateButton("Delete account")?.disabled).toBe(true);
     });
@@ -172,6 +188,7 @@ describe("the shell", () => {
       await shell.deleteMyAccount();
       await vi.waitFor(() => expect(shell.gate()).not.toBeNull());
 
+      shell.acknowledge();
       shell.typeTheCode();
       shell.gateButton("Delete account")?.click();
 
@@ -187,6 +204,7 @@ describe("the shell", () => {
       failing("delete-user", 500);
       await shell.deleteMyAccount();
       await vi.waitFor(() => expect(shell.gate()).not.toBeNull());
+      shell.acknowledge();
       const code = shell.shownCode();
 
       shell.typeTheCode();

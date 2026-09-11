@@ -8,9 +8,10 @@ import { AppConfirmAction } from "../../../../src/app/ui/confirm-action/confirm-
  * the way the shell does (seam C). Nothing crosses the network: the inputs come in, and
  * what the person chooses leaves as `confirm` or `cancel`.
  *
- * With a code it is the destructive gate: eight characters from A to Z and 2 to 9
- * without O, 0, I and 1, new each time it is created, and the action red and disarmed
- * until they are typed. The assertions read the code off the screen and type it into
+ * With a code it is the destructive gate, in two steps (ID95): the warning alone, with
+ * Cancel and Acknowledge; then, acknowledged, eight characters from A to Z and 2 to 9
+ * without O, 0, I and 1, drawn at that press, and the action red and disarmed until
+ * they are typed. The assertions read the code off the screen and type it into
  * the field, as a person does; they never reach into the component's fields and never
  * replace its random source.
  */
@@ -76,7 +77,11 @@ describe("app-confirm-action", () => {
       fixture.detectChanges();
     };
     const press = (label: string) => {
-      button(label)?.click();
+      const pressed = button(label);
+      if (pressed === undefined) {
+        throw new Error(`no button reads "${label}"`);
+      }
+      pressed.click();
       fixture.detectChanges();
     };
     const setWorking = (working: boolean) => {
@@ -86,8 +91,40 @@ describe("app-confirm-action", () => {
     return { fixture, host, element, panel, button, field, shownCode, type, press, setWorking };
   };
 
-  it("shows the title, the body, the phrase, a code of eight, the empty field, and the action red and disabled", () => {
+  /** The destructive gate past its warning: created, then Acknowledge pressed. */
+  const codeGate = () => {
     const g = gate();
+    g.press("Acknowledge");
+    return g;
+  };
+
+  it("first shows the warning alone: the title and the body, Cancel and Acknowledge, no code and no field", () => {
+    const g = gate();
+
+    expect(textOf(g.panel())).toContain("Delete your account?");
+    expect(textOf(g.panel())).toContain("Everything in it goes.");
+    expect(textOf(g.panel())).not.toContain("Type this code to confirm:");
+    expect(g.shownCode()).toBeUndefined();
+    expect(g.field()).toBeNull();
+    expect(Array.from(g.element.querySelectorAll("button")).map(textOf)).toEqual([
+      "Cancel",
+      "Acknowledge",
+    ]);
+    expect(g.button("Acknowledge")?.classList.contains("bg-primary")).toBe(true);
+    expect(g.button("Acknowledge")?.disabled).toBe(false);
+  });
+
+  it("emits cancel once on Cancel at the warning, and never confirm", () => {
+    const g = gate();
+
+    g.press("Cancel");
+
+    expect(g.host.cancelled).toHaveBeenCalledTimes(1);
+    expect(g.host.confirmed).not.toHaveBeenCalled();
+  });
+
+  it("on Acknowledge keeps the warning and reveals the phrase, a code of eight, the empty field, and the action red and disabled", () => {
+    const g = codeGate();
 
     expect(g.panel()).not.toBeNull();
     expect(textOf(g.panel())).toContain("Delete your account?");
@@ -98,10 +135,12 @@ describe("app-confirm-action", () => {
     expect(g.button("Cancel")?.disabled).toBe(false);
     expect(g.button("Delete account")?.disabled).toBe(true);
     expect(g.button("Delete account")?.classList.contains("bg-danger")).toBe(true);
+    expect(g.button("Acknowledge")).toBeUndefined();
+    expect(g.host.confirmed).not.toHaveBeenCalled();
   });
 
-  it("names its panel a dialog, labelled by its title, and gives the field the focus", async () => {
-    const g = gate();
+  it("names its panel a dialog, labelled by its title, and gives the field the focus once acknowledged", async () => {
+    const g = codeGate();
     await g.fixture.whenStable();
 
     const labelledBy = g.panel()?.getAttribute("aria-labelledby") ?? "";
@@ -111,7 +150,7 @@ describe("app-confirm-action", () => {
   });
 
   it("stays disabled when what is typed is not the code", () => {
-    const g = gate();
+    const g = codeGate();
 
     g.type("NOTTHECODE");
 
@@ -119,7 +158,7 @@ describe("app-confirm-action", () => {
   });
 
   it("arms when the code is typed in lower case and with spaces", () => {
-    const g = gate();
+    const g = codeGate();
     const code = g.shownCode() ?? "";
 
     g.type(` ${code.slice(0, 4).toLowerCase()} ${code.slice(4).toLowerCase()} `);
@@ -127,17 +166,17 @@ describe("app-confirm-action", () => {
     expect(g.button("Delete account")?.disabled).toBe(false);
   });
 
-  it("shows a new code each time it is created", () => {
-    const first = gate().shownCode();
-    const second = gate().shownCode();
+  it("shows a new code at each acknowledgement", () => {
+    const first = codeGate().shownCode();
+    const second = codeGate().shownCode();
 
     expect(first).toMatch(aCode);
     expect(second).toMatch(aCode);
     expect(second).not.toBe(first);
   });
 
-  it("emits cancel once on Cancel", () => {
-    const g = gate();
+  it("emits cancel once on Cancel beside the code", () => {
+    const g = codeGate();
 
     g.press("Cancel");
 
@@ -146,7 +185,7 @@ describe("app-confirm-action", () => {
   });
 
   it("emits cancel once on Escape", () => {
-    const g = gate();
+    const g = codeGate();
 
     document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
 
@@ -154,7 +193,7 @@ describe("app-confirm-action", () => {
   });
 
   it("emits cancel once on a press outside it, and nothing on a press inside", () => {
-    const g = gate();
+    const g = codeGate();
 
     g.panel()?.click();
     expect(g.host.cancelled).not.toHaveBeenCalled();
@@ -164,7 +203,7 @@ describe("app-confirm-action", () => {
   });
 
   it("emits confirm once when the armed action is pressed", () => {
-    const g = gate();
+    const g = codeGate();
     g.type(g.shownCode() ?? "");
 
     g.press("Delete account");
@@ -174,7 +213,7 @@ describe("app-confirm-action", () => {
   });
 
   it("while working shows the working line in place of the code, the field and the buttons, and Escape and a press outside emit nothing", () => {
-    const g = gate();
+    const g = codeGate();
     g.type(g.shownCode() ?? "");
     g.press("Delete account");
 
@@ -192,7 +231,7 @@ describe("app-confirm-action", () => {
   });
 
   it("when the work ends, keeps the same code, what was typed, and the action armed", () => {
-    const g = gate();
+    const g = codeGate();
     const code = g.shownCode() ?? "";
     g.type(code.toLowerCase());
     g.press("Delete account");
@@ -205,9 +244,10 @@ describe("app-confirm-action", () => {
     expect(g.button("Delete account")?.disabled).toBe(false);
   });
 
-  it("without a code is the plain confirm: no phrase, no field, the action primary and live", () => {
+  it("without a code is the plain confirm, one step: no Acknowledge, no phrase, no field, the action primary and live", () => {
     const g = gate({ code: false });
 
+    expect(g.button("Acknowledge")).toBeUndefined();
     expect(textOf(g.panel())).not.toContain("Type this code to confirm:");
     expect(g.shownCode()).toBeUndefined();
     expect(g.field()).toBeNull();
