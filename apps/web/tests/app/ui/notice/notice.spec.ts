@@ -31,6 +31,17 @@ class Failure {}
 })
 class Done {}
 
+@Component({
+  imports: [AppNotice],
+  template: `<app-notice tone="warn" lead="Your membership is cancelled."
+    >Credits you have left are not refunded.</app-notice
+  >`,
+})
+class Warning {}
+
+/** The triangle, drawn by clipping the glyph's box to one. */
+const triangle = "[clip-path:polygon(50%_0,100%_100%,0_100%)]";
+
 describe("app-notice", () => {
   it("is an alert in the danger tone, its lead then its body", () => {
     const notice = rendered(Failure).querySelector("app-notice");
@@ -46,6 +57,20 @@ describe("app-notice", () => {
     expect(notice?.textContent?.replace(/\s+/g, " ").trim()).toBe(
       "Your account is deleted. Everything it held is gone.",
     );
+  });
+
+  it("is a note in the warn tone, its lead then its body", () => {
+    const notice = rendered(Warning).querySelector("app-notice");
+    expect(notice?.getAttribute("role")).toBe("note");
+    expect(notice?.textContent?.replace(/\s+/g, " ").trim()).toBe(
+      "Your membership is cancelled. Credits you have left are not refunded.",
+    );
+  });
+
+  it("draws a triangle for a warning, and neither a square nor a round", () => {
+    const glyph = rendered(Warning).querySelector("[aria-hidden=true]");
+    expect(glyph?.classList.contains(triangle)).toBe(true);
+    expect(glyph?.classList.contains("rounded-full")).toBe(false);
   });
 
   it("draws a square for a failure and a round for a success", () => {
