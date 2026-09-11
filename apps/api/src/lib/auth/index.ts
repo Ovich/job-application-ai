@@ -52,20 +52,31 @@ import { db } from "../db";
 const clientOf = (clientId: string | undefined, clientSecret: string | undefined) =>
   clientId === undefined || clientSecret === undefined ? undefined : { clientId, clientSecret };
 
+/**
+ * The entries whose value was given. The library skips an absent provider by itself; what
+ * needs this is the type, which under `exactOptionalPropertyTypes` refuses an explicit
+ * `undefined` where the key is optional. Gone with `clientOf` at S5.2, once the cloud
+ * branch of `env.ts` requires the values too and none of them can be absent.
+ */
+const given = <T extends object>(entries: T) =>
+  Object.fromEntries(Object.entries(entries).filter(([, value]) => value !== undefined)) as {
+    [K in keyof T]?: Exclude<T[K], undefined>;
+  };
+
 const google = clientOf(env.GOOGLE_CLIENT_ID, env.GOOGLE_CLIENT_SECRET);
 const microsoft = clientOf(env.MICROSOFT_CLIENT_ID, env.MICROSOFT_CLIENT_SECRET);
 const linkedin = clientOf(env.LINKEDIN_CLIENT_ID, env.LINKEDIN_CLIENT_SECRET);
 
 export const auth = betterAuth({
-  ...(env.APP_URL === undefined ? {} : { baseURL: env.APP_URL }),
+  baseURL: env.APP_URL,
   database: drizzleAdapter(db, { provider: "pg" }),
-  socialProviders: {
-    ...(google === undefined ? {} : { google }),
+  socialProviders: given({
+    google,
     // `common` is the library's default too; written out because it is the decision
     // (D4), and `organizations` would turn personal accounts away at Microsoft's door.
-    ...(microsoft === undefined ? {} : { microsoft: { ...microsoft, tenantId: "common" } }),
-    ...(linkedin === undefined ? {} : { linkedin }),
-  },
+    microsoft: microsoft && { ...microsoft, tenantId: "common" as const },
+    linkedin,
+  }),
   // The one option off its default (D20), see the note above: ID72.
   account: { accountLinking: { trustedProviders: ["microsoft"] } },
 });
