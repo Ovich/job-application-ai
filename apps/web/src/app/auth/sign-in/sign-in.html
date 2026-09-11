@@ -1,0 +1,47 @@
+<main uiStack align="center" justify="center" uiBox py="xxl" class="min-h-screen">
+  <div uiContainer width="sm" uiStack gap="xl">
+    <app-wordmark class="self-center" />
+
+    <h1
+      uiText
+      variant="figure"
+      weight="semibold"
+      align="center"
+      class="tracking-[-0.01em] leading-[1.35]"
+    >
+      Your job application in the era of AI
+    </h1>
+
+    <p uiText tone="muted" align="center" class="-mt-3">
+      A tailored CV and cover letter for every job offer. Let the silence stop.
+    </p>
+
+    @if (failed(); as provider) {
+      <app-notice tone="danger" [lead]="nameOf(provider) + ' did not finish signing you in.'">
+        Nothing was created and nothing was charged. Try again, or continue with another account.
+      </app-notice>
+    }
+
+    @if (deleted()) {
+      <app-notice tone="ok" lead="Your account is deleted.">
+        Everything it held is gone. You are welcome back any time, from nothing.
+      </app-notice>
+    }
+
+    <div uiStack gap="sm">
+      @for (provider of providers; track provider) {
+        <app-provider-button
+          [provider]="provider"
+          [busy]="pressed() === provider"
+          [disabled]="pressed() !== null && pressed() !== provider"
+          (pressed)="continueWith(provider)"
+        />
+      }
+    </div>
+
+    <p uiText variant="caption" tone="muted" align="center">
+      <!-- Drawn and inert until the privacy notice exists (F4): a span, not a link to nowhere. -->
+      <span class="underline underline-offset-[3px]">What we keep, and how to delete it</span>
+    </p>
+  </div>
+</main>

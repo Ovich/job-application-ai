@@ -40,9 +40,9 @@ export default defineConfig({
   projects: [
     {
       name: "local",
-      // `auth` is the local project's alone until S5.5: it opens the page and presses
-      // the button, and the cloud has no client app to press it against before then.
-      testMatch: /(health-stream|auth)\.spec\.ts$/,
+      // `auth` and `entry-route` are the local project's alone until S5.5: they open
+      // the page, and the cloud has no client app to open before then.
+      testMatch: /(health-stream|auth|entry-route)\.spec\.ts$/,
       use: { baseURL: "http://localhost:4200" },
     },
     {

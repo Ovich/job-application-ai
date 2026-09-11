@@ -1,0 +1,49 @@
+<div uiBox surface="card" radius="md" border p="xs" class="shadow-card">
+  <div uiBox px="md" py="md" class="mb-1.5 border-b border-border">
+    <div uiText variant="ui" weight="semibold">{{ user().name }}</div>
+    <div uiText variant="caption" tone="muted" class="break-all">{{ user().email }}</div>
+    <div uiRow gap="xs" wrap uiText variant="label" tone="muted" class="mt-1.5">
+      @if (user().providers.length === 1) {
+        <app-provider-mark [provider]="user().providers[0]!" sizeClass="size-3.5" />
+        <span>Signed in with {{ nameOf(user().providers[0]!) }}</span>
+      } @else {
+        <span>Linked:</span>
+        @for (provider of user().providers; track provider; let last = $last) {
+          <app-provider-mark [provider]="provider" sizeClass="size-3.5" />
+          <span>{{ nameOf(provider) }}{{ last ? "" : "," }}</span>
+        }
+      }
+    </div>
+  </div>
+  <button
+    type="button"
+    role="menuitem"
+    uiBox
+    px="md"
+    py="sm"
+    radius="md"
+    uiText
+    variant="ui"
+    align="start"
+    class="block w-full hover:bg-muted"
+    (click)="signOut.emit()"
+  >
+    Sign out
+  </button>
+  <button
+    type="button"
+    role="menuitem"
+    uiBox
+    px="md"
+    py="sm"
+    radius="md"
+    uiText
+    variant="ui"
+    tone="danger"
+    align="start"
+    class="block w-full hover:bg-muted"
+    (click)="deleteAccount.emit()"
+  >
+    Delete my account
+  </button>
+</div>
