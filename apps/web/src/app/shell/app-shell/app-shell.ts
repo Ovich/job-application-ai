@@ -1,18 +1,15 @@
 import { NgTemplateOutlet } from "@angular/common";
-import { Component, inject, signal } from "@angular/core";
-import { Router, RouterOutlet } from "@angular/router";
-import { authClient } from "../../auth/auth-client";
+import { Component, computed, inject } from "@angular/core";
+import { RouterOutlet } from "@angular/router";
+import { CurrentUser } from "../../auth/current-user";
 import { providerName } from "../../auth/provider-mark/provider-mark";
-import { type Provider, type SignedIn, session } from "../../auth/session";
+import type { Provider } from "../../auth/session";
 import { AppConfirmAction } from "../../ui/confirm-action/confirm-action";
 import { UiPage } from "../../ui/layout/page/page";
 import { UiStack } from "../../ui/layout/stack/stack";
 import { AppNotice } from "../../ui/notice/notice";
 import { UiText } from "../../ui/typography/text/text";
 import { AppBar } from "../app-bar/app-bar";
-
-/** The deletion gate while it is open: who it deletes, and how the deletion is going. */
-type Gate = { providers: Provider[]; working: boolean; failed: boolean };
 
 /**
  * The layout above the signed-in routes (ID75): the AppBar, fed by `session()`, and
@@ -52,53 +49,31 @@ type Gate = { providers: Provider[]; working: boolean; failed: boolean };
   templateUrl: "./app-shell.html",
 })
 export class AppShell {
-  protected readonly user = signal<SignedIn | null>(null);
+  private readonly currentUser = inject(CurrentUser);
+
+  protected readonly user = this.currentUser.person;
 
   /** The deletion gate: created when open, destroyed when closed, so each opening has a new code. */
-  protected readonly gate = signal<Gate | null>(null);
+  protected readonly gate = computed(() => {
+    const deletion = this.currentUser.deletion();
+    return deletion && { ...deletion, providers: this.user()?.providers ?? [] };
+  });
 
   protected readonly nameOf = (provider: Provider): string => providerName[provider];
 
-  private readonly router = inject(Router);
-
-  public constructor() {
-    void session().then((who) => {
-      this.user.set(who);
-    });
+  protected signOut(): Promise<void> {
+    return this.currentUser.signOut();
   }
 
-  protected async signOut(): Promise<void> {
-    const { error } = await authClient.signOut();
-    if (error) {
-      return;
-    }
-    await this.router.navigateByUrl("/");
-  }
-
-  protected async openGate(): Promise<void> {
-    const who = await session().catch(() => null);
-    if (who === null) {
-      await this.router.navigateByUrl("/");
-      return;
-    }
-    this.user.set(who);
-    this.gate.set({ providers: who.providers, working: false, failed: false });
+  protected openGate(): Promise<void> {
+    return this.currentUser.openDeletion();
   }
 
   protected closeGate(): void {
-    this.gate.set(null);
+    this.currentUser.closeDeletion();
   }
 
-  protected async deleteAccount(): Promise<void> {
-    this.gate.update((gate) => gate && { ...gate, working: true, failed: false });
-    const deleted = await authClient.deleteUser().then(
-      ({ error }) => error === null,
-      () => false,
-    );
-    if (deleted) {
-      await this.router.navigateByUrl("/?deleted");
-      return;
-    }
-    this.gate.update((gate) => gate && { ...gate, working: false, failed: true });
+  protected deleteAccount(): Promise<void> {
+    return this.currentUser.deleteAccount();
   }
 }
