@@ -185,3 +185,104 @@ describe("the database that is no longer AWS's (D19, S7.5)", () => {
     expect(granted).toEqual([]);
   });
 });
+
+/**
+ * What the function is given to authenticate with (ID60, ID71, D19), and how.
+ *
+ * Every one of these is a secret except the address, and the pattern is the connection
+ * string's: a dynamic reference CloudFormation resolves while it applies the stack, so
+ * the function needs no right on Secrets Manager and makes no call at cold start. What
+ * this seam can see is that nothing secret is written out and nothing secret travels as
+ * a stack parameter, where it would be visible in the console and in every event of
+ * every deploy. Whether the entry exists in the account, and whether its value is right,
+ * only a deploy can say.
+ */
+describe("what the function signs people in with (ID60, ID71)", () => {
+  /** The seven the library needs, as the template hands them over. */
+  const secretValues = [
+    "GOOGLE_CLIENT_ID",
+    "GOOGLE_CLIENT_SECRET",
+    "MICROSOFT_CLIENT_ID",
+    "MICROSOFT_CLIENT_SECRET",
+    "LINKEDIN_CLIENT_ID",
+    "LINKEDIN_CLIENT_SECRET",
+    "BETTER_AUTH_SECRET",
+  ];
+
+  it.each(secretValues)("hands the function %s as a Secrets Manager reference", (name) => {
+    expect(at("App-dev", "Api", `Properties.Environment.Variables.${name}`)).toMatch(
+      /^\{\{resolve:secretsmanager:jobapp\/dev\/auth:SecretString:[A-Z_]+\}\}$/,
+    );
+  });
+
+  it("writes the app's address plainly, because it is not a secret", () => {
+    expect(at("App-dev", "Api", "Properties.Environment.Variables.APP_URL")).toBe(
+      "https://dev.job-application.app",
+    );
+  });
+
+  /**
+   * A parameter is not a hiding place: its value is shown in the console, in
+   * `describe-stacks`, and in the command the pipeline runs. Nothing secret may travel
+   * that way, which is what makes the dynamic reference the only route.
+   */
+  it("takes no provider value and no secret as a stack parameter", () => {
+    const parameters = Object.keys(readYamlTemplate(infra("App-dev.yaml")).Parameters ?? {});
+    expect(parameters.filter((name) => /client|secret|auth/i.test(name))).toEqual([]);
+  });
+
+  it("writes no provider id, no client secret and no auth secret as a literal", () => {
+    const written = [...leaves(resource("App-dev", "Api") as unknown as Json)]
+      .filter(([path]) => secretValues.some((name) => path.endsWith(`.${name}`)))
+      .filter(([, value]) => typeof value === "string" && !value.startsWith("{{resolve:"))
+      .map(([path]) => path);
+    expect(written).toEqual([]);
+  });
+
+  /**
+   * The deploy role's rights grow by one secret and no further (G3): CloudFormation
+   * resolves the template's references with the caller's credentials, so the identity
+   * that applies `App-dev` must be able to read this entry, and the end-to-end check
+   * that signs a person in on the deployed address reads the same one (ID100, ID101).
+   * Named down to the secret, so the pipeline's rights do not grow with the account's.
+   */
+  it("lets the deploy role read the two secrets it is named for, and no others", () => {
+    const policy = leaves(resource("Deploy", "DeployRolePolicy") as unknown as Json);
+    const allowed = [...policy]
+      .filter(
+        ([, value]) => typeof value === "string" && value.startsWith("arn:aws:secretsmanager"),
+      )
+      .map(([, value]) => String(value).replace(/^arn:aws:secretsmanager:[^:]*:\d+:secret:/, ""));
+    expect(allowed.sort()).toEqual(["jobapp/dev/auth-*", "jobapp/dev/database-url-*"]);
+  });
+});
+
+/**
+ * The cookie's road (D5, criterion 10). The session cookie reaches the function and
+ * comes back through this behaviour with no infrastructure change, and that claim rests
+ * on three properties of the `/api/*` behaviour: every viewer header but Host is
+ * forwarded, so `Cookie` travels; caching is disabled, and CloudFront strips
+ * `Set-Cookie` only from a response it may cache; and nothing is compressed.
+ *
+ * The behaviour is deliberately untouched by SL5. These read it so that a later edit
+ * cannot quietly take the road away.
+ */
+describe("the session cookie's road (D5)", () => {
+  const behaviour = (property: string) =>
+    at("App-dev", "Distribution", `Properties.DistributionConfig.CacheBehaviors[0].${property}`);
+
+  it("forwards every viewer header but Host to the function, which is how a Cookie travels", () => {
+    expect(behaviour("PathPattern")).toBe("/api/*");
+    // The managed AllViewerExceptHostHeader policy.
+    expect(behaviour("OriginRequestPolicyId")).toBe("b689b0a8-53d0-40ab-baf2-68738e2966ac");
+  });
+
+  it("caches nothing on that behaviour, which is what lets Set-Cookie back through", () => {
+    // The managed CachingDisabled policy.
+    expect(behaviour("CachePolicyId")).toBe("4135ea2d-6df8-44a3-9df3-4b5a84be39ad");
+  });
+
+  it("compresses nothing on that behaviour", () => {
+    expect(behaviour("Compress")).toBe(false);
+  });
+});
