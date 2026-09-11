@@ -1,0 +1,75 @@
+<div
+  role="dialog"
+  [attr.aria-labelledby]="titleId"
+  uiStack
+  gap="md"
+  uiBox
+  surface="card"
+  radius="lg"
+  border
+  p="lg"
+  class="w-[360px] max-w-full shadow-card"
+>
+  <h2 [id]="titleId" uiText weight="semibold">{{ title() }}</h2>
+
+  <ng-content />
+
+  @if (working()) {
+    <div uiRow gap="sm" uiBox py="xs" uiText variant="ui" tone="muted" role="status">
+      <!-- Still under reduced motion: the colour alone then says it is working. -->
+      <span
+        class="size-4 shrink-0 animate-spin rounded-full border-2 border-border border-t-danger motion-reduce:animate-none"
+        aria-hidden="true"
+      ></span>
+      <span>{{ workingLabel() }}</span>
+    </div>
+  } @else {
+    @if (code()) {
+      <p uiText variant="caption" tone="muted">Type this code to confirm:</p>
+      <p
+        uiBox
+        surface="muted"
+        radius="md"
+        py="sm"
+        uiText
+        variant="figure"
+        weight="semibold"
+        align="center"
+        class="select-all font-mono tracking-[0.18em]"
+      >
+        {{ shown }}
+      </p>
+      <input
+        #field
+        type="text"
+        uiBox
+        surface="card"
+        radius="md"
+        px="md"
+        py="sm"
+        uiText
+        variant="ui"
+        class="w-full border border-input font-mono uppercase tracking-[0.08em] outline-none focus-visible:ring-2 focus-visible:ring-primary"
+        placeholder="Type the code"
+        autocomplete="off"
+        autocapitalize="characters"
+        spellcheck="false"
+        [attr.aria-label]="'Type ' + shown + ' to confirm'"
+        [value]="typed()"
+        (input)="onType($event)"
+      />
+    }
+    <div uiRow gap="sm" justify="end" class="mt-1">
+      <button type="button" hlmBtn variant="secondary" (click)="dismiss()">Cancel</button>
+      <button
+        type="button"
+        hlmBtn
+        [variant]="code() ? 'destructive' : 'primary'"
+        [disabled]="!armed()"
+        (click)="press()"
+      >
+        {{ confirmLabel() }}
+      </button>
+    </div>
+  }
+</div>
