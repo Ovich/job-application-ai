@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <title>job-application.app</title>
+  <!-- The mark (design language, 2026-09-11): the dot then the word, white on the one blue, corners rounded at 80. -->
+  <rect width="512" height="512" rx="80" fill="#1d4ed8"/>
+  <circle cx="150" cy="256" r="50" fill="#ffffff"/>
+  <rect x="230" y="216" width="176" height="80" rx="40" fill="#ffffff"/>
+</svg>
