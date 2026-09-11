@@ -2,6 +2,10 @@ import { NgTemplateOutlet } from "@angular/common";
 import { Component, computed, ElementRef, inject, input, output, signal } from "@angular/core";
 import { RouterLink } from "@angular/router";
 import type { SignedIn } from "../../auth/session";
+import { UiBox } from "../../ui/layout/box/box";
+import { UiRow } from "../../ui/layout/row/row";
+import { UiSpacer } from "../../ui/layout/spacer/spacer";
+import { UiText } from "../../ui/typography/text/text";
 import { Wordmark } from "../wordmark/wordmark";
 import { AccountMenu } from "./account-menu/account-menu";
 
@@ -20,10 +24,8 @@ import { AccountMenu } from "./account-menu/account-menu";
  */
 @Component({
   selector: "app-app-bar",
-  imports: [NgTemplateOutlet, RouterLink, Wordmark, AccountMenu],
+  imports: [NgTemplateOutlet, RouterLink, Wordmark, AccountMenu, UiRow, UiBox, UiSpacer, UiText],
   host: {
-    class:
-      "flex h-[60px] shrink-0 items-center gap-2.5 border-b border-border bg-card px-3.5 sm:gap-5 sm:px-5",
     "(document:click)": "closeUnless($event)",
     "(document:keydown.escape)": "close()",
   },

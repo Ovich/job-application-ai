@@ -1,24 +1,34 @@
-<app-wordmark class="text-[18px]" />
-<ng-container [ngTemplateOutlet]="nav" />
-<span class="flex-1"></span>
-<ng-container [ngTemplateOutlet]="meter" />
-<ng-container [ngTemplateOutlet]="accountSlot" />
+<div uiRow gap="lg" uiBox surface="card" px="lg" class="h-[60px] shrink-0 border-b border-border">
+  <app-wordmark />
+  <ng-container [ngTemplateOutlet]="nav" />
+  <span uiSpacer></span>
+  <ng-container [ngTemplateOutlet]="meter" />
+  <ng-container [ngTemplateOutlet]="accountSlot" />
+</div>
 
 <!-- The nav: Profile is the one route there is; Applications and Credits are drawn inert (F3). -->
 <ng-template #nav>
-  <nav class="ml-3 hidden gap-1 sm:flex">
+  <nav uiRow gap="xs" class="ml-3 hidden sm:flex">
     <a
       href="/profile"
       routerLink="/profile"
-      class="rounded-md bg-accent px-3 py-1.5 text-ui font-semibold text-accent-foreground no-underline"
+      uiBox
+      px="md"
+      py="xs"
+      radius="md"
+      surface="accent"
+      uiText
+      variant="ui"
+      weight="semibold"
+      class="text-accent-foreground no-underline"
       aria-current="page"
     >
       Profile
     </a>
-    <span class="rounded-md px-3 py-1.5 text-ui text-muted-foreground" aria-disabled="true">
+    <span uiBox px="md" py="xs" radius="md" uiText variant="ui" tone="muted" aria-disabled="true">
       Applications
     </span>
-    <span class="rounded-md px-3 py-1.5 text-ui text-muted-foreground" aria-disabled="true">
+    <span uiBox px="md" py="xs" radius="md" uiText variant="ui" tone="muted" aria-disabled="true">
       Credits
     </span>
   </nav>
@@ -26,8 +36,8 @@
 
 <!-- The CreditMeter, drawn inert with the mockup's figure (F3). -->
 <ng-template #meter>
-  <span class="hidden text-ui text-muted-foreground sm:inline">
-    CHF <span class="font-semibold text-foreground">12.40</span>
+  <span uiText variant="ui" tone="muted" class="hidden sm:inline">
+    CHF <span uiText variant="ui" weight="semibold">12.40</span>
   </span>
 </ng-template>
 
@@ -36,7 +46,16 @@
   <div class="relative">
     <button
       type="button"
-      class="flex size-[34px] items-center justify-center rounded-full border border-border bg-accent text-caption font-semibold text-accent-foreground"
+      uiRow
+      gap="none"
+      justify="center"
+      uiBox
+      surface="accent"
+      border
+      uiText
+      variant="caption"
+      weight="semibold"
+      class="size-[34px] rounded-full text-accent-foreground"
       aria-label="Your account"
       aria-haspopup="menu"
       [attr.aria-expanded]="menuOpen()"

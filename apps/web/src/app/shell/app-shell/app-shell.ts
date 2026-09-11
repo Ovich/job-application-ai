@@ -2,6 +2,8 @@ import { Component, inject, signal } from "@angular/core";
 import { Router, RouterOutlet } from "@angular/router";
 import { authClient } from "../../auth/auth-client";
 import { type SignedIn, session } from "../../auth/session";
+import { UiPage } from "../../ui/layout/page/page";
+import { UiStack } from "../../ui/layout/stack/stack";
 import { AppBar } from "../app-bar/app-bar";
 
 /**
@@ -16,8 +18,7 @@ import { AppBar } from "../app-bar/app-bar";
  */
 @Component({
   selector: "app-shell",
-  imports: [RouterOutlet, AppBar],
-  host: { class: "flex min-h-screen flex-col" },
+  imports: [RouterOutlet, AppBar, UiStack, UiPage],
   templateUrl: "./app-shell.html",
 })
 export class AppShell {

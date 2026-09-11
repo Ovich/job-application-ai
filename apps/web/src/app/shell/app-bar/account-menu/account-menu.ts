@@ -1,6 +1,9 @@
 import { Component, input, output } from "@angular/core";
 import { ProviderMark, providerName } from "../../../auth/provider-mark/provider-mark";
 import type { SignedIn } from "../../../auth/session";
+import { UiBox } from "../../../ui/layout/box/box";
+import { UiRow } from "../../../ui/layout/row/row";
+import { UiText } from "../../../ui/typography/text/text";
 
 /**
  * The account menu: the name, the address, the providers linked to the account, then
@@ -15,12 +18,8 @@ import type { SignedIn } from "../../../auth/session";
  */
 @Component({
   selector: "app-account-menu",
-  imports: [ProviderMark],
-  host: {
-    role: "menu",
-    class:
-      "absolute top-11 right-0 z-10 block w-[270px] rounded-md border border-border bg-card p-1.5 shadow-card",
-  },
+  imports: [ProviderMark, UiBox, UiRow, UiText],
+  host: { role: "menu" },
   templateUrl: "./account-menu.html",
 })
 export class AccountMenu {
