@@ -1,42 +1,50 @@
-import { Component, inject, signal } from "@angular/core";
-import { Router, RouterOutlet } from "@angular/router";
-import { authClient } from "../../auth/auth-client";
-import { type SignedIn, session } from "../../auth/session";
+import { Component, inject } from "@angular/core";
+import { RouterOutlet } from "@angular/router";
+import { CurrentUser } from "../../auth/current-user";
+import { AppDeleteAccount } from "../../auth/delete-account/delete-account";
 import { UiPage } from "../../ui/layout/page/page";
 import { UiStack } from "../../ui/layout/stack/stack";
 import { AppBar } from "../app-bar/app-bar";
 
 /**
- * The layout above the signed-in routes (ID75): the AppBar, fed by `session()`, and
- * the outlet below it, empty in this slot. The route component of `/profile`.
+ * The layout above the signed-in routes (ID75): the AppBar, fed by `CurrentUser`'s
+ * person, and the outlet below it, empty in this slot. The route component of `/profile`.
  *
- * The session is read once when the shell activates. The guard (ID74) has already
- * sent a signed-out browser to `/`, so an empty answer here is not drawn. On the bar's
- * signOut, the library's own client signs out and the router goes to the entry route;
- * a sign-out the library refuses leaves the person here, still signed in, the menu
- * closed, and nothing is reported in this slot. Delete my account is SL4's to listen to.
+ * The guard (ID74) has already asked the library and sent a signed-out browser to `/`,
+ * so the person is there when the shell renders. What the bar's menu asks for goes to
+ * `CurrentUser` (ID99), which does it and decides where the browser goes: Sign out, and
+ * Delete my account, which opens the deletion (ID84).
+ *
+ * While the deletion is open the shell draws `app-delete-account` under the account slot,
+ * where the menu was (ID94's controlled mode): created when it opens and destroyed when it
+ * closes, so each opening starts at the warning. The shell hands it the linked providers
+ * and the deletion's state, and hands its confirm and cancel back to the service.
  */
 @Component({
   selector: "app-shell",
-  imports: [RouterOutlet, AppBar, UiStack, UiPage],
+  imports: [RouterOutlet, AppBar, AppDeleteAccount, UiStack, UiPage],
   templateUrl: "./app-shell.html",
 })
 export class AppShell {
-  protected readonly user = signal<SignedIn | null>(null);
+  private readonly currentUser = inject(CurrentUser);
 
-  private readonly router = inject(Router);
+  protected readonly user = this.currentUser.person;
 
-  public constructor() {
-    void session().then((who) => {
-      this.user.set(who);
-    });
+  protected readonly deletion = this.currentUser.deletion;
+
+  protected signOut(): Promise<void> {
+    return this.currentUser.signOut();
   }
 
-  protected async signOut(): Promise<void> {
-    const { error } = await authClient.signOut();
-    if (error) {
-      return;
-    }
-    await this.router.navigateByUrl("/");
+  protected openDeletion(): Promise<void> {
+    return this.currentUser.openDeletion();
+  }
+
+  protected closeDeletion(): void {
+    this.currentUser.closeDeletion();
+  }
+
+  protected deleteAccount(): Promise<void> {
+    return this.currentUser.deleteAccount();
   }
 }

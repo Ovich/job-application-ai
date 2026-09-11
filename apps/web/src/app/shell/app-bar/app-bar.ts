@@ -45,7 +45,7 @@ export class AppBar {
 
   public readonly signOut = output<void>();
 
-  /** SL4 listens; nobody in this slice. */
+  /** The shell listens: it opens the deletion gate (SL4). */
   public readonly deleteAccount = output<void>();
 
   protected readonly menuOpen = signal(false);

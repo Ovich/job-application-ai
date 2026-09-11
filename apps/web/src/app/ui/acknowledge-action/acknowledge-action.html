@@ -1,0 +1,37 @@
+<div
+  role="dialog"
+  [attr.aria-labelledby]="titleId"
+  uiStack
+  gap="md"
+  uiBox
+  surface="card"
+  radius="lg"
+  border
+  p="lg"
+  class="w-[360px] max-w-full shadow-card"
+>
+  <h2 [id]="titleId" uiText weight="semibold">{{ title() }}</h2>
+
+  <ng-content />
+
+  @if (working()) {
+    <div uiRow gap="sm" uiBox py="xs" role="status">
+      <span uiSpinner [tone]="destructive() ? 'danger' : 'primary'"></span>
+      <span uiText variant="ui" tone="muted">{{ workingLabel() }}</span>
+    </div>
+  } @else {
+    <div uiRow gap="sm" justify="end" class="mt-1">
+      <button type="button" hlmBtn variant="secondary" (click)="dismiss()">Cancel</button>
+      <button
+        #actionButton
+        type="button"
+        hlmBtn
+        [variant]="destructive() ? 'destructive' : 'primary'"
+        [disabled]="disabled()"
+        (click)="press()"
+      >
+        {{ actionLabel() }}
+      </button>
+    </div>
+  }
+</div>

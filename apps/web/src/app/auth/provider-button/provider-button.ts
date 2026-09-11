@@ -29,9 +29,9 @@ export class AppProviderButton {
 
   protected readonly name = computed(() => providerName[this.provider()]);
 
-  /** Full width and the mockup's padding; busy is disabled against a second press but not dimmed. */
+  /** Full width, left aligned, lifted; busy is disabled against a second press but not dimmed. */
   protected readonly buttonClass = computed(() => [
-    "h-auto w-full justify-start gap-3.5 px-4.5 py-3.5 text-body shadow-card",
+    "w-full justify-start shadow-card",
     this.busy() ? "disabled:opacity-100" : "",
   ]);
 }

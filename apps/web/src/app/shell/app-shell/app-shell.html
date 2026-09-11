@@ -1,6 +1,19 @@
 <div uiStack gap="none" class="min-h-screen">
   @if (user(); as user) {
-    <app-bar [user]="user" (signOut)="signOut()" />
+    <div class="relative">
+      <app-bar [user]="user" (signOut)="signOut()" (deleteAccount)="openDeletion()" />
+      <!-- Under the account slot, where the menu was: the bar's padding from the right, just below the slot. -->
+      @if (deletion(); as open) {
+        <app-delete-account
+          class="absolute top-[57px] right-4 z-10 max-w-[calc(100%-2rem)]"
+          [providers]="user.providers"
+          [working]="open.working"
+          [failed]="open.failed"
+          (confirm)="deleteAccount()"
+          (cancel)="closeDeletion()"
+        />
+      }
+    </div>
   }
   <main uiPage><router-outlet /></main>
 </div>

@@ -3,6 +3,8 @@ import { AppProviderMark, providerName } from "../../../auth/provider-mark/provi
 import type { SignedIn } from "../../../auth/session";
 import { UiBox } from "../../../ui/layout/box/box";
 import { UiRow } from "../../../ui/layout/row/row";
+import { UiSeparator } from "../../../ui/layout/separator/separator";
+import { UiMenuItem } from "../../../ui/menu-item/menu-item";
 import { UiText } from "../../../ui/typography/text/text";
 
 /**
@@ -18,7 +20,7 @@ import { UiText } from "../../../ui/typography/text/text";
  */
 @Component({
   selector: "app-account-menu",
-  imports: [AppProviderMark, UiBox, UiRow, UiText],
+  imports: [AppProviderMark, UiBox, UiMenuItem, UiRow, UiSeparator, UiText],
   host: { role: "menu", class: "absolute top-11 right-0 z-10 block w-[270px]" },
   templateUrl: "./account-menu.html",
 })
@@ -27,7 +29,7 @@ export class AppAccountMenu {
 
   public readonly signOut = output<void>();
 
-  /** SL4 listens; nobody in this slice. */
+  /** The shell listens, through the bar: it opens the deletion gate (SL4). */
   public readonly deleteAccount = output<void>();
 
   protected readonly nameOf = (provider: SignedIn["providers"][number]): string =>

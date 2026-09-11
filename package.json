@@ -22,11 +22,15 @@
     "format": "biome check --write . && prettier --write ."
   },
   "devDependencies": {
+    "@app/db": "workspace:*",
     "@biomejs/biome": "2.5.13",
     "@playwright/test": "1.62.1",
     "@tsconfig/strictest": "2.0.8",
     "@types/node": "24.13.3",
+    "better-auth": "1.7.4",
+    "drizzle-orm": "0.45.2",
     "esbuild": "0.28.2",
+    "postgres": "3.4.9",
     "prettier": "3.9.6",
     "typescript": "6.0.3",
     "vitest": "4.1.11",
