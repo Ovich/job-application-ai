@@ -116,7 +116,7 @@
       }
     },
     {
-      "includes": ["apps/api/src/env.ts", "packages/db/drizzle.config.ts"],
+      "includes": ["apps/api/src/env.ts", "packages/db/drizzle.config.ts", "e2e/support/config.ts"],
       "linter": {
         "rules": {
           "style": {

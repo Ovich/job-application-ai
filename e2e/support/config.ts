@@ -24,9 +24,6 @@ export type DeployedSecrets = {
 };
 
 const required = (name: string): string => {
-  // The rule's own advice is a centralised configuration file, and this file is it: the
-  // end-to-end tree's one reader of the environment, exempted by name (ID102).
-  // biome-ignore lint/style/noProcessEnv: see above
   const value = process.env[name];
   if (value === undefined || value === "") {
     throw new Error(
