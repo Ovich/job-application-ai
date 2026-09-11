@@ -175,7 +175,9 @@ describe("the shell", () => {
       shell.typeTheCode();
       shell.gateButton("Delete account")?.click();
 
-      await vi.waitFor(() => expect(TestBed.inject(Router).url).toBe("/?deleted"));
+      // The router writes an empty query value out as `deleted=`; the entry route reads
+      // whether the address has `deleted` (F8), so that is what is asked of it here.
+      await vi.waitFor(() => expect(TestBed.inject(Router).url).toBe("/?deleted="));
       expect(sentTo("delete-user")).toHaveLength(1);
       expect(sentTo("delete-user")[0]?.method).toBe("POST");
     });
