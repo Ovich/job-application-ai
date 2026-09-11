@@ -86,7 +86,7 @@ export type Radius = keyof typeof RADIUS;
 
 /** sm is the sign-in column (420 px); md and lg wait for the screens that need them. */
 export const WIDTH = {
-  sm: "max-w-[420px]",
+  sm: "max-w-[468px]", // the sign-in column: 420 of content inside the container's 24 a side
   md: "max-w-3xl",
   lg: "max-w-5xl",
 } as const;
