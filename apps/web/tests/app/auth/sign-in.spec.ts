@@ -3,7 +3,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { SignIn } from "../../../src/app/auth/sign-in";
 
 /**
- * The bare entry: one button, "Continue with Google", and what pressing it does.
+ * The bare entry: one button per provider, "Continue with Google", "Continue with
+ * Microsoft", "Continue with LinkedIn", and what pressing each does.
  *
  * What is asserted is the one thing this application decides: that the press reaches
  * the library's own sign-in route, for the provider the button names, through the
@@ -11,8 +12,16 @@ import { SignIn } from "../../../src/app/auth/sign-in";
  * here). Where the browser goes next is the library's answer to that request, and the
  * network is stood in for, so the answer here says "nowhere" and the page stays.
  *
- * The designed entry route is SL3's; this is the button that proves US1 on localhost.
+ * The designed entry route is SL3's; these are the buttons that prove US1 and US2 on
+ * localhost (SL1 put the first there, SL2 the other two).
  */
+
+/** The providers, in the order the buttons stand, and the id each press names (D4). */
+const providers = [
+  { label: "Continue with Google", id: "google" },
+  { label: "Continue with Microsoft", id: "microsoft" },
+  { label: "Continue with LinkedIn", id: "linkedin" },
+];
 
 type Fetching = (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>;
 
@@ -50,7 +59,7 @@ describe("the sign-in page", () => {
     fetching.mockReset();
   });
 
-  it("offers one button, to continue with Google", () => {
+  it("offers one button per provider, and nothing else", () => {
     const fixture = TestBed.createComponent(SignIn);
     fixture.detectChanges();
 
@@ -58,19 +67,24 @@ describe("the sign-in page", () => {
       (fixture.nativeElement as HTMLElement).querySelectorAll("button"),
     ).map((button) => button.textContent?.trim());
 
-    expect(buttons).toEqual(["Continue with Google"]);
+    expect(buttons).toEqual(providers.map(({ label }) => label));
   });
 
-  it("asks the library to sign in with Google when the button is pressed", async () => {
-    const fixture = TestBed.createComponent(SignIn);
-    fixture.detectChanges();
+  it.each(providers)(
+    'asks the library to sign in with $id when "$label" is pressed',
+    async ({ label, id }) => {
+      const fixture = TestBed.createComponent(SignIn);
+      fixture.detectChanges();
 
-    (fixture.nativeElement as HTMLElement).querySelector("button")?.click();
-    await vi.waitFor(() => expect(fetching).toHaveBeenCalled());
+      Array.from((fixture.nativeElement as HTMLElement).querySelectorAll("button"))
+        .find((button) => button.textContent?.trim() === label)
+        ?.click();
+      await vi.waitFor(() => expect(fetching).toHaveBeenCalled());
 
-    const { address, method, body } = requestSentTo();
-    expect(address).toContain("/api/auth/sign-in/social");
-    expect(method).toBe("POST");
-    expect(body).toMatchObject({ provider: "google" });
-  });
+      const { address, method, body } = requestSentTo();
+      expect(address).toContain("/api/auth/sign-in/social");
+      expect(method).toBe("POST");
+      expect(body).toMatchObject({ provider: id });
+    },
+  );
 });

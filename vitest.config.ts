@@ -15,14 +15,19 @@ export default defineConfig({
     include: ["{apps/*,packages/*,infra}/tests/**/*.{test,spec}.ts"],
     exclude: ["**/node_modules/**", "**/dist/**", "e2e/**", "apps/web/**"],
     /*
-     * The API's configuration is read at import and refuses to load without a Google
-     * client (ID60), so the suite runs with a placeholder one: nobody's registration,
-     * and never sent anywhere, since no test reaches Google. The tests that ask what
-     * the API does without one unset it themselves (`apps/api/tests/env.test.ts`).
+     * The API's configuration is read at import and refuses to load without the three
+     * provider clients (ID60, SL2), so the suite runs with placeholder ones: nobody's
+     * registration, and never sent anywhere, since no test reaches a provider. The
+     * tests that ask what the API does without one unset it themselves
+     * (`apps/api/tests/env.test.ts`).
      */
     env: {
       GOOGLE_CLIENT_ID: "test-google-client-id.apps.googleusercontent.com",
       GOOGLE_CLIENT_SECRET: "test-google-client-secret",
+      MICROSOFT_CLIENT_ID: "test-microsoft-client-id",
+      MICROSOFT_CLIENT_SECRET: "test-microsoft-client-secret",
+      LINKEDIN_CLIENT_ID: "test-linkedin-client-id",
+      LINKEDIN_CLIENT_SECRET: "test-linkedin-client-secret",
     },
   },
 });
