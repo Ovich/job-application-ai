@@ -27,7 +27,7 @@ export class AppAccountMenu {
 
   public readonly signOut = output<void>();
 
-  /** SL4 listens; nobody in this slice. */
+  /** The shell listens, through the bar: it opens the deletion gate (SL4). */
   public readonly deleteAccount = output<void>();
 
   protected readonly nameOf = (provider: SignedIn["providers"][number]): string =>
