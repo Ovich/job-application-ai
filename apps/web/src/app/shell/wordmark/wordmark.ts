@@ -1,4 +1,6 @@
 import { Component } from "@angular/core";
+import { UiRow } from "../../ui/layout/row/row";
+import { UiText } from "../../ui/typography/text/text";
 
 /**
  * The mark and the name (ID76), used by the entry route and the AppBar. The mark is the
@@ -11,7 +13,7 @@ import { Component } from "@angular/core";
  */
 @Component({
   selector: "app-wordmark",
-  host: { class: "inline-flex items-center gap-2.5 font-semibold" },
+  imports: [UiRow, UiText],
   templateUrl: "./wordmark.html",
 })
 export class Wordmark {}

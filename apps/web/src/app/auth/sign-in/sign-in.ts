@@ -4,6 +4,11 @@ import { toSignal } from "@angular/core/rxjs-interop";
 import { Meta, Title } from "@angular/platform-browser";
 import { ActivatedRoute } from "@angular/router";
 import { Wordmark } from "../../shell/wordmark/wordmark";
+import { UiBox } from "../../ui/layout/box/box";
+import { UiContainer } from "../../ui/layout/container/container";
+import { UiRow } from "../../ui/layout/row/row";
+import { UiStack } from "../../ui/layout/stack/stack";
+import { UiText } from "../../ui/typography/text/text";
 import { authClient } from "../auth-client";
 import { ProviderButton } from "../provider-button/provider-button";
 import { providerName } from "../provider-mark/provider-mark";
@@ -33,7 +38,7 @@ import { isProvider, type Provider } from "../session";
  */
 @Component({
   selector: "app-sign-in",
-  imports: [Wordmark, ProviderButton],
+  imports: [Wordmark, ProviderButton, UiStack, UiContainer, UiBox, UiRow, UiText],
   templateUrl: "./sign-in.html",
 })
 export class SignIn {

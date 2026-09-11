@@ -1,5 +1,6 @@
 import { Component, computed, input, output } from "@angular/core";
 import { HlmButton } from "../../ui/hlm-button";
+import { UiText } from "../../ui/typography/text/text";
 import { ProviderMark, providerName } from "../provider-mark/provider-mark";
 import type { Provider } from "../session";
 
@@ -13,7 +14,7 @@ import type { Provider } from "../session";
  */
 @Component({
   selector: "app-provider-button",
-  imports: [HlmButton, ProviderMark],
+  imports: [HlmButton, ProviderMark, UiText],
   host: { class: "block" },
   templateUrl: "./provider-button.html",
 })
