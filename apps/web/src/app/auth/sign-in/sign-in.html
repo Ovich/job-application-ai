@@ -17,51 +17,15 @@
     </p>
 
     @if (failed(); as provider) {
-      <div
-        role="alert"
-        uiRow
-        gap="md"
-        align="start"
-        uiBox
-        surface="danger-soft"
-        radius="md"
-        px="lg"
-        py="md"
-        uiText
-        variant="ui"
-        tone="danger"
-      >
-        <span class="mt-[0.45em] size-2.5 shrink-0 bg-current" aria-hidden="true"></span>
-        <span>
-          <span uiText variant="ui" tone="danger" weight="semibold">
-            {{ nameOf(provider) }} did not finish signing you in.
-          </span>
-          Nothing was created and nothing was charged. Try again, or continue with another account.
-        </span>
-      </div>
+      <app-notice tone="danger" [lead]="nameOf(provider) + ' did not finish signing you in.'">
+        Nothing was created and nothing was charged. Try again, or continue with another account.
+      </app-notice>
     }
 
     @if (deleted()) {
-      <div
-        role="status"
-        uiRow
-        gap="md"
-        align="start"
-        uiBox
-        surface="ok-soft"
-        radius="md"
-        px="lg"
-        py="md"
-        uiText
-        variant="ui"
-        tone="ok"
-      >
-        <span class="mt-[0.45em] size-2.5 shrink-0 rounded-full bg-current" aria-hidden="true"></span>
-        <span>
-          <span uiText variant="ui" tone="ok" weight="semibold">Your account is deleted.</span>
-          Everything it held is gone. You are welcome back any time, from nothing.
-        </span>
-      </div>
+      <app-notice tone="ok" lead="Your account is deleted.">
+        Everything it held is gone. You are welcome back any time, from nothing.
+      </app-notice>
     }
 
     <div uiStack gap="sm">

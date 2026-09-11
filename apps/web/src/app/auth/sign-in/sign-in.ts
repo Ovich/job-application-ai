@@ -6,8 +6,8 @@ import { ActivatedRoute } from "@angular/router";
 import { Wordmark } from "../../shell/wordmark/wordmark";
 import { UiBox } from "../../ui/layout/box/box";
 import { UiContainer } from "../../ui/layout/container/container";
-import { UiRow } from "../../ui/layout/row/row";
 import { UiStack } from "../../ui/layout/stack/stack";
+import { Notice } from "../../ui/notice/notice";
 import { UiText } from "../../ui/typography/text/text";
 import { authClient } from "../auth-client";
 import { ProviderButton } from "../provider-button/provider-button";
@@ -38,7 +38,7 @@ import { isProvider, type Provider } from "../session";
  */
 @Component({
   selector: "app-sign-in",
-  imports: [Wordmark, ProviderButton, UiStack, UiContainer, UiBox, UiRow, UiText],
+  imports: [Wordmark, ProviderButton, Notice, UiStack, UiContainer, UiBox, UiText],
   templateUrl: "./sign-in.html",
 })
 export class SignIn {
