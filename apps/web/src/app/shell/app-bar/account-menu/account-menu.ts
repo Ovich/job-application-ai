@@ -1,5 +1,5 @@
 import { Component, input, output } from "@angular/core";
-import { ProviderMark, providerName } from "../../../auth/provider-mark/provider-mark";
+import { AppProviderMark, providerName } from "../../../auth/provider-mark/provider-mark";
 import type { SignedIn } from "../../../auth/session";
 import { UiBox } from "../../../ui/layout/box/box";
 import { UiRow } from "../../../ui/layout/row/row";
@@ -18,11 +18,11 @@ import { UiText } from "../../../ui/typography/text/text";
  */
 @Component({
   selector: "app-account-menu",
-  imports: [ProviderMark, UiBox, UiRow, UiText],
+  imports: [AppProviderMark, UiBox, UiRow, UiText],
   host: { role: "menu", class: "absolute top-11 right-0 z-10 block w-[270px]" },
   templateUrl: "./account-menu.html",
 })
-export class AccountMenu {
+export class AppAccountMenu {
   public readonly user = input.required<SignedIn>();
 
   public readonly signOut = output<void>();

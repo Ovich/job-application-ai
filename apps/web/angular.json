@@ -17,11 +17,16 @@
           "builder": "@angular/build:application",
           "options": {
             "browser": "src/main.ts",
-            "server": "src/main.server.ts",
-            "outputMode": "static",
-            "index": "src/index.html",
             "tsConfig": "tsconfig.app.json",
-            "styles": ["src/styles.css"]
+            "assets": [
+              {
+                "glob": "**/*",
+                "input": "public"
+              }
+            ],
+            "styles": ["src/styles.css"],
+            "server": "src/main.server.ts",
+            "outputMode": "static"
           },
           "configurations": {
             "production": {
@@ -73,7 +78,8 @@
       },
       "schematics": {
         "@schematics/angular:component": {
-          "skipTests": true
+          "skipTests": true,
+          "style": "none"
         },
         "@schematics/angular:directive": {
           "skipTests": true

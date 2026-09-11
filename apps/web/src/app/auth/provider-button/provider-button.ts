@@ -1,7 +1,7 @@
 import { Component, computed, input, output } from "@angular/core";
-import { HlmButton } from "../../ui/hlm-button";
+import { HlmBtn } from "../../ui/hlm-button";
 import { UiText } from "../../ui/typography/text/text";
-import { ProviderMark, providerName } from "../provider-mark/provider-mark";
+import { AppProviderMark, providerName } from "../provider-mark/provider-mark";
 import type { Provider } from "../session";
 
 /**
@@ -14,11 +14,11 @@ import type { Provider } from "../session";
  */
 @Component({
   selector: "app-provider-button",
-  imports: [HlmButton, ProviderMark, UiText],
+  imports: [HlmBtn, AppProviderMark, UiText],
   host: { class: "block" },
   templateUrl: "./provider-button.html",
 })
-export class ProviderButton {
+export class AppProviderButton {
   public readonly provider = input.required<Provider>();
 
   public readonly busy = input(false);

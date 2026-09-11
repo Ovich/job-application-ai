@@ -55,7 +55,7 @@ export type ButtonVariants = VariantProps<typeof buttonVariants>;
   hostDirectives: [{ directive: BrnButton, inputs: ["disabled"] }],
   host: { "data-slot": "button", "[class]": "_computedClass()" },
 })
-export class HlmButton {
+export class HlmBtn {
   public readonly variant = input<ButtonVariants["variant"]>("primary");
 
   public readonly size = input<ButtonVariants["size"]>("md");

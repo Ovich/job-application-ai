@@ -21,7 +21,14 @@ class Defaults {}
 
 @Component({
   imports: [UiText],
-  template: `<h1 uiText variant="figure" tone="muted" weight="semibold" align="center" class="tracking-tight"></h1>`,
+  template: `<h1
+    uiText
+    variant="figure"
+    tone="muted"
+    weight="semibold"
+    align="center"
+    class="tracking-tight"
+  ></h1>`,
 })
 class Given {}
 

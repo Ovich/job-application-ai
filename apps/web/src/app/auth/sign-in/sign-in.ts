@@ -3,14 +3,14 @@ import { Component, computed, inject, signal } from "@angular/core";
 import { toSignal } from "@angular/core/rxjs-interop";
 import { Meta, Title } from "@angular/platform-browser";
 import { ActivatedRoute } from "@angular/router";
-import { Wordmark } from "../../shell/wordmark/wordmark";
+import { AppWordmark } from "../../shell/wordmark/wordmark";
 import { UiBox } from "../../ui/layout/box/box";
 import { UiContainer } from "../../ui/layout/container/container";
 import { UiStack } from "../../ui/layout/stack/stack";
-import { Notice } from "../../ui/notice/notice";
+import { AppNotice } from "../../ui/notice/notice";
 import { UiText } from "../../ui/typography/text/text";
 import { authClient } from "../auth-client";
-import { ProviderButton } from "../provider-button/provider-button";
+import { AppProviderButton } from "../provider-button/provider-button";
 import { providerName } from "../provider-mark/provider-mark";
 import { isProvider, type Provider } from "../session";
 
@@ -38,10 +38,10 @@ import { isProvider, type Provider } from "../session";
  */
 @Component({
   selector: "app-sign-in",
-  imports: [Wordmark, ProviderButton, Notice, UiStack, UiContainer, UiBox, UiText],
+  imports: [AppWordmark, AppProviderButton, AppNotice, UiStack, UiContainer, UiBox, UiText],
   templateUrl: "./sign-in.html",
 })
-export class SignIn {
+export class AppSignIn {
   /** The three of D4, in this order: Google first, LinkedIn last. */
   protected readonly providers: readonly Provider[] = ["google", "microsoft", "linkedin"];
 

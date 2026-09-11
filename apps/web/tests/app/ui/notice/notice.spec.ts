@@ -1,7 +1,7 @@
 import { Component } from "@angular/core";
 import { TestBed } from "@angular/core/testing";
 import { describe, expect, it } from "vitest";
-import { Notice } from "../../../../src/app/ui/notice/notice";
+import { AppNotice } from "../../../../src/app/ui/notice/notice";
 
 /**
  * The notice (ID82): one message above the content, in the tone it is in. Its seam is
@@ -16,14 +16,18 @@ const rendered = <T>(host: new () => T): HTMLElement => {
 };
 
 @Component({
-  imports: [Notice],
-  template: `<app-notice tone="danger" lead="Google did not finish signing you in.">Nothing was created.</app-notice>`,
+  imports: [AppNotice],
+  template: `<app-notice tone="danger" lead="Google did not finish signing you in."
+    >Nothing was created.</app-notice
+  >`,
 })
 class Failure {}
 
 @Component({
-  imports: [Notice],
-  template: `<app-notice tone="ok" lead="Your account is deleted.">Everything it held is gone.</app-notice>`,
+  imports: [AppNotice],
+  template: `<app-notice tone="ok" lead="Your account is deleted."
+    >Everything it held is gone.</app-notice
+  >`,
 })
 class Done {}
 

@@ -6,8 +6,8 @@ import { UiBox } from "../../ui/layout/box/box";
 import { UiRow } from "../../ui/layout/row/row";
 import { UiSpacer } from "../../ui/layout/spacer/spacer";
 import { UiText } from "../../ui/typography/text/text";
-import { Wordmark } from "../wordmark/wordmark";
-import { AccountMenu } from "./account-menu/account-menu";
+import { AppWordmark } from "../wordmark/wordmark";
+import { AppAccountMenu } from "./account-menu/account-menu";
 
 /**
  * The AppBar (ID64), first drawn here: the wordmark, the nav, the CreditMeter and the
@@ -23,8 +23,17 @@ import { AccountMenu } from "./account-menu/account-menu";
  * the menu's own outputs.
  */
 @Component({
-  selector: "app-app-bar",
-  imports: [NgTemplateOutlet, RouterLink, Wordmark, AccountMenu, UiRow, UiBox, UiSpacer, UiText],
+  selector: "app-bar",
+  imports: [
+    NgTemplateOutlet,
+    RouterLink,
+    AppWordmark,
+    AppAccountMenu,
+    UiRow,
+    UiBox,
+    UiSpacer,
+    UiText,
+  ],
   host: {
     "(document:click)": "closeUnless($event)",
     "(document:keydown.escape)": "close()",

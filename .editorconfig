@@ -1,5 +1,5 @@
-# The settings every editor honours without an extension. They match biome.json, which
-# is the authority; this file exists so an editor that is not VS Code agrees too.
+# The settings every editor honours without an extension. They match .prettierrc.json,
+# which is the authority; this file exists so an editor that is not VS Code agrees too.
 root = true
 
 [*]

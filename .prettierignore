@@ -1,0 +1,10 @@
+# Generated, never formatted by hand or by tool.
+pnpm-lock.yaml
+packages/db/drizzle
+packages/db/src/auth-schema.ts
+# Build output and caches.
+**/dist
+**/.angular
+coverage
+test-results
+playwright-report

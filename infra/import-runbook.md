@@ -29,8 +29,8 @@ stack that grants it anything at all.
 
 **What you need.**
 
-- AWS CLI v2. `aws --version` must answer. *(It was not installed on the machine this
-  runbook was written on — install it first.)*
+- AWS CLI v2. `aws --version` must answer. _(It was not installed on the machine this
+  runbook was written on — install it first.)_
 - Credentials for account `917993967998` with administrator rights, and
   `AWS_REGION=eu-central-1` (both stacks live there; Route 53 and IAM are global, but the
   stacks are not).
@@ -66,17 +66,17 @@ aws cloudformation get-template --stack-name Deploy --template-stage Original \
 
 ## What survives and what is rebuilt
 
-| Resource | Old logical id | Then |
-| --- | --- | --- |
-| The hosted zone | `ZoneA5DE4B68` | **retained and imported.** It cannot be recreated. |
-| The alert topic | `Alerts91F83244` | **retained and imported.** Recreating it would drop the confirmed subscription. |
-| The GitHub OIDC provider | `GitHubProviderDD1D07DF` | **retained and imported.** An account may hold only one provider per URL, so a second cannot be created alongside. |
-| The deploy role | `DeployDevelopmentRole4080F27A` | **retained and imported.** Its name, `github-actions-deploy-dev`, is fixed and is written into a repository variable. |
-| The email subscription | `Alertstigoes44gmailcomE68ABA00` | deleted and recreated. **You will have to confirm the email again.** |
-| The topic policy | `AlertsPolicy425C338D` | deleted and recreated. Nothing is lost. |
-| The budget | `MonthlySpend` | deleted and recreated. It carries no history worth keeping. |
-| The deploy role's policy | `DeployDevelopmentRoleDefaultPolicy4E90BCDF` | deleted and recreated, with different contents: the pipeline no longer assumes CDK's bootstrap roles. |
-| CDK's custom-resource Lambdas and their roles | several | deleted. They existed to make the OIDC provider; the new template uses `AWS::IAM::OIDCProvider` and needs none. |
+| Resource                                      | Old logical id                               | Then                                                                                                                  |
+| --------------------------------------------- | -------------------------------------------- | --------------------------------------------------------------------------------------------------------------------- |
+| The hosted zone                               | `ZoneA5DE4B68`                               | **retained and imported.** It cannot be recreated.                                                                    |
+| The alert topic                               | `Alerts91F83244`                             | **retained and imported.** Recreating it would drop the confirmed subscription.                                       |
+| The GitHub OIDC provider                      | `GitHubProviderDD1D07DF`                     | **retained and imported.** An account may hold only one provider per URL, so a second cannot be created alongside.    |
+| The deploy role                               | `DeployDevelopmentRole4080F27A`              | **retained and imported.** Its name, `github-actions-deploy-dev`, is fixed and is written into a repository variable. |
+| The email subscription                        | `Alertstigoes44gmailcomE68ABA00`             | deleted and recreated. **You will have to confirm the email again.**                                                  |
+| The topic policy                              | `AlertsPolicy425C338D`                       | deleted and recreated. Nothing is lost.                                                                               |
+| The budget                                    | `MonthlySpend`                               | deleted and recreated. It carries no history worth keeping.                                                           |
+| The deploy role's policy                      | `DeployDevelopmentRoleDefaultPolicy4E90BCDF` | deleted and recreated, with different contents: the pipeline no longer assumes CDK's bootstrap roles.                 |
+| CDK's custom-resource Lambdas and their roles | several                                      | deleted. They existed to make the OIDC provider; the new template uses `AWS::IAM::OIDCProvider` and needs none.       |
 
 The four rows marked "retained and imported" are what steps 2 and 4 are about. The rest
 are ordinary creates in step 5.
@@ -263,7 +263,7 @@ aws cloudformation wait stack-import-complete --stack-name Deploy
 **Undo:** a change set that fails to create leaves the stack in `REVIEW_IN_PROGRESS` and
 touches nothing. Delete the change set, or `aws cloudformation delete-stack` the stack in
 that state — a stack in `REVIEW_IN_PROGRESS` owns no resources, so deleting it is safe —
-and try again. A change set that fails while *executing* rolls the import back and the
+and try again. A change set that fails while _executing_ rolls the import back and the
 resources stay where they were.
 
 ---

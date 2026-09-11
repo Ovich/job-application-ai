@@ -2,7 +2,7 @@ import { TestBed } from "@angular/core/testing";
 import { provideRouter } from "@angular/router";
 import { RouterTestingHarness } from "@angular/router/testing";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { SignIn } from "../../../src/app/auth/sign-in/sign-in";
+import { AppSignIn } from "../../../src/app/auth/sign-in/sign-in";
 import { reset, sentTo, signedOut } from "../../support/session";
 
 /**
@@ -57,7 +57,7 @@ describe("the entry route", () => {
     reset();
     signedOut();
     TestBed.configureTestingModule({
-      providers: [provideRouter([{ path: "", component: SignIn }])],
+      providers: [provideRouter([{ path: "", component: AppSignIn }])],
     });
   });
 
@@ -68,7 +68,7 @@ describe("the entry route", () => {
   /** The route rendered at `address`, as the element a person sees. */
   const opened = async (address = "/"): Promise<HTMLElement | null> => {
     const harness = await RouterTestingHarness.create();
-    await harness.navigateByUrl(address, SignIn);
+    await harness.navigateByUrl(address, AppSignIn);
     return harness.routeNativeElement;
   };
 
