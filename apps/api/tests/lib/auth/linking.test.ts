@@ -67,32 +67,60 @@ describe("linking, at the library's default (D17)", () => {
     },
   );
 
-  it.each(arrivingSecond)(
-    "%s, with the same email unverified, does not attach",
-    async (provider) => {
-      const email = `unverified-through-${provider}@example.com`;
-      const who = { name: "Someone Seeking", email };
+  it("LinkedIn, with the same email unverified, does not attach", async () => {
+    const email = "unverified-through-linkedin@example.com";
+    const who = { name: "Someone Seeking", email };
 
-      const first = await signInThrough("google", {
-        ...who,
-        subject: subjectAt("google", email),
-        emailVerified: true,
-      });
-      const created = await signedInAs(first);
-      expect(created).not.toBeNull();
+    const first = await signInThrough("google", {
+      ...who,
+      subject: subjectAt("google", email),
+      emailVerified: true,
+    });
+    const created = await signedInAs(first);
+    expect(created).not.toBeNull();
 
-      const second = await signInThrough(provider, {
-        ...who,
-        subject: subjectAt(provider, email),
-        emailVerified: false,
-      });
+    const second = await signInThrough("linkedin", {
+      ...who,
+      subject: subjectAt("linkedin", email),
+      emailVerified: false,
+    });
 
-      // The library's refusal, by name, and no session behind it.
-      expect(second.status).toBe(302);
-      expect(landingOf(second).searchParams.get("error")).toBe("account_not_linked");
-      expect(await signedInAs(second)).toBeNull();
-      expect(await usersAt(email)).toHaveLength(1);
-      expect(await providersOf(created?.id ?? "")).toEqual(["google"]);
-    },
-  );
+    // The library's refusal, by name, and no session behind it.
+    expect(second.status).toBe(302);
+    expect(landingOf(second).searchParams.get("error")).toBe("account_not_linked");
+    expect(await signedInAs(second)).toBeNull();
+    expect(await usersAt(email)).toHaveLength(1);
+    expect(await providersOf(created?.id ?? "")).toEqual(["google"]);
+  });
+
+  /**
+   * D17 as amended (ID72): a personal Microsoft account never carries a verified-email
+   * claim, so Microsoft is trusted by name and its email attaches without one. This is
+   * the case that was refused on localhost on 2026-09-11, a hotmail address arriving
+   * after LinkedIn.
+   */
+  it("Microsoft, with the same email and no verified claim, attaches all the same", async () => {
+    const email = "unverified-through-microsoft@example.com";
+    const who = { name: "Someone Seeking", email };
+
+    const first = await signInThrough("google", {
+      ...who,
+      subject: subjectAt("google", email),
+      emailVerified: true,
+    });
+    const created = await signedInAs(first);
+    expect(created).not.toBeNull();
+
+    const second = await signInThrough("microsoft", {
+      ...who,
+      subject: subjectAt("microsoft", email),
+      emailVerified: false,
+    });
+
+    expect(second.status).toBe(302);
+    expect(landingOf(second).pathname).toBe("/");
+    expect((await signedInAs(second))?.id).toBe(created?.id);
+    expect(await usersAt(email)).toHaveLength(1);
+    expect(await providersOf(created?.id ?? "")).toEqual(["google", "microsoft"]);
+  });
 });

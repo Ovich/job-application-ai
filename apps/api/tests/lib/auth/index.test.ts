@@ -95,13 +95,15 @@ describe("lib/auth", () => {
   });
 
   /**
-   * D17, D20: linking is the library's default and nothing here configures it. No
-   * provider is trusted by name, because a trusted provider is one whose unverified
-   * email attaches all the same; the check `tests/lib/auth/linking.test.ts` proves
-   * depends on this list staying empty.
+   * D17 as amended on 2026-09-11 (ID72): Microsoft, and Microsoft alone, is trusted by
+   * name. A trusted provider is one whose email attaches without a verified claim, and
+   * Microsoft is the one provider that never sends that claim for a personal account:
+   * Entra issues `email_verified` and `verified_primary_email` for directory users only,
+   * so under the bare default a Hotmail or Outlook account arriving second was refused
+   * every time, observed on localhost. Google and LinkedIn do send the claim and stay
+   * at the default; `tests/lib/auth/linking.test.ts` proves both halves.
    */
-  it("leaves linking at the library's defaults, with no provider trusted by name", async () => {
-    expect(auth.options).not.toHaveProperty("account");
-    expect((await auth.$context).trustedProviders).toEqual([]);
+  it("trusts Microsoft's email by name, and no other provider's", async () => {
+    expect((await auth.$context).trustedProviders).toEqual(["microsoft"]);
   });
 });
