@@ -139,7 +139,9 @@ test.describe("two people on two browsers", () => {
       const gate = benPage.getByRole("dialog", { name: "Delete your account?" });
       await expect(gate).toBeVisible();
       await expect(gate.getByRole("button", { name: "Delete account" })).toBeDisabled();
-      const code = (await gate.getByText(/^[A-Z0-9]{8}$/).textContent())?.trim() ?? "";
+      // A pattern is matched against the element's text as written, its template's
+      // line breaks around the code included, so they are allowed for and trimmed.
+      const code = (await gate.getByText(/^\s*[A-Z0-9]{8}\s*$/).textContent())?.trim() ?? "";
       await gate.getByRole("textbox").fill(code);
       await gate.getByRole("button", { name: "Delete account" }).click();
 
