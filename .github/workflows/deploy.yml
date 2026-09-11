@@ -260,7 +260,7 @@ jobs:
             --secret-id "$AUTH_SECRET" --query SecretString --output text)
           echo "::add-mask::$auth"
           DEPLOYED_BETTER_AUTH_SECRET=$(AUTH_JSON="$auth" node -e \
-            'process.stdout.write(JSON.parse(process.env.AUTH_JSON).BETTER_AUTH_SECRET)')
+            'process.stdout.write(JSON.parse(process.env.AUTH_JSON).betterAuthSecret)')
           echo "::add-mask::$DEPLOYED_BETTER_AUTH_SECRET"
           export DEPLOYED_DATABASE_URL DEPLOYED_BETTER_AUTH_SECRET
           pnpm test:e2e:deployed

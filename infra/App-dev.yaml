@@ -120,13 +120,13 @@ Resources:
           # Absent any of these, the cold start fails naming the field (ID23, and
           # apps/api/src/env.ts): a function that answered with a provider unconfigured
           # would serve a button that leads nowhere.
-          GOOGLE_CLIENT_ID: "{{resolve:secretsmanager:jobapp/dev/auth:SecretString:GOOGLE_CLIENT_ID}}"
-          GOOGLE_CLIENT_SECRET: "{{resolve:secretsmanager:jobapp/dev/auth:SecretString:GOOGLE_CLIENT_SECRET}}"
-          MICROSOFT_CLIENT_ID: "{{resolve:secretsmanager:jobapp/dev/auth:SecretString:MICROSOFT_CLIENT_ID}}"
-          MICROSOFT_CLIENT_SECRET: "{{resolve:secretsmanager:jobapp/dev/auth:SecretString:MICROSOFT_CLIENT_SECRET}}"
-          LINKEDIN_CLIENT_ID: "{{resolve:secretsmanager:jobapp/dev/auth:SecretString:LINKEDIN_CLIENT_ID}}"
-          LINKEDIN_CLIENT_SECRET: "{{resolve:secretsmanager:jobapp/dev/auth:SecretString:LINKEDIN_CLIENT_SECRET}}"
-          BETTER_AUTH_SECRET: "{{resolve:secretsmanager:jobapp/dev/auth:SecretString:BETTER_AUTH_SECRET}}"
+          GOOGLE_CLIENT_ID: "{{resolve:secretsmanager:jobapp/dev/auth:SecretString:googleClientId}}"
+          GOOGLE_CLIENT_SECRET: "{{resolve:secretsmanager:jobapp/dev/auth:SecretString:googleClientSecret}}"
+          MICROSOFT_CLIENT_ID: "{{resolve:secretsmanager:jobapp/dev/auth:SecretString:microsoftClientId}}"
+          MICROSOFT_CLIENT_SECRET: "{{resolve:secretsmanager:jobapp/dev/auth:SecretString:microsoftClientSecret}}"
+          LINKEDIN_CLIENT_ID: "{{resolve:secretsmanager:jobapp/dev/auth:SecretString:linkedinClientId}}"
+          LINKEDIN_CLIENT_SECRET: "{{resolve:secretsmanager:jobapp/dev/auth:SecretString:linkedinClientSecret}}"
+          BETTER_AUTH_SECRET: "{{resolve:secretsmanager:jobapp/dev/auth:SecretString:betterAuthSecret}}"
 
   # The URL is unreachable except through the distribution, which signs every request it
   # forwards. An unauthenticated function URL would be a second, public front door to the
