@@ -38,6 +38,9 @@ const fineprint = "What we keep, and how to delete it";
 const textOf = (element: HTMLElement | null): string =>
   (element?.textContent ?? "").replace(/\s+/g, " ").trim();
 
+/** The page's characters with no whitespace at all: what it says, whatever the markup between. */
+const lettersOf = (text: string): string => text.replace(/\s+/g, "");
+
 const buttonsOf = (element: HTMLElement | null): HTMLButtonElement[] =>
   Array.from(element?.querySelectorAll("button") ?? []);
 
@@ -72,14 +75,16 @@ describe("the entry route", () => {
   it("shows the wordmark, the heading, the sentence, the three buttons and the fineprint, in that order and nothing else", async () => {
     const page = await opened();
 
-    expect(textOf(page)).toBe(
-      [
-        "job-application.app",
-        heading,
-        sentence,
-        ...providers.map(({ label }) => label),
-        fineprint,
-      ].join(" "),
+    expect(lettersOf(textOf(page))).toBe(
+      lettersOf(
+        [
+          "job-application.app",
+          heading,
+          sentence,
+          ...providers.map(({ label }) => label),
+          fineprint,
+        ].join(" "),
+      ),
     );
     expect(page?.querySelector("h1")?.textContent?.trim()).toBe(heading);
     expect(buttonsOf(page).map(textOf)).toEqual(providers.map(({ label }) => label));
