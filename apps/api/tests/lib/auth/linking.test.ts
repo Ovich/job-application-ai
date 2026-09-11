@@ -36,6 +36,13 @@ type Provider = "google" | "microsoft" | "linkedin";
 type Identity = { subject: string; name: string; email: string; emailVerified: boolean };
 
 /**
+ * The provider's own id for that person, one per address here: an account is keyed on
+ * it, and a subject seen before signs in as the user it belongs to, whatever address
+ * it carries this time, which is not what these cases ask.
+ */
+const subjectAt = (provider: Provider, email: string) => `${provider}:${email}`;
+
+/**
  * An id token as a provider would mint it, decoded by the library and never verified
  * here: the callback trusts what the code exchange returned, because it made that
  * request itself to an address it chose, and the exchange is the thing stood in for.
@@ -115,7 +122,8 @@ const standingInFor =
   (doors: Record<string, () => Response>) =>
   async (input: string | URL | Request): Promise<Response> => {
     const address = new URL(input instanceof Request ? input.url : input);
-    const door = doors[`${address.origin}${address.pathname}`];
+    // Decoded, so a door is written the way its documentation writes it (`$value`).
+    const door = doors[`${address.origin}${decodeURIComponent(address.pathname)}`];
     if (door === undefined) throw new Error(`nothing stands in for ${address.href}`);
     return door();
   };
@@ -189,12 +197,13 @@ describe("linking, at the library's default (D17)", () => {
       const email = `verified-through-${provider}@example.com`;
       const who = { name: "Someone Seeking", email, emailVerified: true };
 
-      const first = await signInThrough("google", { ...who, subject: "google-subject" });
+      const first = await signInThrough("google", { ...who, subject: subjectAt("google", email) });
       const created = await signedInAs(first);
       expect(created).not.toBeNull();
 
-      const second = await signInThrough(provider, { ...who, subject: `${provider}-subject` });
+      const second = await signInThrough(provider, { ...who, subject: subjectAt(provider, email) });
 
+      expect(second.status).toBe(302);
       expect(landingOf(second).pathname).toBe("/");
       expect((await signedInAs(second))?.id).toBe(created?.id);
       expect(await usersAt(email)).toHaveLength(1);
@@ -210,7 +219,7 @@ describe("linking, at the library's default (D17)", () => {
 
       const first = await signInThrough("google", {
         ...who,
-        subject: "google-subject",
+        subject: subjectAt("google", email),
         emailVerified: true,
       });
       const created = await signedInAs(first);
@@ -218,11 +227,12 @@ describe("linking, at the library's default (D17)", () => {
 
       const second = await signInThrough(provider, {
         ...who,
-        subject: `${provider}-subject`,
+        subject: subjectAt(provider, email),
         emailVerified: false,
       });
 
       // The library's refusal, by name, and no session behind it.
+      expect(second.status).toBe(302);
       expect(landingOf(second).searchParams.get("error")).toBe("account_not_linked");
       expect(await signedInAs(second)).toBeNull();
       expect(await usersAt(email)).toHaveLength(1);
