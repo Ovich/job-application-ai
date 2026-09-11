@@ -10,7 +10,7 @@ export const routes: Routes = [
   {
     path: "",
     canActivate: [signedOut],
-    loadComponent: () => import("./auth/sign-in/sign-in").then((m) => m.SignIn),
+    loadComponent: () => import("./auth/sign-in/sign-in").then((m) => m.AppSignIn),
   },
   {
     path: "profile",

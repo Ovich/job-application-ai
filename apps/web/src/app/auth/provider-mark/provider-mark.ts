@@ -19,7 +19,7 @@ export const providerName: Record<Provider, string> = {
   host: { class: "inline-flex shrink-0" },
   templateUrl: "./provider-mark.html",
 })
-export class ProviderMark {
+export class AppProviderMark {
   public readonly provider = input.required<Provider>();
 
   /** The mark's box: 22 px on a button, 14 px on the menu's line. */

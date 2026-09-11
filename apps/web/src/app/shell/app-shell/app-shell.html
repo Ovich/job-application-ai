@@ -1,6 +1,6 @@
 <div uiStack gap="none" class="min-h-screen">
   @if (user(); as user) {
-    <app-app-bar [user]="user" (signOut)="signOut()" />
+    <app-bar [user]="user" (signOut)="signOut()" />
   }
   <main uiPage><router-outlet /></main>
 </div>

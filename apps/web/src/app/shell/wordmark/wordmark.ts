@@ -16,4 +16,4 @@ import { UiText } from "../../ui/typography/text/text";
   imports: [UiRow, UiText],
   templateUrl: "./wordmark.html",
 })
-export class Wordmark {}
+export class AppWordmark {}

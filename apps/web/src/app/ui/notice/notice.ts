@@ -16,7 +16,7 @@ import { UiText } from "../typography/text/text";
   templateUrl: "./notice.html",
   host: { "[attr.role]": "role()" },
 })
-export class Notice {
+export class AppNotice {
   public readonly tone = input.required<"ok" | "danger">();
 
   public readonly lead = input.required<string>();
