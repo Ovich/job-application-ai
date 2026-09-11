@@ -35,6 +35,15 @@ const shared = {
  * the origin each provider sends it back to: the dev server, which forwards `/api` to
  * this process. Registered at each as `<APP_URL>/api/auth/callback/<provider>`; a
  * port's difference between the two is a `redirect_uri_mismatch`.
+ *
+ * `BETTER_AUTH_SECRET` is what the authentication library signs its session cookies
+ * with (ID71). It is read here, and handed to the library as configuration, because
+ * this module is the only reader of the process environment: absent the option, the
+ * library reads the variable itself, which would put a second reader behind that
+ * boundary and silently — the value right and the boundary wrong. Locally it does have
+ * a sensible throwaway value, unlike a client secret, and `.env.example` fills it in
+ * (ID103): the local database holds no real person, and the end-to-end fixture has to
+ * sign with the same value the dev server verifies with.
  */
 const localRuntime = z.object({
   APP_RUNTIME: z.literal("local"),
@@ -51,6 +60,7 @@ const localRuntime = z.object({
   MICROSOFT_CLIENT_SECRET: z.string().min(1),
   LINKEDIN_CLIENT_ID: z.string().min(1),
   LINKEDIN_CLIENT_SECRET: z.string().min(1),
+  BETTER_AUTH_SECRET: z.string().min(1),
 });
 
 /**
@@ -66,14 +76,14 @@ const localRuntime = z.object({
  * back into these five (D19). The password is a password now, where the Aurora cluster
  * had an identity token minted per connection; secrets reach the function through Secrets Manager.
  *
- * The provider clients and the app's address are the exception to "every value is
- * required", and only until slice 5. A merge to `main` deploys, and the provider
- * secrets do not exist in Secrets Manager before S5.2: required today, they would fail
- * every cold start between this slice and that one, the health route with it. So they
- * are optional here, `lib/auth` mounts without a provider whose pair is absent, and
- * S5.2 makes them required in the same breath as it puts them in the template (ID60,
- * amended for SL1 on the orchestrator's instruction, 2026-09-11; SL2's Microsoft and
- * LinkedIn pairs follow the same amendment, for the same reason).
+ * The provider clients, the app's address and the library's secret were the exception
+ * to "every value is required", and only until slice 5. They were optional because a
+ * merge to `main` deploys and Secrets Manager held none of them before S5.2: required
+ * then, they would have failed every cold start in between, the health route with it.
+ * S5.2 puts them in the template and takes the exception away in the same breath, so
+ * the two branches now ask for the same values and a half-configured function fails its
+ * cold start naming the field rather than serving a door that leads nowhere (ID60,
+ * ID71, ID23).
  */
 const cloudRuntime = z.object({
   APP_RUNTIME: z.literal("cloud"),
@@ -83,13 +93,14 @@ const cloudRuntime = z.object({
   DATABASE_NAME: z.string().min(1),
   DATABASE_USER: z.string().min(1),
   DATABASE_PASSWORD: z.string().min(1),
-  APP_URL: z.url().optional(),
-  GOOGLE_CLIENT_ID: z.string().min(1).optional(),
-  GOOGLE_CLIENT_SECRET: z.string().min(1).optional(),
-  MICROSOFT_CLIENT_ID: z.string().min(1).optional(),
-  MICROSOFT_CLIENT_SECRET: z.string().min(1).optional(),
-  LINKEDIN_CLIENT_ID: z.string().min(1).optional(),
-  LINKEDIN_CLIENT_SECRET: z.string().min(1).optional(),
+  APP_URL: z.url(),
+  GOOGLE_CLIENT_ID: z.string().min(1),
+  GOOGLE_CLIENT_SECRET: z.string().min(1),
+  MICROSOFT_CLIENT_ID: z.string().min(1),
+  MICROSOFT_CLIENT_SECRET: z.string().min(1),
+  LINKEDIN_CLIENT_ID: z.string().min(1),
+  LINKEDIN_CLIENT_SECRET: z.string().min(1),
+  BETTER_AUTH_SECRET: z.string().min(1),
 });
 
 /**
@@ -140,6 +151,7 @@ const {
   MICROSOFT_CLIENT_SECRET,
   LINKEDIN_CLIENT_ID,
   LINKEDIN_CLIENT_SECRET,
+  BETTER_AUTH_SECRET,
 } = process.env;
 
 // The discriminator defaults to the local runtime so a clone runs with nothing set; the
@@ -158,6 +170,7 @@ export const env = Object.freeze(
     MICROSOFT_CLIENT_SECRET,
     LINKEDIN_CLIENT_ID,
     LINKEDIN_CLIENT_SECRET,
+    BETTER_AUTH_SECRET,
     // Where the connection comes from, and the only line the two runtimes disagree on.
     ...(runtime === "cloud"
       ? partsOf(DATABASE_URL)

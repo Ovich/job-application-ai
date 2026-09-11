@@ -16,8 +16,9 @@ export default defineConfig({
     exclude: ["**/node_modules/**", "**/dist/**", "e2e/**", "apps/web/**"],
     /*
      * The API's configuration is read at import and refuses to load without the three
-     * provider clients (ID60, SL2), so the suite runs with placeholder ones: nobody's
-     * registration, and never sent anywhere, since no test reaches a provider. The
+     * provider clients and the library's secret (ID60, ID71), so the suite runs with
+     * placeholder ones: nobody's registration, never sent anywhere since no test
+     * reaches a provider, and a secret that signs nothing outside this process. The
      * tests that ask what the API does without one unset it themselves
      * (`apps/api/tests/env.test.ts`).
      */
@@ -28,6 +29,7 @@ export default defineConfig({
       MICROSOFT_CLIENT_SECRET: "test-microsoft-client-secret",
       LINKEDIN_CLIENT_ID: "test-linkedin-client-id",
       LINKEDIN_CLIENT_SECRET: "test-linkedin-client-secret",
+      BETTER_AUTH_SECRET: "test-better-auth-secret-of-a-decent-length",
     },
   },
 });
