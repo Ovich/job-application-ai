@@ -60,7 +60,5 @@ export const signedIn: CanActivateFn = () => {
 /** A live session: `/profile`. Otherwise the route renders. */
 export const signedOut: CanActivateFn = () => {
   const router = inject(Router);
-  return sessionOrNone().then((who) =>
-    who === null ? true : router.createUrlTree(["/profile"]),
-  );
+  return sessionOrNone().then((who) => (who === null ? true : router.createUrlTree(["/profile"])));
 };
