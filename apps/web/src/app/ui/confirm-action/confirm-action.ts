@@ -1,5 +1,5 @@
 import {
-  afterNextRender,
+  afterRenderEffect,
   Component,
   computed,
   ElementRef,
@@ -37,10 +37,15 @@ let opened = 0;
  * host's, as the account menu's place is the bar's; the caller creates it to open it and
  * destroys it to close it (ID94's controlled mode), so each opening is a new gate.
  *
- * With `code` on it is the destructive gate: eight characters drawn when the gate is
- * created, shown large and monospaced on one line, and a field that must match them,
- * typed in any case and with any spaces, before the action arms. The action is red with
- * a code and primary without. No habit, no autofill and no misclick can carry it.
+ * With `code` on it is the destructive gate, in two steps (ID95). First the warning
+ * alone, the caller's body with Cancel and a primary Acknowledge. Acknowledged, the
+ * warning stays and eight characters are drawn, shown large and monospaced on one line,
+ * with a field that must match them, typed in any case and with any spaces, before the
+ * red action arms. No habit, no autofill and no misclick can carry it. Without a code
+ * the gate is one step: the body, Cancel and the primary action, live.
+ *
+ * The focus goes into the panel when it opens, to Acknowledge, and to the field once it
+ * is there: Acknowledge only reveals the code, so a stray Enter on it deletes nothing.
  *
  * `working` is the caller's action running: the working line replaces the phrase, the
  * code, the field and the buttons, and nothing leaves until it ends, when the gate is as
@@ -74,23 +79,37 @@ export class AppConfirmAction {
 
   protected readonly titleId = `confirm-action-title-${++opened}`;
 
-  /** Drawn once, when the gate is created, and kept through `working` and after. */
-  protected readonly shown = newCode();
+  /** Whether Acknowledge has been pressed; the gate is created unacknowledged. */
+  protected readonly acknowledged = signal(false);
+
+  /** The first step: the destructive gate, not yet acknowledged. */
+  protected readonly warning = computed(() => this.code() && !this.acknowledged());
+
+  /** Drawn at Acknowledge, and kept through `working` and after. */
+  protected readonly shown = signal("");
 
   protected readonly typed = signal("");
 
   protected readonly armed = computed(
-    () => !this.code() || this.typed().replace(/\s/g, "").toUpperCase() === this.shown,
+    () => !this.code() || this.typed().replace(/\s/g, "").toUpperCase() === this.shown(),
   );
 
   private readonly field = viewChild<ElementRef<HTMLInputElement>>("field");
 
+  private readonly acknowledgement = viewChild<ElementRef<HTMLButtonElement>>("acknowledgement");
+
   private readonly host = inject<ElementRef<HTMLElement>>(ElementRef);
 
   public constructor() {
-    afterNextRender(() => {
-      this.field()?.nativeElement.focus();
+    afterRenderEffect(() => {
+      (this.field() ?? this.acknowledgement())?.nativeElement.focus();
     });
+  }
+
+  protected acknowledge(): void {
+    this.shown.set(newCode());
+    this.typed.set("");
+    this.acknowledged.set(true);
   }
 
   protected onType(event: Event): void {
