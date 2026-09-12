@@ -189,6 +189,29 @@ export const emptyProfile: Profile = {
 
 let profile: Profile = emptyProfile;
 
+/** How many rules the person has written themselves, so each one gets its own id. */
+let ruleCount = 1;
+
+/** Every item of a profile, the nesting flattened, so one can be found by its id. */
+const everyItemOf = (given: Profile): Item[] => {
+  const all: Item[] = [];
+  const walk = (items: Item[]): void => {
+    for (const item of items) {
+      all.push(item);
+      walk(item.children);
+    }
+  };
+  walk([
+    ...(given.summary === null ? [] : [given.summary]),
+    ...(given.identity === null ? [] : [given.identity]),
+    ...given.experience,
+    ...given.projects,
+    ...given.groups,
+    ...given.education,
+  ]);
+  return all;
+};
+
 /** That question is now in that state, in the profile the route answers from now on. */
 const questionBecomes = (id: string, state: Question["state"]): void => {
   const move = (question: Question): Question =>
@@ -279,6 +302,7 @@ export const resetIntake = (): void => {
   frames = [];
   requests = [];
   dropping = null;
+  ruleCount = 1;
 };
 
 const json = (body: unknown, status = 200): Response =>
@@ -392,8 +416,31 @@ alsoAnswering((address, init) => {
     return json({ rule: { text } });
   }
 
+  /**
+   * The rule the person wrote on an item nobody asked about, kept the way the API keeps
+   * it: `<the item's title>: <the words>`, landing on that item and superseding whatever
+   * was there. A stand-in that answered `kept` and moved nothing would let a screen pass
+   * that never showed the check line a person had just written.
+   */
   if (/^\/api\/intake\/items\/[^/]+\/rule$/.test(path)) {
-    return json({ rule: { text: "kept" } });
+    const id = path.split("/")[4] ?? "";
+    const item = everyItemOf(profile).find((each) => each.id === id);
+    if (item === undefined) return json({ error: "no such item" }, 404);
+    const said = (typeof init?.body === "string" ? JSON.parse(init.body) : {}) as {
+      words?: string;
+    };
+    const words = (said.words ?? "").trim();
+    if (words === "") return json({ error: "say it in your own words" }, 400);
+    const kept: Rule = {
+      id: `rule-own-${ruleCount++}`,
+      text: `${item.title}: ${words}`,
+      kind: "scope",
+      source: "own words",
+      createdAt: "2026-09-12T10:14:00.000Z",
+      supersededBy: null,
+    };
+    ruleLandsOn(item.id, kept);
+    return json({ rule: kept });
   }
 
   if (path === "/api/intake/read") return asStream(frames);

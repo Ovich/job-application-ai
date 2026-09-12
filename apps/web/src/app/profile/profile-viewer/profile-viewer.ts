@@ -54,23 +54,65 @@ export class ProfileViewer {
   /** Which column is showing below 1024 px. The profile is what a person came for. */
   protected readonly view = signal<"sheet" | "chat">("sheet");
 
-  /** The last region pressed by hand. The tool it opens is `SL5`'s. */
+  /** The last region pressed by hand, which is what opens a tool on it (`US8`). */
   protected readonly selected = signal<RegionRef | null>(null);
+
+  /**
+   * Which ending the last closed tool was, and the whole of `S5.4`: the profile returns
+   * to its head when the **assistant's own run** ends, and stays where the person left
+   * it when a clarification does (the mockup's `next(after, viaQuestion)`).
+   *
+   * A field and not a signal, deliberately: the effect below must not re-run because
+   * this moved, only because what is lifted did.
+   */
+  private viaQuestion = true;
 
   private readonly scroller = viewChild<ElementRef<HTMLElement>>("scroller");
 
   protected readonly questions = computed(() => this.profile()?.questions ?? []);
 
-  /** The question the assistant has open, which is the first one still waiting. */
-  private readonly open = computed(
-    () => this.questions().find((question) => question.state === "waiting") ?? null,
+  private readonly waiting = computed(() =>
+    this.questions().filter((question) => question.state === "waiting"),
   );
 
   /**
-   * Which region the sheet lifts: the open question's item, or the region the person
-   * pressed themselves. Nothing is lifted when no tool is open.
+   * The question the assistant has open: the one waiting on the region the person
+   * pressed, or the first one still waiting. The assistant decides the same way from the
+   * same two inputs; this is what the sheet is placed by.
    */
-  protected readonly lifted = computed(() => this.open()?.itemId ?? null);
+  private readonly open = computed(() => {
+    const region = this.selected();
+    if (region === null) return this.waiting()[0] ?? null;
+    return this.waiting().find((question) => question.itemId === region.id) ?? null;
+  });
+
+  /**
+   * The region the person pressed, in its own text, for the tool's prefix. `null` when
+   * they pressed nothing, or pressed something that is not an item of their profile.
+   */
+  protected readonly pressed = computed(() => {
+    const region = this.selected();
+    if (region === null) return null;
+    const title = this.titleOf(region.id);
+    return title === null ? null : { itemId: region.id, title };
+  });
+
+  /**
+   * Which region the sheet lifts: the region the person pressed themselves, or the open
+   * question's item. Nothing is lifted when no tool is open.
+   */
+  protected readonly lifted = computed(() => this.pressed()?.itemId ?? this.open()?.itemId ?? null);
+
+  /**
+   * Whether this is a visit after the reading rather than the run that produced it
+   * (`US9`). The documents' own read day is what says so, which is a fact the interface
+   * answered and never a guess about the session.
+   */
+  protected readonly returning = computed(() => {
+    const readOn = this.profile()?.readOn ?? null;
+    if (readOn === null) return false;
+    return new Date(readOn).toDateString() !== new Date().toDateString();
+  });
 
   protected readonly focused = computed(() => this.lifted() !== null);
 
@@ -143,8 +185,11 @@ export class ProfileViewer {
       if (column === undefined) return;
       if (lifted === null) {
         // The assistant's own run has ended: the reading is what the person came to see
-        // and the last question left them deep inside a list (`ID125`, rule 5).
-        if (this.profile() !== null && this.questions().length > 0) backToHead(column);
+        // and the last question left them deep inside a list (`ID125`, rule 5). A tool
+        // the person opened themselves ends without moving anything (`S5.4`).
+        if (this.viaQuestion && this.profile() !== null && this.questions().length > 0) {
+          backToHead(column);
+        }
         return;
       }
       const region = column.querySelector<HTMLElement>(`[data-id="${lifted}"]`);
@@ -172,14 +217,66 @@ export class ProfileViewer {
     this.view.update((view) => (view === "sheet" ? "chat" : "sheet"));
   }
 
+  /**
+   * A region pressed by hand. An item is what a rule can be written on and what a
+   * question hangs from, so a press on a line opens nothing: the tool that edits one is
+   * the builder's, and it is not this slice's (the slice's `F4`).
+   */
   protected chosen(region: RegionRef): void {
-    this.selected.set(region);
+    if (region.kind === "item") this.selected.set(region);
   }
 
   /** The overlay's press is the prefix's ×, which while a question waits is a skip. */
   protected overlayPressed(): void {
+    if (this.pressed() !== null && this.open() === null) {
+      this.cancelled();
+      return;
+    }
     const question = this.open();
     if (question !== null) void this.skipped({ questionId: question.id });
+  }
+
+  /**
+   * What the person wrote about an item nobody asked about, kept as that item's rule
+   * (`US8`), and the profile read back so the check line shown is the one the database
+   * agrees with. The sheet is left where they opened it: this ending is not the run's.
+   */
+  protected async clarified(said: { itemId: string; words: string }): Promise<void> {
+    this.viaQuestion = false;
+    await api.intake.items[":id"].rule.$post({
+      param: { id: said.itemId },
+      json: { words: said.words },
+    });
+    this.selected.set(null);
+    await this.load();
+  }
+
+  /** The person-opened tool, closed with nothing written and nothing moved. */
+  protected cancelled(): void {
+    this.viaQuestion = false;
+    this.selected.set(null);
+  }
+
+  /** An item's own text, by its id, wherever it hangs in the profile. */
+  private titleOf(id: string): string | null {
+    const profile = this.profile();
+    if (profile === null) return null;
+    const find = (items: { id: string; title: string; children: unknown[] }[]): string | null => {
+      for (const item of items) {
+        if (item.id === id) return item.title;
+        const under = find(item.children as typeof items);
+        if (under !== null) return under;
+      }
+      return null;
+    };
+    return find([
+      ...(profile.summary === null ? [] : [profile.summary]),
+      ...(profile.identity === null ? [] : [profile.identity]),
+      ...profile.experience,
+      ...profile.projects,
+      ...profile.groups,
+      ...profile.education,
+    ]);
   }
 
   /** One answer written, and the profile read back, so the rule shown is the rule kept. */
@@ -188,6 +285,8 @@ export class ProfileViewer {
     optionId?: string;
     words?: string;
   }): Promise<void> {
+    this.viaQuestion = true;
+    this.selected.set(null);
     await api.intake.questions[":id"].answer.$post({
       param: { id: said.questionId },
       json: {
@@ -199,6 +298,8 @@ export class ProfileViewer {
   }
 
   protected async skipped(said: { questionId: string }): Promise<void> {
+    this.viaQuestion = true;
+    this.selected.set(null);
     await api.intake.questions[":id"].answer.$post({
       param: { id: said.questionId },
       json: { skip: true },

@@ -1,7 +1,21 @@
+import {
+  document,
+  itemEducation,
+  itemEntry,
+  itemExperience,
+  itemLine,
+  itemProject,
+  profileItem,
+  provenance,
+  question,
+  rule,
+} from "@app/db";
 import { betterAuth } from "better-auth";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
+import { eq, inArray } from "drizzle-orm";
 import { env } from "../../env";
 import { db } from "../db";
+import { keyFor, storage } from "../storage";
 
 /**
  * The authentication library, configured. This module exposes `auth`, the Better Auth
@@ -94,22 +108,80 @@ import { db } from "../db";
 
 /**
  * Everything this product owns beyond the library's tables, erased before the library
- * removes the user (ID65b). Empty in this slot, because nothing beyond those tables
- * exists yet (ID66). Each later slot extends this one function rather than inventing a
- * deletion path of its own:
+ * removes the user (ID65b, ID126). Each later slot extends this one function rather
+ * than inventing a deletion path of its own:
  *
- * - the profile, its items, their metas and their provenance, with the profile's slot
- * - every S3 object belonging to the person, with the first slot that stores one
+ * - the documents, the profile, its items, their lines, their per-kind rows and their
+ *   provenance, the rules and the questions — this slot's (`SL5`)
+ * - every S3 object belonging to the person — this slot's too, and the reason the rows
+ *   are erased here rather than left to the `on delete cascade` each of those tables
+ *   already carries: a row deleted with its object left behind is a promise broken
+ *   quietly, so the one call that takes the bytes is the one that takes the rows
  * - the credit balance, with `credits-billing`
  * - the membership, with `credits-billing`: stopped at the payment provider here, so no
  *   renewal is ever charged to a person who no longer exists
  *
- * A failure in anything put here throws, and is never caught: a hook that failed quietly
- * would let the library remove the user over data that survived, the one outcome D8
- * cannot tolerate. The library runs the hook and its own deletes in no transaction
- * (SL4's F4), which the first slot to put work here has to answer.
+ * **The objects go first, and the order is the decision** (`ID126`, and the plan's `F1`,
+ * accepted by the person on 2026-09-12). `US11` asked for the erasure "in the same
+ * transaction as the user row", which cannot be had: the library runs this hook and its
+ * own deletes in no transaction (`SL4`'s `F4`), and nothing here has a handle on the one
+ * it later uses. What is held instead is the call — the objects, then this product's own
+ * tables in one transaction of its own, and nothing of the person surviving a call that
+ * returned. Objects first means a failure leaves the person whole and the retry safe;
+ * rows first would leave bytes no document row points at, unreachable by anyone.
+ *
+ * **A failure throws and is never caught**: a hook that failed quietly would let the
+ * library remove the user over data that survived, the one outcome D8 cannot tolerate.
+ * The library then leaves the user row alone and the web app shows the refusal it
+ * already handles, so the person presses the button again — which is why this is
+ * **idempotent**: every statement below is a delete of what is there, and running it a
+ * second time on a person the first run half-erased finishes the job.
+ *
+ * The erasure lives here rather than in a module of its own because the plan's register
+ * gives it none (the plan's `F2`); the day `credits-billing` adds the balance and the
+ * membership to the same hook, a module earns its place and a register row with it.
  */
-const beforeDelete = async (): Promise<void> => {};
+const beforeDelete = async (user: { id: string }): Promise<void> => {
+  const documents = await db
+    .select({ id: document.id, storageKey: document.storageKey })
+    .from(document)
+    .where(eq(document.userId, user.id));
+
+  // The bytes, before any row goes. A key is composed the one way a key is ever
+  // composed (`lib/storage`'s `keyFor`), and a document with no key — the typed
+  // LinkedIn address, the one source that has no bytes — has no object to remove.
+  for (const each of documents) {
+    if (each.storageKey === null) continue;
+    await storage.delete(keyFor(user.id, each.id));
+  }
+
+  await db.transaction(async (tx) => {
+    const items = await tx
+      .select({ id: profileItem.id })
+      .from(profileItem)
+      .where(eq(profileItem.userId, user.id));
+    const itemIds = items.map((item) => item.id);
+    const documentIds = documents.map((each) => each.id);
+
+    // Ordered by the foreign keys and not by the register's sentence: the questions and
+    // the rules point at items, the provenance at items and documents, the lines at
+    // items, and every per-kind row at the item it completes.
+    await tx.delete(question).where(eq(question.userId, user.id));
+    await tx.delete(rule).where(eq(rule.userId, user.id));
+    if (documentIds.length > 0) {
+      await tx.delete(provenance).where(inArray(provenance.documentId, documentIds));
+    }
+    if (itemIds.length > 0) {
+      await tx.delete(itemLine).where(inArray(itemLine.itemId, itemIds));
+      await tx.delete(itemExperience).where(inArray(itemExperience.itemId, itemIds));
+      await tx.delete(itemProject).where(inArray(itemProject.itemId, itemIds));
+      await tx.delete(itemEducation).where(inArray(itemEducation.itemId, itemIds));
+      await tx.delete(itemEntry).where(inArray(itemEntry.itemId, itemIds));
+    }
+    await tx.delete(profileItem).where(eq(profileItem.userId, user.id));
+    await tx.delete(document).where(eq(document.userId, user.id));
+  });
+};
 
 /**
  * What a provider trusted by name says about its address, for the row this application

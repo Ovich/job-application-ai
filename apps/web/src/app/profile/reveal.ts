@@ -56,19 +56,25 @@ const watching = (column: HTMLElement): Following => {
   column.addEventListener("wheel", scrolledByHand, { passive: true });
   column.addEventListener("touchmove", scrolledByHand, { passive: true });
 
-  const observer = new ResizeObserver(() => {
-    const state = following.get(column);
-    if (state === undefined || state.region === null || state.scrolledByHand) return;
-    place(column, state.region, 0);
-  });
-  observer.observe(column);
+  // A runtime with no `ResizeObserver` has no settling to redo, and a reveal that threw
+  // here would be a screen that never scrolled — the same trade `instantly()` makes
+  // above for a runtime with no `matchMedia`.
+  const observer =
+    typeof ResizeObserver === "undefined"
+      ? null
+      : new ResizeObserver(() => {
+          const state = following.get(column);
+          if (state === undefined || state.region === null || state.scrolledByHand) return;
+          place(column, state.region, 0);
+        });
+  observer?.observe(column);
 
   const state: Following = {
     region: null,
     scrolledByHand: false,
     animation: null,
     stop: () => {
-      observer.disconnect();
+      observer?.disconnect();
       column.removeEventListener("wheel", scrolledByHand);
       column.removeEventListener("touchmove", scrolledByHand);
     },
@@ -127,6 +133,11 @@ export const revealInColumn = (
   const state = watching(column);
   state.region = region;
   state.scrolledByHand = false;
+  // What this column is following, written on the column itself. The offset is layout,
+  // which no runtime without layout has; which of the two placements was asked for is a
+  // fact, and a screen that went to its head when it should have stayed is exactly the
+  // regression a person reports and nothing else can see.
+  column.setAttribute("data-at", "region");
   place(column, region, ms);
 };
 
@@ -139,6 +150,7 @@ export const revealInColumn = (
 export const backToHead = (column: HTMLElement, ms = OVER_200_MS): void => {
   const state = watching(column);
   state.region = null;
+  column.setAttribute("data-at", "head");
   scrollColumnTo(column, 0, ms);
 };
 
@@ -148,5 +160,6 @@ export const stopFollowing = (column: HTMLElement): void => {
   if (state === undefined) return;
   if (state.animation !== null) cancelAnimationFrame(state.animation);
   state.stop();
+  column.removeAttribute("data-at");
   following.delete(column);
 };
