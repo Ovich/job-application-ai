@@ -222,14 +222,50 @@ describe("the documents bucket (ID116)", () => {
     }).toEqual({ bucket: ["DocumentsBucket", "Arn"], thenThePrefix: "/u/*" });
   });
 
-  it("hands the function the bucket's name and the implementation to use", () => {
-    expect(at("App-dev", "Api", "Properties.Environment.Variables.STORAGE_BUCKET.Ref")).toBe(
-      "DocumentsBucket",
-    );
-    expect(at("App-dev", "Api", "Properties.Environment.Variables.STORAGE_IMPLEMENTATION")).toBe(
-      "s3",
+  it("hands the function the bucket as one URL whose scheme is the implementation", () => {
+    expect(at("App-dev", "Api", "Properties.Environment.Variables.STORAGE_URL.Fn::Sub")).toBe(
+      "s3://${DocumentsBucket}",
     );
   });
+});
+
+/**
+ * What the discriminated union used to guarantee, and what guarantees it now (S7.2,
+ * criterion 11).
+ *
+ * `env.ts` was a union on `APP_RUNTIME` whose cloud branch had no defaults, so a
+ * function whose configuration was half set failed its cold start naming the field
+ * rather than answering requests against a database on its own loopback. The flat
+ * schema the person asked for is strictly weaker on its own: every value below has a
+ * default a laptop runs on, and a deployed function given none of them would come up
+ * happily against `localhost:5432` and a directory on a container's disk.
+ *
+ * So the guarantee moved here rather than being given up. The template is where the
+ * deployed configuration actually lives, this test reads the template, and it fails in
+ * CI on the pull request rather than at a cold start nobody is watching.
+ */
+describe("what the cloud must be told, because the schema now defaults it (S7.2)", () => {
+  /**
+   * Every value whose local default would be wrong in the cloud. Each is written out
+   * rather than derived, because what makes this test worth anything is that a person
+   * had to decide a name belongs on the list — a list computed from the schema would
+   * grow a new name silently, which is the failure mode it exists to prevent.
+   */
+  const mustBeSet = ["APP_RUNTIME", "DATABASE_URL", "STORAGE_URL", "APP_URL"] as const;
+
+  /** The names the template actually sets, whether as a literal or through an intrinsic. */
+  const set = new Set(
+    [...leaves(resource("App-dev", "Api") as unknown as Json).keys()]
+      .map((path) => /^Properties\.Environment\.Variables\.([^.[]+)/.exec(path)?.[1])
+      .filter((name) => name !== undefined),
+  );
+
+  it.each(mustBeSet)(
+    "sets %s explicitly, rather than letting the laptop's default stand",
+    (name) => {
+      expect([name, set.has(name)]).toEqual([name, true]);
+    },
+  );
 });
 
 describe("the zone that cannot be recreated", () => {

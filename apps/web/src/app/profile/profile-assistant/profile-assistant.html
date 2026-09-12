@@ -1,6 +1,12 @@
 <progress-line [answered]="answeredCount()" [total]="total()" [deferred]="deferred()" />
 
-<div class="flex min-h-0 flex-1 flex-col gap-5 overflow-auto p-6">
+<!--
+  The core assistant draws the column, the dock, the prefix and the bar (S7.4). What is
+  written below is the intake's and nothing in `app/assistant/` knows a word of it: the
+  greeting, the reading, the opener, the stream, and the interview tool that goes into
+  the dock.
+-->
+<assistant [tool]="tool()" [canSave]="picked() !== null" (save)="save()" (clear)="skip()">
   @if (welcome(); as hello) {
     <!--
       A second visit: the run that produced this profile is behind the person, so its
@@ -68,10 +74,9 @@
       <p uiText variant="body" [tone]="said.kind === 'ok' ? 'ok' : 'foreground'">{{ said.text }}</p>
     </div>
   }
-</div>
-
-<composer [tool]="tool()" [canSave]="picked() !== null" (save)="save()" (clear)="skip()">
-  @if (asked(); as open) {
-    <scope-tool [tool]="open" (pick)="pick($event)" (skip)="skip()" (cancel)="skip()" />
-  }
-</composer>
+  <ng-container assistantTool>
+    @if (asked(); as open) {
+      <scope-tool [tool]="open" (pick)="pick($event)" (skip)="skip()" (cancel)="skip()" />
+    }
+  </ng-container>
+</assistant>

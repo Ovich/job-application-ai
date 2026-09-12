@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { app } from "../../../../src/app";
-import { withCases } from "../../../support/ai";
-import { anthropicEvent, framesOf, openAiChunk } from "../../../support/envelopes";
+import { app } from "../../../src/app";
+import { withCases } from "../../support/ai";
+import { anthropicEvent, framesOf, openAiChunk } from "../../support/envelopes";
 
 /**
  * Streaming, which is the protocol's own `stream: true` and not an endpoint of ours.

@@ -1,4 +1,4 @@
-import type { RecordedCase } from "./fixtures";
+import type { RecordedCase } from "./answers";
 import type { Frame } from "./frames";
 
 /**

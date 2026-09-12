@@ -1,14 +1,21 @@
 import { Component, computed, input, output, signal, viewChild } from "@angular/core";
+import { Assistant } from "../../assistant/assistant/assistant";
 import { UiText } from "../../ui/typography/text/text";
-import { Composer } from "../composer/composer";
 import { ProgressLine } from "../progress-line/progress-line";
 import { ReadingCard } from "../reading-card/reading-card";
 import type { OpenQuestion, OpenTool, Option } from "../scope-tool/scope-tool";
 import { ScopeTool } from "../scope-tool/scope-tool";
 
 /**
- * The assistant's column (`S4.2`, `S4.4`, `S5.1`, `S5.2`, the mockup's
+ * The assistant's column, for the intake (`S4.2`, `S4.4`, `S5.1`, `S5.2`, the mockup's
  * `ProfileAssistant`).
+ *
+ * **It composes the core assistant rather than being it** (`S7.4`, the person's own
+ * words: *"Profile assistant is a concrete implementation of core assistant and
+ * stays"*). `app/assistant/` draws the column, the dock, the prefix and the bar and
+ * holds no word of any use case; everything the intake says is here — the opener, the
+ * welcome, the reading card's sentences, the tool that opens, and `Scope`, which is the
+ * word this use case names the thing in the prefix with.
  *
  * **The first waiting question opens with no click at all.** In every state the
  * assistant asks the first one still waiting; the person skips or cancels and never
@@ -45,12 +52,15 @@ export type Question = {
 /** The region the person pressed, in its own words: the item, and its own text. */
 export type Pressed = { itemId: string; title: string };
 
+/** The word the intake names the thing in the prefix with. The builder will have its own. */
+const scope = "Scope";
+
 /** One thing the assistant has said, in the order it said it. */
 type Said = { kind: "ai"; text: string } | { kind: "ok"; text: string };
 
 @Component({
   selector: "profile-assistant",
-  imports: [Composer, ProgressLine, ReadingCard, ScopeTool, UiText],
+  imports: [Assistant, ProgressLine, ReadingCard, ScopeTool, UiText],
   templateUrl: "./profile-assistant.html",
   host: { class: "flex min-h-0 min-w-0 flex-col" },
 })
@@ -79,7 +89,7 @@ export class ProfileAssistant {
   /** The person-opened tool, closed with nothing written. */
   public readonly cancelled = output<void>();
 
-  private readonly composer = viewChild(Composer);
+  private readonly assistant = viewChild(Assistant);
 
   /** Which row of the open question the person has picked, if any. */
   protected readonly picked = signal<string | null>(null);
@@ -165,12 +175,16 @@ export class ProfileAssistant {
     this.clarifying() === null ? this.question() : { kind: "clarification" },
   );
 
-  /** The prefix's text: the clicked thing's own text, or the open question's item. */
+  /**
+   * What the prefix says: this use case's own word, and the clicked thing's own text or
+   * the open question's item. The word is supplied here and nowhere in core, which is
+   * what "concrete tool prefixes per use case" means.
+   */
   protected readonly tool = computed(() => {
     const pressed = this.clarifying();
-    if (pressed !== null) return { what: pressed.title };
+    if (pressed !== null) return { label: scope, what: pressed.title };
     const question = this.open();
-    return question === null ? null : { what: question.itemTitle };
+    return question === null ? null : { label: scope, what: question.itemTitle };
   });
 
   /** The count under the reading card: what is left for the person to say. */
@@ -195,7 +209,7 @@ export class ProfileAssistant {
    * rule and nothing else (`US8`).
    */
   protected save(): void {
-    const words = this.composer()?.draft().trim() ?? "";
+    const words = this.assistant()?.draft().trim() ?? "";
     const pressed = this.clarifying();
     if (pressed !== null) {
       if (words === "") return;
@@ -235,6 +249,6 @@ export class ProfileAssistant {
 
   private forget(): void {
     this.picked.set(null);
-    this.composer()?.clearDraft();
+    this.assistant()?.clearDraft();
   }
 }

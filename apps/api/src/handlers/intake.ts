@@ -1,5 +1,6 @@
-import { createHash, randomUUID } from "node:crypto";
+import { randomUUID } from "node:crypto";
 import {
+  type Document,
   document,
   type ItemKind,
   itemEducation,
@@ -21,15 +22,16 @@ import {
   rule,
 } from "@app/db";
 import { and, asc, desc, eq, inArray, isNull, ne } from "drizzle-orm";
-import type { Context } from "hono";
 import { createFactory } from "hono/factory";
 import { stream } from "hono/streaming";
 import { validator } from "hono/validator";
 import { z } from "zod";
 import { env } from "../env";
-import { askFor, type CaseName, type Message } from "../lib/ai";
-import { auth } from "../lib/auth";
+import { type About, askFor, type Message } from "../lib/ai";
 import { db } from "../lib/db";
+import { isDuplicate } from "../lib/db/duplicate";
+import { hashOf, kindOf, slugOf } from "../lib/documents";
+import { asking, refused } from "../lib/session";
 import { keyFor, storage } from "../lib/storage";
 import { createEnvelope } from "../lib/stream";
 
@@ -48,41 +50,6 @@ import { createEnvelope } from "../lib/stream";
 
 const factory = createFactory();
 
-/** Who is asking, according to the library. `null` is every route's 401. */
-const asking = async (c: Context): Promise<{ id: string } | null> => {
-  const session = await auth.api.getSession({ headers: c.req.raw.headers });
-  return session === null ? null : { id: session.user.id };
-};
-
-/**
- * What a person is told a document is, before anything has read it.
- *
- * The reading is what decides for real (`POST /read`, through `lib/ai`), and this is
- * what the row says in the meantime, so the list a person sees the instant they drop
- * five files is not five rows saying nothing. It reads the name and the media type and
- * no bytes at all: a person who drops `BS-HEIGVD-IL-Diplome.pdf` should see "diploma"
- * before a model has been anywhere near it.
- *
- * Nothing branches on the answer. It is a column's value, and `linkedin_export` and
- * `photo_of_cv` are in it although the person's own set holds neither, because the
- * product accepts both and the screen draws both (`D20`, `D3`).
- */
-export type DetectedKind =
-  "cv" | "diploma" | "work_certificate" | "linkedin_export" | "photo_of_cv" | "unknown";
-
-export const kindOf = (filename: string, mediaType: string): DetectedKind => {
-  const name = filename.toLowerCase();
-  if (mediaType.startsWith("image/")) return "photo_of_cv";
-  if (name.includes("linkedin")) return "linkedin_export";
-  if (/dipl[oô]m|bachelor|master|cfc|licence/.test(name)) return "diploma";
-  if (/certificat|certificate|attestation|zeugnis/.test(name)) return "work_certificate";
-  if (/cv|resume|curriculum|lebenslauf/.test(name)) return "cv";
-  return "unknown";
-};
-
-/** The digest a duplicate is recognised by: SHA-256 over the bytes, lowercase hex. */
-const hashOf = (bytes: Uint8Array): string => createHash("sha256").update(bytes).digest("hex");
-
 /** The limit, said the way a person says it rather than in bytes. */
 const asMegabytes = (bytes: number): string => `${Math.round(bytes / (1024 * 1024))} MB`;
 
@@ -92,7 +59,7 @@ const asMegabytes = (bytes: number): string => `${Math.round(bytes / (1024 * 102
  * server's only handle on a person's bytes, and a browser that never sees one cannot
  * ask for another person's.
  */
-const asAnswer = (row: typeof document.$inferSelect) => ({
+const asAnswer = (row: Document) => ({
   id: row.id,
   filename: row.filename,
   mediaType: row.mediaType,
@@ -108,20 +75,8 @@ const asAnswer = (row: typeof document.$inferSelect) => ({
 /** What the web app is given for a document. Declared once, inferred everywhere above. */
 export type DocumentAnswer = ReturnType<typeof asAnswer>;
 
-/**
- * Whether a failed insert failed because this person already has these bytes.
- *
- * The whole chain is read, not the top message: Drizzle wraps the driver's error, and
- * what names the constraint is the driver's, two causes down. Reading only the top one
- * would turn the refusal criterion 5 asks for into a 500.
- */
-const isDuplicate = (thrown: unknown): boolean => {
-  const said: string[] = [];
-  for (let cause = thrown; cause instanceof Error; cause = cause.cause) {
-    said.push(cause.message, String((cause as { constraint_name?: string }).constraint_name ?? ""));
-  }
-  return /document_user_content_hash|duplicate key/i.test(said.join(" "));
-};
+/** The constraint that says this person already has these bytes (`S2`'s schema). */
+const sameBytesTwice = "document_user_content_hash";
 
 /**
  * One document, or one typed address, handed over.
@@ -137,7 +92,7 @@ const isDuplicate = (thrown: unknown): boolean => {
  */
 export const addDocument = factory.createHandlers(async (c) => {
   const person = await asking(c);
-  if (person === null) return c.json({ error: "sign in first" }, 401);
+  if (person === null) return refused(c);
 
   const body = await c.req.parseBody();
   const file = body["file"];
@@ -179,7 +134,7 @@ export const addDocument = factory.createHandlers(async (c) => {
   const contentHash = hashOf(bytes);
   const id = randomUUID();
 
-  let row: typeof document.$inferSelect | undefined;
+  let row: Document | undefined;
   try {
     [row] = await db
       .insert(document)
@@ -196,7 +151,7 @@ export const addDocument = factory.createHandlers(async (c) => {
       })
       .returning();
   } catch (cause) {
-    if (!isDuplicate(cause)) throw cause;
+    if (!isDuplicate(cause, sameBytesTwice)) throw cause;
     const [already] = await db
       .select()
       .from(document)
@@ -222,7 +177,7 @@ export const addDocument = factory.createHandlers(async (c) => {
  */
 export const listDocuments = factory.createHandlers(async (c) => {
   const person = await asking(c);
-  if (person === null) return c.json({ error: "sign in first" }, 401);
+  if (person === null) return refused(c);
 
   const rows = await db
     .select()
@@ -241,7 +196,7 @@ export const listDocuments = factory.createHandlers(async (c) => {
  */
 export const removeDocument = factory.createHandlers(async (c) => {
   const person = await asking(c);
-  if (person === null) return c.json({ error: "sign in first" }, 401);
+  if (person === null) return refused(c);
 
   const [row] = await db
     .delete(document)
@@ -271,15 +226,23 @@ const classification = z.object({
 });
 
 /**
- * The case a document's classification is recorded under: the file's own name, without
- * its extension, under the step `intake.classify` (`F3`, `D20`). A case therefore stands
- * for a real file and can be matched to it by eye in the fixture directory, which a
- * content hash could not. The hash keeps its one job, which is the duplicate.
+ * What each call of this feature is about (`ID145`, amending `ID111`).
+ *
+ * Four one-line descriptions of four calls, and they stay here rather than becoming a
+ * module: each has exactly one caller, each would vanish the day its call site did, and
+ * a module that disappears with its only caller buys a file and an import (`S7.3`'s own
+ * rule, the reason `asMegabytes` stayed too).
+ *
+ * The input is always the file's own name without its extension, or a run's files by
+ * slug in the run's order (`F3`, `D20`), so what a call was about can be matched to a
+ * real document by eye, which a content hash could not. The hash keeps its one job,
+ * which is the duplicate.
  */
-const caseFor = (filename: string): CaseName => {
-  const dot = filename.lastIndexOf(".");
-  return `intake.classify:${dot <= 0 ? filename : filename.slice(0, dot)}`;
-};
+const theClassificationOf = (filename: string): About => ({
+  feature: "intake",
+  step: "classify",
+  input: slugOf(filename),
+});
 
 /** What the reader is told. The mock reads none of it; a provider would read all of it. */
 const askingAbout = (filename: string, mediaType: string): Message[] => [
@@ -316,7 +279,7 @@ const askingAbout = (filename: string, mediaType: string): Message[] => [
  */
 export const readDocuments = factory.createHandlers(async (c) => {
   const person = await asking(c);
-  if (person === null) return c.json({ error: "sign in first" }, 401);
+  if (person === null) return refused(c);
 
   const waiting = await db
     .select()
@@ -367,16 +330,16 @@ export const readDocuments = factory.createHandlers(async (c) => {
 
         try {
           const read = await askFor(
-            caseFor(row.filename),
             askingAbout(row.filename, row.mediaType),
+            theClassificationOf(row.filename),
             classification,
           );
           // Read alone, and read whole: what the document is, then what it states. A
           // document whose extraction cannot be read has not been read, so the two are
           // one step and the row moves to `read` only when both have landed.
           const stated = await askFor(
-            extractCaseFor(row.filename),
             extractingFrom(row.filename, read.kind, read.language),
+            theExtractionOf(row.filename),
             extraction,
           );
           await db
@@ -421,8 +384,8 @@ export const readDocuments = factory.createHandlers(async (c) => {
         let merged: z.infer<typeof merge> | null = null;
         try {
           merged = await askFor(
-            mergeCaseFor(slugs),
             merging(readings.map(({ slug, facts }) => ({ slug, facts }))),
+            theMergeOf(slugs),
             merge,
           );
           await writeProfile(
@@ -452,7 +415,7 @@ export const readDocuments = factory.createHandlers(async (c) => {
         if (written !== null) {
           try {
             const asked = await retriedOnce(() =>
-              askFor(questionsCaseFor(slugs), askingWhatOnlyYouKnow(written), proposal),
+              askFor(askingWhatOnlyYouKnow(written), theQuestionsFor(slugs), proposal),
             );
             await writeQuestions(person.id, asked);
           } catch {
@@ -468,16 +431,6 @@ export const readDocuments = factory.createHandlers(async (c) => {
     }
   });
 });
-
-/**
- * What a document's own slug is: its filename without the extension (`F1`, settled here
- * for extraction as `caseFor` settled it for classification). Stable across runs, and
- * matchable to a real file by eye in the fixture directory.
- */
-const slugOf = (filename: string): string => {
-  const dot = filename.lastIndexOf(".");
-  return dot <= 0 ? filename : filename.slice(0, dot);
-};
 
 /**
  * One fact a single document states, with the sentence that document states it in.
@@ -608,11 +561,19 @@ const merging = (readings: { slug: string; facts: unknown }[]): Message[] => [
   { role: "user", content: JSON.stringify({ readings }) },
 ];
 
-/** The case a merge is recorded under: the run's documents, by slug, in the run's order. */
-const mergeCaseFor = (slugs: string[]): CaseName => `intake.merge:${slugs.join("+")}`;
+/** What a merge is about: the run's documents, by slug, in the run's order. */
+const theMergeOf = (slugs: string[]): About => ({
+  feature: "intake",
+  step: "merge",
+  input: slugs.join("+"),
+});
 
-/** The case one document's extraction is recorded under (`ID111`, `D20`). */
-const extractCaseFor = (filename: string): CaseName => `intake.extract:${slugOf(filename)}`;
+/** What one document's extraction is about (`ID145`, `D20`). */
+const theExtractionOf = (filename: string): About => ({
+  feature: "intake",
+  step: "extract",
+  input: slugOf(filename),
+});
 
 /**
  * The merged profile, written whole or not at all.
@@ -759,8 +720,12 @@ const candidate = z.object({
 
 const proposal = z.object({ candidates: z.array(candidate) });
 
-/** The case the fourth step is recorded under: the run's documents, by slug (`ID111`). */
-const questionsCaseFor = (slugs: string[]): CaseName => `intake.questions:${slugs.join("+")}`;
+/** What the fourth step is about: the run's documents, by slug (`ID145`). */
+const theQuestionsFor = (slugs: string[]): About => ({
+  feature: "intake",
+  step: "questions",
+  input: slugs.join("+"),
+});
 
 /**
  * One more attempt, and one only (spec, *Failure modes*). The second failure is the
@@ -801,7 +766,7 @@ const askingWhatOnlyYouKnow = (merged: z.infer<typeof merge>): Message[] => [
  * (`US5`, criterion 3). Two or more documents that stated a fact in the very same words
  * have agreed about it and stated it plainly, so there is nothing there only the person
  * knows, and asking would be quizzing them about their own CV. This is the run's rule
- * and not the fixture's: a reader that proposes such a question is refused here.
+ * and not the reader's: a reader that proposes such a question is refused here.
  */
 const writeQuestions = async (userId: string, asked: z.infer<typeof proposal>): Promise<void> => {
   const items = await db
@@ -1282,7 +1247,7 @@ export const answerQuestion = factory.createHandlers(
   }),
   async (c) => {
     const person = await asking(c);
-    if (person === null) return c.json({ error: "sign in first" }, 401);
+    if (person === null) return refused(c);
 
     const said = c.req.valid("json");
 
@@ -1362,7 +1327,7 @@ export const writeItemRule = factory.createHandlers(
   }),
   async (c) => {
     const person = await asking(c);
-    if (person === null) return c.json({ error: "sign in first" }, 401);
+    if (person === null) return refused(c);
 
     const said = c.req.valid("json");
 
@@ -1387,6 +1352,6 @@ export const writeItemRule = factory.createHandlers(
 /** This person's whole profile, or an empty one. Never anybody else's, and never a 404. */
 export const readProfile = factory.createHandlers(async (c) => {
   const person = await asking(c);
-  if (person === null) return c.json({ error: "sign in first" }, 401);
+  if (person === null) return refused(c);
   return c.json(await profileOf(person.id), 200);
 });

@@ -17,20 +17,16 @@ import { env } from "../../env";
  * There is no branch below, and that is D16's seam holding: the deployed function's
  * host, user and password come from the pooled connection string Neon issues and
  * Secrets Manager holds, the laptop's from the container in `docker-compose.yml`, and
- * `env.ts` presents both as the same five values. Only TLS differs, which is a value in
- * the options object.
+ * `env.ts` presents both as one `DATABASE_URL` this module cannot tell apart.
+ *
+ * TLS was the one line that differed, and it differs no longer (S7.2): Neon accepts
+ * nothing that has not negotiated TLS and says so in its own string, as `sslmode`,
+ * which the driver reads; the local container has no certificate to offer and its
+ * string carries no `sslmode`, so the same code negotiates nothing. `require` rather
+ * than full verification: what proves the endpoint is the connection string itself,
+ * which names one project's pooler host and is held as a secret.
  */
-const connection = postgres({
-  host: env.DATABASE_HOST,
-  port: env.DATABASE_PORT,
-  database: env.DATABASE_NAME,
-  username: env.DATABASE_USER,
-  password: env.DATABASE_PASSWORD,
-  // Neon accepts nothing that has not negotiated TLS, and the local container has no
-  // certificate to offer, so this follows the runtime. `require` rather than full
-  // verification: what proves the endpoint is the connection string itself, which names
-  // one project's pooler host and is held as a secret.
-  ssl: env.APP_RUNTIME === "cloud" ? "require" : false,
+const connection = postgres(env.DATABASE_URL, {
   max: 1,
   idle_timeout: 20,
   // Neon's compute wakes in roughly half a second, where the paused Aurora cluster this
