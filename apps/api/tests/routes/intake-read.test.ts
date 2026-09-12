@@ -134,6 +134,8 @@ describe("the reading run (criterion 10, D8)", () => {
       "intake.classify:BS-HEIGVD-IL-Diplome",
       "intake.extract:BS-HEIGVD-IL-Diplome",
       "intake.merge:2026-08-30_cv_FR+2026-08-30_cv_EN+BS-HEIGVD-IL-Diplome",
+      // SL4's fourth step, once, over the profile the merge just wrote.
+      "intake.questions:2026-08-30_cv_FR+2026-08-30_cv_EN+BS-HEIGVD-IL-Diplome",
     ]);
   });
 

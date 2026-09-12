@@ -11,8 +11,16 @@ import {
   type ProfileItem,
   profileItem,
   provenance,
+  type QuestionKind,
+  type QuestionState,
+  question,
+  questionKind,
+  questionOption,
+  type RuleKind,
+  type RuleSource,
+  rule,
 } from "@app/db";
-import { and, asc, eq, inArray, ne } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, isNull, ne } from "drizzle-orm";
 import type { Context } from "hono";
 import { createFactory } from "hono/factory";
 import { stream } from "hono/streaming";
@@ -408,9 +416,11 @@ export const readDocuments = factory.createHandlers(async (c) => {
        * transaction writes the whole profile or none of it.
        */
       if (readings.length > 0) {
+        const slugs = readings.map((reading) => reading.slug);
+        let merged: z.infer<typeof merge> | null = null;
         try {
-          const merged = await askFor(
-            mergeCaseFor(readings.map((reading) => reading.slug)),
+          merged = await askFor(
+            mergeCaseFor(slugs),
             merging(readings.map(({ slug, facts }) => ({ slug, facts }))),
             merge,
           );
@@ -423,6 +433,31 @@ export const readDocuments = factory.createHandlers(async (c) => {
           // Said to nobody on the wire: the run is over either way and the profile route
           // is what the screen asks next. What a failed merge leaves is documents that
           // are read and a profile that is not there yet.
+          merged = null;
+        }
+
+        /**
+         * The fourth step, over the profile the merge just wrote (`S4.1`).
+         *
+         * **It retries once and no more** (spec, *Failure modes*). On a second failure
+         * the run stops here: nothing is written, the rows already read are kept, and
+         * the person's profile is exactly what the merge produced. Nothing is charged,
+         * because the mock is what answers in every environment this slice runs in.
+         *
+         * A malformed answer is a failed step too, refused by the shape below before a
+         * row is written, so there is never a partly written set of questions.
+         */
+        const written = merged;
+        if (written !== null) {
+          try {
+            const asked = await retriedOnce(() =>
+              askFor(questionsCaseFor(slugs), askingWhatOnlyYouKnow(written), proposal),
+            );
+            await writeQuestions(person.id, asked);
+          } catch {
+            // The same silence as the merge's, and for the same reason: the run is over,
+            // what was read is kept, and the profile route is what the screen asks next.
+          }
         }
       }
 
@@ -682,6 +717,167 @@ const writeProfile = async (
 };
 
 /**
+ * The fourth step: what the documents could not say (`S4.1`, the spec's *The questions*).
+ *
+ * **The cap lives here and nowhere else** (`D19`, `ID122`, `F1`). It is applied when the
+ * run writes the questions, not when a screen reads them: the first five are written
+ * `asked = true` and the rest `asked = false` against their items. A route that wrote
+ * eleven and showed five would leave six questions that look asked and are not. The
+ * number is a value in one place so that tuning it on the first real intakes is one
+ * edit; it is not configuration, because that would be a setting nobody owns.
+ */
+const atMostFive = 5;
+
+/**
+ * What the reader may propose, and what it must answer with.
+ *
+ * **The kind is a string here and an enum in the database**, and the difference is the
+ * whole of criterion 1. A candidate of a fourth kind is a proposal this step declines —
+ * dropped, never stored — and not a malformed answer that fails the step; what makes a
+ * fourth kind impossible is the column, which PostgreSQL refuses a value outside.
+ *
+ * Four answers at most, the design language's cap for an exclusive choice and the spec's
+ * cap on a question. Two at least, because one answer is not a question.
+ */
+const candidate = z.object({
+  kind: z.string().min(1),
+  item: z.string().min(1),
+  where: z.string().min(1),
+  lead: z.string().min(1),
+  options: z
+    .array(
+      z.object({
+        label: z.string().min(1),
+        hint: z.string().min(1),
+        rule: z.string().nullish(),
+      }),
+    )
+    .min(2)
+    .max(4),
+});
+
+const proposal = z.object({ candidates: z.array(candidate) });
+
+/** The case the fourth step is recorded under: the run's documents, by slug (`ID111`). */
+const questionsCaseFor = (slugs: string[]): CaseName => `intake.questions:${slugs.join("+")}`;
+
+/**
+ * One more attempt, and one only (spec, *Failure modes*). The second failure is the
+ * caller's to decide about; here it is simply thrown on.
+ */
+const retriedOnce = async <T>(call: () => Promise<T>): Promise<T> => {
+  try {
+    return await call();
+  } catch {
+    return call();
+  }
+};
+
+/** What the reader is asked of the profile it has just written. */
+const askingWhatOnlyYouKnow = (merged: z.infer<typeof merge>): Message[] => [
+  {
+    role: "system",
+    content:
+      "You have read a job seeker's documents and written their profile. Name only the things the documents themselves cannot answer. Answer with JSON alone: candidates, each with kind, one of scope (a fact says what was done but not what the person's part was), conflict (two documents state the same thing differently) or provenance (a term appears once, in a way that leaves its standing unclear); item, the exact title of the profile item it is about; where, the item's place said the way the profile says it; lead, the question itself, in one or two sentences; and options, two to four answers, each with label, hint and the rule that answer writes, the last of which is the person's own words and carries no rule. Never ask about a fact the documents agree on and state plainly, never ask about a date a document states, and never ask what a person can be assumed to know about their own job.",
+  },
+  { role: "user", content: JSON.stringify(merged) },
+];
+
+/**
+ * The questions written, whole or not at all.
+ *
+ * Three things are refused before anything is written, and each one is a claim:
+ *
+ * **A kind that is not one of the three is dropped.** The spec says "three kinds, and
+ * nothing else", and a fourth is a proposal this step declines rather than an answer it
+ * refuses.
+ *
+ * **A candidate whose item is not in the profile is dropped.** A question never points
+ * at nothing, and a later correction that removes an item takes its question with it
+ * through the foreign key's `on delete cascade`.
+ *
+ * **A candidate about a fact the documents agree on and state plainly is dropped**
+ * (`US5`, criterion 3). Two or more documents that stated a fact in the very same words
+ * have agreed about it and stated it plainly, so there is nothing there only the person
+ * knows, and asking would be quizzing them about their own CV. This is the run's rule
+ * and not the fixture's: a reader that proposes such a question is refused here.
+ */
+const writeQuestions = async (userId: string, asked: z.infer<typeof proposal>): Promise<void> => {
+  const items = await db
+    .select()
+    .from(profileItem)
+    .where(eq(profileItem.userId, userId))
+    .orderBy(asc(profileItem.position), asc(profileItem.id));
+
+  /** The item a title names. The first of a repeated title wins, as the profile orders. */
+  const idOf = new Map<string, string>();
+  for (const item of items) if (!idOf.has(item.title)) idOf.set(item.title, item.id);
+
+  const quotes = await db
+    .select({
+      itemId: provenance.itemId,
+      said: provenance.said,
+      documentId: provenance.documentId,
+    })
+    .from(provenance)
+    .innerJoin(document, eq(provenance.documentId, document.id))
+    .where(eq(document.userId, userId));
+
+  const wordingsOf = new Map<string, Set<string>>();
+  const documentsOf = new Map<string, Set<string>>();
+  for (const quote of quotes) {
+    if (quote.itemId === null) continue;
+    wordingsOf.set(quote.itemId, (wordingsOf.get(quote.itemId) ?? new Set()).add(quote.said));
+    documentsOf.set(
+      quote.itemId,
+      (documentsOf.get(quote.itemId) ?? new Set()).add(quote.documentId),
+    );
+  }
+
+  const agreedPlainly = (itemId: string): boolean =>
+    (documentsOf.get(itemId)?.size ?? 0) >= 2 && (wordingsOf.get(itemId)?.size ?? 0) === 1;
+
+  const kinds = new Set<string>(questionKind.enumValues);
+  const keep = asked.candidates.flatMap((proposed) => {
+    if (!kinds.has(proposed.kind)) return [];
+    const itemId = idOf.get(proposed.item);
+    if (itemId === undefined) return [];
+    if (agreedPlainly(itemId)) return [];
+    return [{ ...proposed, kind: proposed.kind as QuestionKind, itemId }];
+  });
+  if (keep.length === 0) return;
+
+  await db.transaction(async (tx) => {
+    for (const [at, proposed] of keep.entries()) {
+      const id = randomUUID();
+      await tx.insert(question).values({
+        id,
+        userId,
+        itemId: proposed.itemId,
+        kind: proposed.kind,
+        asked: at < atMostFive,
+        where: proposed.where,
+        lead: proposed.lead,
+        state: "waiting",
+        position: at,
+      });
+      for (const [position, option] of proposed.options.entries()) {
+        await tx.insert(questionOption).values({
+          id: randomUUID(),
+          questionId: id,
+          position,
+          label: option.label,
+          hint: option.hint,
+          // The last row is always the person's own words, so it carries no rule of its
+          // own whatever the reader proposed for it.
+          rule: position === proposed.options.length - 1 ? null : (option.rule ?? null),
+        });
+      }
+    }
+  });
+};
+
+/**
  * The profile a person reads back (`ID118`'s `GET /profile`, criteria 2, 6, 8, 9).
  *
  * **One payload, deliberately not paged** (`F4`). Exhaustiveness is the screen's whole
@@ -702,6 +898,32 @@ const writeProfile = async (
 
 /** What one document said about one fact, and which document said it. */
 type Source = { document: string; said: string };
+
+/**
+ * One rule on the wire. `supersededBy` is carried, not hidden, because what `ID121`
+ * exists to keep is the history: a screen shows the current rule, and the earlier words
+ * are still readable beside it.
+ */
+export type RuleAnswer = {
+  id: string;
+  text: string;
+  kind: RuleKind;
+  source: RuleSource;
+  createdAt: string;
+  supersededBy: string | null;
+};
+
+/** One question on the wire, with the item it is about and the rows it offers. */
+export type QuestionAnswer = {
+  id: string;
+  itemId: string;
+  itemTitle: string;
+  kind: QuestionKind;
+  where: string;
+  lead: string;
+  state: QuestionState;
+  options: { id: string; label: string; hint: string; rule: string | null }[];
+};
 
 /** One item on the wire: the spine, the per-kind block, its lines and what hangs under it. */
 export type ProfileItemAnswer = {
@@ -729,6 +951,12 @@ export type ProfileItemAnswer = {
   lines: { id: string; text: string; documents: number; sources: Source[] }[];
   children: ProfileItemAnswer[];
   sources: Source[];
+  /** What the person said about this item, newest first. Nothing is ever removed. */
+  rules: RuleAnswer[];
+  /** The one rule nothing has superseded: what the builder reads before writing. */
+  rule: RuleAnswer | null;
+  /** The question this intake asked about it, whatever state it is now in. */
+  question: QuestionAnswer | null;
 };
 
 /** The whole profile, in the panels the sheet draws, so the sheet composes nothing. */
@@ -742,6 +970,10 @@ export type ProfileAnswer = {
   projects: ProfileItemAnswer[];
   groups: ProfileItemAnswer[];
   education: ProfileItemAnswer[];
+  /** The questions this intake asked, in the order they are asked. At most five. */
+  questions: QuestionAnswer[];
+  /** How many more were written against their items and deferred to the builder (`D19`). */
+  notAsked: number;
 };
 
 /** An empty profile: a person who has read nothing yet, and not an error. */
@@ -755,6 +987,8 @@ const noProfileYet: ProfileAnswer = {
   projects: [],
   groups: [],
   education: [],
+  questions: [],
+  notAsked: 0,
 };
 
 /** The whole of one person's profile, assembled from the rows. */
@@ -767,33 +1001,58 @@ export const profileOf = async (userId: string): Promise<ProfileAnswer> => {
   if (items.length === 0) return noProfileYet;
 
   const ids = items.map((item) => item.id);
-  const [experiences, projects, educations, entries, lines, quotes] = await Promise.all([
-    db.select().from(itemExperience).where(inArray(itemExperience.itemId, ids)),
-    db.select().from(itemProject).where(inArray(itemProject.itemId, ids)),
-    db.select().from(itemEducation).where(inArray(itemEducation.itemId, ids)),
-    db.select().from(itemEntry).where(inArray(itemEntry.itemId, ids)),
-    db
-      .select()
-      .from(itemLine)
-      .where(inArray(itemLine.itemId, ids))
-      .orderBy(asc(itemLine.position), asc(itemLine.id)),
-    // The documents in the order the person handed them over, so two documents that
-    // said the same thing are quoted in a stable order and never in the order a hash
-    // happened to produce.
-    db
-      .select({
-        itemId: provenance.itemId,
-        lineId: provenance.lineId,
-        said: provenance.said,
-        filename: document.filename,
-        readAt: document.readAt,
-        documentId: document.id,
-      })
-      .from(provenance)
-      .innerJoin(document, eq(provenance.documentId, document.id))
-      .where(eq(document.userId, userId))
-      .orderBy(asc(document.createdAt), asc(document.id), asc(provenance.id)),
-  ]);
+  const [experiences, projects, educations, entries, lines, quotes, questions, options, rules] =
+    await Promise.all([
+      db.select().from(itemExperience).where(inArray(itemExperience.itemId, ids)),
+      db.select().from(itemProject).where(inArray(itemProject.itemId, ids)),
+      db.select().from(itemEducation).where(inArray(itemEducation.itemId, ids)),
+      db.select().from(itemEntry).where(inArray(itemEntry.itemId, ids)),
+      db
+        .select()
+        .from(itemLine)
+        .where(inArray(itemLine.itemId, ids))
+        .orderBy(asc(itemLine.position), asc(itemLine.id)),
+      // The documents in the order the person handed them over, so two documents that
+      // said the same thing are quoted in a stable order and never in the order a hash
+      // happened to produce.
+      db
+        .select({
+          itemId: provenance.itemId,
+          lineId: provenance.lineId,
+          said: provenance.said,
+          filename: document.filename,
+          readAt: document.readAt,
+          documentId: document.id,
+        })
+        .from(provenance)
+        .innerJoin(document, eq(provenance.documentId, document.id))
+        .where(eq(document.userId, userId))
+        .orderBy(asc(document.createdAt), asc(document.id), asc(provenance.id)),
+      // The questions in the order they are asked, and the rules newest first, so the
+      // current one is the head of the list as well as the row nothing has superseded.
+      db
+        .select()
+        .from(question)
+        .where(eq(question.userId, userId))
+        .orderBy(asc(question.position), asc(question.id)),
+      db
+        .select({
+          id: questionOption.id,
+          questionId: questionOption.questionId,
+          label: questionOption.label,
+          hint: questionOption.hint,
+          rule: questionOption.rule,
+        })
+        .from(questionOption)
+        .innerJoin(question, eq(questionOption.questionId, question.id))
+        .where(eq(question.userId, userId))
+        .orderBy(asc(questionOption.position), asc(questionOption.id)),
+      db
+        .select()
+        .from(rule)
+        .where(eq(rule.userId, userId))
+        .orderBy(desc(rule.createdAt), desc(rule.id)),
+    ]);
 
   const by = <T extends { itemId: string }>(rows: T[]): Map<string, T> =>
     new Map(rows.map((row) => [row.itemId, row]));
@@ -828,6 +1087,45 @@ export const profileOf = async (userId: string): Promise<ProfileAnswer> => {
         text: line.text,
         documents: countOf.line.get(line.id)?.size ?? 0,
         sources: saidOf.line.get(line.id) ?? [],
+      },
+    ]);
+  }
+
+  /** What each question offers, and which item each question and each rule is about. */
+  const titleOf = new Map(items.map((item) => [item.id, item.title]));
+  const optionsOf = new Map<string, QuestionAnswer["options"]>();
+  for (const option of options) {
+    optionsOf.set(option.questionId, [
+      ...(optionsOf.get(option.questionId) ?? []),
+      { id: option.id, label: option.label, hint: option.hint, rule: option.rule },
+    ]);
+  }
+  const asQuestion = (row: (typeof questions)[number]): QuestionAnswer => ({
+    id: row.id,
+    itemId: row.itemId,
+    itemTitle: titleOf.get(row.itemId) ?? "",
+    kind: row.kind,
+    where: row.where,
+    lead: row.lead,
+    state: row.state,
+    options: optionsOf.get(row.id) ?? [],
+  });
+  const questionOf = new Map<string, QuestionAnswer>();
+  for (const row of questions) {
+    if (row.asked && !questionOf.has(row.itemId)) questionOf.set(row.itemId, asQuestion(row));
+  }
+
+  const rulesOf = new Map<string, RuleAnswer[]>();
+  for (const row of rules) {
+    rulesOf.set(row.itemId, [
+      ...(rulesOf.get(row.itemId) ?? []),
+      {
+        id: row.id,
+        text: row.text,
+        kind: row.kind,
+        source: row.source,
+        createdAt: row.createdAt.toISOString(),
+        supersededBy: row.supersededBy,
       },
     ]);
   }
@@ -871,6 +1169,11 @@ export const profileOf = async (userId: string): Promise<ProfileAnswer> => {
       lines: linesOf.get(item.id) ?? [],
       children: items.filter((each) => each.parentId === item.id).map(asAnswer),
       sources: saidOf.item.get(item.id) ?? [],
+      rules: rulesOf.get(item.id) ?? [],
+      // The item's current rule is the one row nothing has superseded, which is a fact
+      // about the rows rather than the newest of them (`ID121`).
+      rule: (rulesOf.get(item.id) ?? []).find((each) => each.supersededBy === null) ?? null,
+      question: questionOf.get(item.id) ?? null,
     };
   };
 
@@ -887,8 +1190,182 @@ export const profileOf = async (userId: string): Promise<ProfileAnswer> => {
     projects: of("project"),
     groups: of("group"),
     education: of("education", "publication", "language"),
+    questions: questions.filter((row) => row.asked).map(asQuestion),
+    notAsked: questions.filter((row) => !row.asked).length,
   };
 };
+
+/**
+ * What a person says when a question is open: a row, their own words, both, or neither
+ * yet. `skip` is the fourth thing they can do and it is an answer of its own — the
+ * question is kept, not deleted, and offered again the first time a CV needs it (`US7`).
+ */
+const answering = z.object({
+  optionId: z.string().min(1).optional(),
+  words: z.string().optional(),
+  skip: z.boolean().optional(),
+});
+
+/** `Kubernetes: shipping to a cluster run by others` — the item, then what was said. */
+const ruleAbout = (title: string, words: string): string => `${title}: ${words}`;
+
+/**
+ * A rule kept, and the one it supersedes.
+ *
+ * **Inserted, never updated.** Answering again writes a new row and marks the old one
+ * superseded, so the history of what the person said survives being changed (`ID121`).
+ * An `update` here would pass every test that reads only the current rule and quietly
+ * destroy the one thing this table exists to keep.
+ */
+const keepAsRule = async (kept: {
+  userId: string;
+  itemId: string;
+  kind: RuleKind;
+  text: string;
+  source: RuleSource;
+  questionId: string | null;
+}): Promise<RuleAnswer> => {
+  const id = randomUUID();
+  return db.transaction(async (tx) => {
+    const [written] = await tx
+      .insert(rule)
+      .values({
+        id,
+        userId: kept.userId,
+        itemId: kept.itemId,
+        kind: kept.kind,
+        text: kept.text,
+        source: kept.source,
+        questionId: kept.questionId,
+      })
+      .returning();
+    await tx
+      .update(rule)
+      .set({ supersededBy: id })
+      .where(
+        and(
+          eq(rule.itemId, kept.itemId),
+          eq(rule.userId, kept.userId),
+          isNull(rule.supersededBy),
+          ne(rule.id, id),
+        ),
+      );
+    if (written === undefined) throw new Error("the rule could not be kept");
+    return {
+      id: written.id,
+      text: written.text,
+      kind: written.kind,
+      source: written.source,
+      createdAt: written.createdAt.toISOString(),
+      supersededBy: null,
+    };
+  });
+};
+
+/**
+ * One question answered, or put off (`S4.3`, `S4.4`, `US6`, `US7`).
+ *
+ * A question that is not this person's is a `404` and never a `403`, as every route here
+ * answers for a row that is not yours: a `403` would confirm that somebody else's
+ * question exists. A question whose item a later correction removed is gone with it
+ * through the item's `on delete cascade`, so it is the same `404` — a question never
+ * points at nothing.
+ */
+export const answerQuestion = factory.createHandlers(async (c) => {
+  const person = await asking(c);
+  if (person === null) return c.json({ error: "sign in first" }, 401);
+
+  const said = answering.safeParse(await c.req.json().catch(() => ({})));
+  if (!said.success) return c.json({ error: "say which row, or say it in your own words" }, 400);
+
+  const [row] = await db
+    .select()
+    .from(question)
+    .where(and(eq(question.id, c.req.param("id") ?? ""), eq(question.userId, person.id)));
+  if (row === undefined) return c.json({ error: "no such question" }, 404);
+
+  if (said.data.skip === true) {
+    await db.update(question).set({ state: "skipped" }).where(eq(question.id, row.id));
+    return c.json({ skipped: row.id }, 200);
+  }
+
+  const words = (said.data.words ?? "").trim();
+  const [option] =
+    said.data.optionId === undefined
+      ? []
+      : await db
+          .select()
+          .from(questionOption)
+          .where(
+            and(eq(questionOption.id, said.data.optionId), eq(questionOption.questionId, row.id)),
+          );
+  if (said.data.optionId !== undefined && option === undefined) {
+    return c.json({ error: "no such answer" }, 404);
+  }
+
+  const [item] = await db.select().from(profileItem).where(eq(profileItem.id, row.itemId));
+  if (item === undefined) return c.json({ error: "no such question" }, 404);
+
+  // The picked row's own rule, and the person's words beside it when they typed as well.
+  // The last row carries no rule, so picking it is the same thing as saying it yourself.
+  const picked = option?.rule ?? null;
+  if (picked === null && words === "") {
+    return c.json({ error: "pick a row, or say it in your own words" }, 400);
+  }
+  const text =
+    picked === null ? ruleAbout(item.title, words) : words === "" ? picked : `${picked} — ${words}`;
+
+  const kept = await keepAsRule({
+    userId: person.id,
+    itemId: row.itemId,
+    // A scope question asks what the person's part was; a conflict and a provenance
+    // question both settle what may never be claimed (the spec's *The rules*).
+    kind: row.kind === "scope" ? "scope" : "constraint",
+    text,
+    source: picked === null ? "own words" : "answer",
+    questionId: row.id,
+  });
+
+  await db
+    .update(question)
+    .set({ state: "answered", answeredAt: new Date() })
+    .where(eq(question.id, row.id));
+
+  return c.json({ rule: kept }, 200);
+});
+
+/**
+ * What the person said about an item nobody asked them about.
+ *
+ * It is the answer's own-words path with no question attached, which is why it is
+ * mounted and proved here; **its screen is `SL5`'s** (the tool the person opens
+ * themselves, which proposes nothing).
+ */
+export const writeItemRule = factory.createHandlers(async (c) => {
+  const person = await asking(c);
+  if (person === null) return c.json({ error: "sign in first" }, 401);
+
+  const said = z
+    .object({ words: z.string().min(1) })
+    .safeParse(await c.req.json().catch(() => ({})));
+  if (!said.success) return c.json({ error: "say it in your own words" }, 400);
+
+  const [item] = await db
+    .select()
+    .from(profileItem)
+    .where(and(eq(profileItem.id, c.req.param("id") ?? ""), eq(profileItem.userId, person.id)));
+  if (item === undefined) return c.json({ error: "no such item" }, 404);
+
+  const kept = await keepAsRule({
+    userId: person.id,
+    itemId: item.id,
+    kind: "scope",
+    text: ruleAbout(item.title, said.data.words.trim()),
+    source: "own words",
+    questionId: null,
+  });
+  return c.json({ rule: kept }, 200);
+});
 
 /** This person's whole profile, or an empty one. Never anybody else's, and never a 404. */
 export const readProfile = factory.createHandlers(async (c) => {

@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import type * as Support from "../support/intake";
 import { subjectAt } from "../support/providers";
 import { localStorageIn } from "../support/storage";
 
@@ -42,7 +43,6 @@ const { cookiesSetBy, signInThrough, signedInAs } = await import("../support/sig
 const { documentsFor, theSet } = await import("../support/documents");
 const { forgetRequests, requestsSent, withCases } = await import("../support/ai");
 const { aProfileOf, casesForRun, itemNamed } = await import("../support/intake");
-const support = await import("../support/intake");
 
 let storage: ReturnType<typeof localStorageIn>;
 
@@ -68,7 +68,7 @@ const signedIn = async (email: string) => {
 const read = (cookie: string) =>
   app.request("/api/intake/read", { method: "POST", headers: { cookie } });
 
-const profileOf = async (cookie: string): Promise<support.ProfileAnswer> =>
+const profileOf = async (cookie: string): Promise<Support.ProfileAnswer> =>
   (await (await app.request("/api/intake/profile", { headers: { cookie } })).json()) as never;
 
 /** The three real documents this slice's own case stands for (`D20`, criterion 1b). */
@@ -138,9 +138,16 @@ describe("the fourth step, over the cases the product ships (criteria 1, 1b)", (
     const { testDb } = await import("../support/database");
 
     await expect(testDb.execute(sql`select 'scope'::question_kind`)).resolves.toBeDefined();
-    await expect(testDb.execute(sql`select 'date'::question_kind`)).rejects.toThrow(
-      /invalid input value for enum question_kind/i,
-    );
+
+    // Drizzle wraps the driver's error, so the whole chain is read and not the top
+    // message, as `isDuplicate` reads one in the handlers for the same reason.
+    const thrown: unknown = await testDb
+      .execute(sql`select 'date'::question_kind`)
+      .then(() => null)
+      .catch((why: unknown) => why);
+    const said: string[] = [];
+    for (let cause = thrown; cause instanceof Error; cause = cause.cause) said.push(cause.message);
+    expect(said.join(" ")).toMatch(/invalid input value for enum question_kind/i);
   });
 
   /** Criterion 1b: each kind on a real fact of the person's own documents. */
@@ -224,7 +231,7 @@ describe("what the run does with what the reader proposed (criteria 2, 3)", () =
   const aRunWith = async (
     email: string,
     cases: Parameters<typeof casesForRun>[0],
-  ): Promise<support.ProfileAnswer> => {
+  ): Promise<Support.ProfileAnswer> => {
     const person = await signedIn(email);
     await documentsFor(person.id, cases.documents);
     const inPlace = withCases(casesForRun(cases));
@@ -240,10 +247,24 @@ describe("what the run does with what the reader proposed (criteria 2, 3)", () =
     { document: "2026-08-30_cv_FR", said: `DevOps et cloud: ${title}.` },
   ];
 
+  /**
+   * The chips under one heading, as the profile really holds them: a chip is an `entry`
+   * under a `group`, and the sheet draws no loose entry (`D17`).
+   */
+  const aGroupOf = (chips: { title: string; from: { document: string; said: string }[] }[]) =>
+    aProfileOf([
+      {
+        kind: "group",
+        title: "DevOps and cloud",
+        from: said("the group"),
+        children: chips.map((chip) => ({ kind: "entry", title: chip.title, from: chip.from })),
+      },
+    ]);
+
   it("asks five and writes the rest as waiting against their items", async () => {
     const profile = await aRunWith("questions-capped-at-five@example.com", {
       documents: twoDocuments,
-      merge: aProfileOf(eleven.map((title) => ({ kind: "entry", title, from: said(title) }))),
+      merge: aGroupOf(eleven.map((title) => ({ title, from: said(title) }))),
       questions: { candidates: eleven.map(candidateFor) },
     });
 
@@ -274,9 +295,9 @@ describe("what the run does with what the reader proposed (criteria 2, 3)", () =
 
     const profile = await aRunWith("questions-agreed-fact@example.com", {
       documents: four,
-      merge: aProfileOf([
-        { kind: "entry", title: "Kubernetes", from: agreed },
-        { kind: "entry", title: "Terraform", from: said("Terraform") },
+      merge: aGroupOf([
+        { title: "Kubernetes", from: agreed },
+        { title: "Terraform", from: said("Terraform") },
       ]),
       questions: { candidates: [candidateFor("Kubernetes"), candidateFor("Terraform")] },
     });
@@ -288,7 +309,7 @@ describe("what the run does with what the reader proposed (criteria 2, 3)", () =
   it("writes no question whose item is not in the profile", async () => {
     const profile = await aRunWith("questions-no-such-item@example.com", {
       documents: twoDocuments,
-      merge: aProfileOf([{ kind: "entry", title: "Kubernetes", from: said("Kubernetes") }]),
+      merge: aGroupOf([{ title: "Kubernetes", from: said("Kubernetes") }]),
       questions: {
         candidates: [candidateFor("Kubernetes"), candidateFor("A thing nobody wrote down")],
       },
@@ -300,7 +321,7 @@ describe("what the run does with what the reader proposed (criteria 2, 3)", () =
   it("writes no question at all when the answer is malformed, and keeps what was read", async () => {
     const profile = await aRunWith("questions-malformed@example.com", {
       documents: twoDocuments,
-      merge: aProfileOf([{ kind: "entry", title: "Kubernetes", from: said("Kubernetes") }]),
+      merge: aGroupOf([{ title: "Kubernetes", from: said("Kubernetes") }]),
       questionsRaw: JSON.stringify({ candidates: [{ kind: "scope", item: "Kubernetes" }] }),
     });
 
@@ -312,7 +333,7 @@ describe("what the run does with what the reader proposed (criteria 2, 3)", () =
   it("stops the run when the fourth step has no case at all, and keeps what was read", async () => {
     const profile = await aRunWith("questions-no-case@example.com", {
       documents: twoDocuments,
-      merge: aProfileOf([{ kind: "entry", title: "Kubernetes", from: said("Kubernetes") }]),
+      merge: aGroupOf([{ title: "Kubernetes", from: said("Kubernetes") }]),
     });
 
     expect(profile.questions).toEqual([]);
@@ -329,7 +350,7 @@ describe("what the run does with what the reader proposed (criteria 2, 3)", () =
     await documentsFor(person.id, twoDocuments);
     const cases = casesForRun({
       documents: twoDocuments,
-      merge: aProfileOf([{ kind: "entry", title: "Kubernetes", from: said("Kubernetes") }]),
+      merge: aGroupOf([{ title: "Kubernetes", from: said("Kubernetes") }]),
       questions: { candidates: [candidateFor("Kubernetes")] },
     });
     const inPlace = withCases(cases);
@@ -351,7 +372,7 @@ describe("what the run does with what the reader proposed (criteria 2, 3)", () =
     const withoutIt = withCases(
       casesForRun({
         documents: twoDocuments,
-        merge: aProfileOf([{ kind: "entry", title: "Kubernetes", from: said("Kubernetes") }]),
+        merge: aGroupOf([{ title: "Kubernetes", from: said("Kubernetes") }]),
       }),
     );
     try {

@@ -145,7 +145,14 @@ describe("the fixtures this slice ships", () => {
       "intake.extract:leCVWeb",
       "intake.merge:2026-08-30_cv_FR+2026-08-30_cv_EN",
       "intake.merge:2026-08-30_cv_FR+2026-08-30_cv_EN+BS-HEIGVD-IL-Diplome",
+      "intake.merge:2026-08-30_cv_FR+leCVWeb+CV-2025",
       "intake.merge:leCVWeb+CV-2025",
+      // SL4: the fourth step, one case per combination a run makes, each naming only
+      // what the documents of that run leave unanswered.
+      "intake.questions:2026-08-30_cv_FR+2026-08-30_cv_EN",
+      "intake.questions:2026-08-30_cv_FR+2026-08-30_cv_EN+BS-HEIGVD-IL-Diplome",
+      "intake.questions:2026-08-30_cv_FR+leCVWeb+CV-2025",
+      "intake.questions:leCVWeb+CV-2025",
     ]);
   });
 

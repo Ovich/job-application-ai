@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import type * as Support from "../support/intake";
 import { subjectAt } from "../support/providers";
 import { localStorageIn } from "../support/storage";
 
@@ -41,7 +42,6 @@ const { cookiesSetBy, signInThrough, signedInAs } = await import("../support/sig
 const { documentsFor, theSet } = await import("../support/documents");
 const { forgetRequests } = await import("../support/ai");
 const { itemNamed } = await import("../support/intake");
-const support = await import("../support/intake");
 
 let storage: ReturnType<typeof localStorageIn>;
 
@@ -70,7 +70,7 @@ const three = [
   theSet.cv2025.filename,
 ] as const;
 
-const profileOf = async (cookie: string): Promise<support.ProfileAnswer> =>
+const profileOf = async (cookie: string): Promise<Support.ProfileAnswer> =>
   (await (await app.request("/api/intake/profile", { headers: { cookie } })).json()) as never;
 
 /** A person whose run has left them the four questions the shipped case proposes. */
@@ -86,7 +86,7 @@ const asked = async (email: string) => {
 const answer = (
   cookie: string,
   questionId: string,
-  said: { optionId?: string; words?: string; skip?: boolean },
+  said: { optionId?: string | undefined; words?: string | undefined; skip?: boolean | undefined },
 ) =>
   app.request(`/api/intake/questions/${questionId}/answer`, {
     method: "POST",
@@ -102,7 +102,7 @@ const ruleOn = (cookie: string, itemId: string, words: string) =>
   });
 
 /** The question a case is about, by the item it hangs on. */
-const about = (profile: support.ProfileAnswer, title: string): support.AskedQuestion => {
+const about = (profile: Support.ProfileAnswer, title: string): Support.AskedQuestion => {
   const found = profile.questions.find((question) => question.itemTitle === title);
   if (found === undefined) throw new Error(`no question about ${title}`);
   return found;
