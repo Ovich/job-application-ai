@@ -69,6 +69,13 @@ export class ProfileViewer {
   protected readonly selected = signal<RegionRef | null>(null);
 
   /**
+   * Whether the person put the tool down by pressing the dimmed profile. It stays down
+   * until they press a region again — otherwise the waiting question, which is still
+   * waiting, would open itself the instant it was closed.
+   */
+  protected readonly dismissed = signal(false);
+
+  /**
    * Which ending the last closed tool was, and the whole of `S5.4`: the profile returns
    * to its head when the **assistant's own run** ends, and stays where the person left
    * it when a clarification does (the mockup's `next(after, viaQuestion)`).
@@ -86,7 +93,7 @@ export class ProfileViewer {
     this.questions().filter((question) => question.state === "waiting"),
   );
 
-  /** Waiting or skipped: a question whose item still says `your part?`. */
+  /** Waiting or skipped: a question whose item still says `scope to clarify`. */
   private readonly stillOpen = computed(() =>
     this.questions().filter((question) => question.state !== "answered"),
   );
@@ -288,17 +295,23 @@ export class ProfileViewer {
    * an item and never from a line.
    */
   protected chosen(region: RegionRef): void {
+    this.dismissed.set(false);
     this.selected.set(region);
   }
 
-  /** The overlay's press is the prefix's ×, which while a question waits is a skip. */
+  /**
+   * A press on the dimmed profile closes what is open, and decides nothing (the person,
+   * 2026-09-13).
+   *
+   * It used to skip the waiting question, which is a decision — *ask me in the builder*
+   * — that nobody made by clicking away from something. Now it puts the tool down: the
+   * selection is cleared and the question stays exactly as it was, waiting. Pressing any
+   * region opens it again.
+   */
   protected overlayPressed(): void {
-    if (this.pressed() !== null && this.open() === null) {
-      this.cancelled();
-      return;
-    }
-    const question = this.open();
-    if (question !== null) void this.skipped({ questionId: question.id });
+    if (this.pressed() !== null && this.open() === null) this.cancelled();
+    this.selected.set(null);
+    this.dismissed.set(true);
   }
 
   /**

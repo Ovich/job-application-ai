@@ -76,9 +76,6 @@ export class ScopeTool {
 
   public readonly skip = output<void>();
 
-  /** Cancel, which only the person-opened shape offers. It writes nothing. */
-  public readonly cancel = output<void>();
-
   /** The question, when one was asked. `null` is the shape that proposes nothing. */
   protected readonly asked = computed<OpenQuestion | null>(() => {
     const tool = this.tool();

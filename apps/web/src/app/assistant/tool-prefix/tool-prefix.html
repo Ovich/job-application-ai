@@ -12,7 +12,7 @@
 <span
   data-part="prefix"
   [uiTooltip]="describes()"
-  class="flex items-stretch self-stretch bg-[linear-gradient(to_right,var(--primary)_0%,var(--cv-accent)_51%,var(--primary)_100%)] bg-[length:200%_auto] font-semibold text-primary-foreground transition-[background-position] duration-500 hover:bg-right"
+  class="flex items-stretch self-stretch bg-[linear-gradient(to_right,var(--primary)_0%,var(--cv-accent)_51%,var(--primary)_100%)] bg-[length:200%_auto] font-semibold transition-[background-position] duration-500 hover:bg-right"
 >
   <!--
     The relation and nothing else: the chip says what kind of thing is open — `Adjusting
@@ -20,11 +20,17 @@
     this chip's to whisper on hover, which is also why nothing here can grow long enough
     to crowd the text bar beside it.
   -->
+  <!--
+    Bound, not static: `uiText` merges what arrives through its `class` *input*, and a
+    static attribute never reaches it — so `text-foreground` and `text-white` would both
+    land on the element and the stylesheet's order would decide, which is how the label
+    came out dark in the dark theme (the person, 2026-09-13).
+  -->
   <span
     data-part="what"
     uiText
     variant="ui"
-    class="flex items-center whitespace-nowrap ps-3 pe-3 text-primary-foreground"
+    [class]="'flex items-center whitespace-nowrap ps-3 pe-3 text-white'"
     >{{ label() }}</span
   >
 

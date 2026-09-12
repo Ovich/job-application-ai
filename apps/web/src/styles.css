@@ -38,6 +38,11 @@
      its own there (the person, 2026-09-13). */
   --cherry: #8c1c2e;
 
+  /* The send button's own blues, the person's own values (2026-09-13). Theme-independent
+     for the same reason the chip's are: white text on a solid thing. */
+  --send: #0575e6;
+  --send-deep: #021b79;
+
   /* The rendered CV is paper, not interface: its palette does not follow the theme. */
   --cv-ink: #18181b;
   --cv-muted: #71717a;
@@ -86,6 +91,8 @@
   --color-danger: var(--danger);
   --color-danger-soft: var(--danger-soft);
   --color-cherry: var(--cherry);
+  --color-send: var(--send);
+  --color-send-deep: var(--send-deep);
   --color-cv-ink: var(--cv-ink);
   --color-cv-muted: var(--cv-muted);
   --color-cv-accent: var(--cv-accent);

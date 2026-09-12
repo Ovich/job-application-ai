@@ -142,7 +142,9 @@ describe("the mark and the check line", () => {
 
     const marked = regionOf("k8s");
     expect(marked?.querySelector("[data-part=ask]")).not.toBeNull();
-    expect(marked?.querySelector("[data-part=askword]")?.textContent?.trim()).toBe("your part?");
+    expect(marked?.querySelector("[data-part=askword]")?.textContent?.trim()).toBe(
+      "scope to clarify",
+    );
     expect(regionOf("docker")?.querySelector("[data-part=ask]")).toBeNull();
   });
 

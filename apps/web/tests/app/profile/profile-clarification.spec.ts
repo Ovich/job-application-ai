@@ -163,12 +163,14 @@ describe("a click on a region with no question waiting (criteria 1 and 3)", () =
     expect(said).toBe(1);
   });
 
-  it("closes on Cancel and writes nothing", async () => {
+  it("closes on the prefix's ×, the one way out, and writes nothing", async () => {
     profileIs(aProfile());
     const { at, press, eventually } = await opened();
     await press("chip-k8s");
 
-    (at("[data-action=cancel]") as HTMLButtonElement).click();
+    // The tool has no Cancel of its own any more (the person, 2026-09-13).
+    expect(at("[data-action=cancel]")).toBeNull();
+    (at("[data-action=clear]") as HTMLButtonElement).click();
 
     await eventually(() => expect(at("scope-tool")).toBeNull());
     expect(at("[data-part=rule]")).toBeNull();
@@ -203,7 +205,7 @@ describe("a click on an item whose question is still open (the person, 2026-09-1
 
     await press("chip-docker");
 
-    // The mark still says `your part?` on it: the appropriate tool is the question, not
+    // The mark still says `scope to clarify` on it: the appropriate tool is the question, not
     // the one-sentence tool that proposes nothing.
     expect(textOf(at("scope-tool [data-part=lead]"))).toBe(
       "Did you write the Dockerfiles or run the registry?",
@@ -255,7 +257,8 @@ describe("the same sentence wherever it is opened (criterion 2)", () => {
     for (const id of ["chip-k8s", "project-opendidac", "post-heig"]) {
       await press(id);
       said.push(textOf(at("scope-tool [data-part=lead]")));
-      (at("[data-action=cancel]") as HTMLButtonElement).click();
+      // Closing is the prefix's × and nothing else (the person, 2026-09-13).
+      (at("[data-action=clear]") as HTMLButtonElement).click();
       await eventually(() => expect(at("scope-tool")).toBeNull());
     }
 
@@ -315,7 +318,8 @@ describe("where the profile is left (criteria 5 and 8)", () => {
     const { at, press, columnIsAt, eventually } = await opened();
 
     await press("chip-k8s");
-    (at("[data-action=cancel]") as HTMLButtonElement).click();
+    // Closing is the prefix's × and nothing else (the person, 2026-09-13).
+    (at("[data-action=clear]") as HTMLButtonElement).click();
     await eventually(() => expect(at("scope-tool")).not.toBeNull());
 
     expect(columnIsAt()).toBe("region");
@@ -441,6 +445,43 @@ describe("the column, before anybody clicks anything", () => {
     await eventually(() => {
       expect(at("scope-tool")).not.toBeNull();
       expect(columnIsAt()).toBe("region");
+    });
+  });
+});
+
+/**
+ * What the guided sequence does and does not gate (`2026-09-13-guided-effects.spec.md`,
+ * and the person, 2026-09-13).
+ */
+describe("the opening sequence", () => {
+  it("opens the tool whenever something is still to clarify, sequence or no sequence", async () => {
+    profileIs(
+      aProfile([
+        questionOf({
+          id: "q1",
+          itemId: "chip-docker",
+          itemTitle: "Docker",
+          lead: "Did you write the Dockerfiles or run the registry?",
+        }),
+      ]),
+    );
+    const { at, eventually } = await opened();
+
+    await eventually(() => {
+      expect(at("scope-tool")).not.toBeNull();
+      expect(at("[data-guide]")?.getAttribute("data-guide")).toBe("done");
+    });
+  });
+
+  it("says the whole opening at once when the conversation is not new", async () => {
+    // A person coming back: the column is resumed, not begun, so nothing is performed —
+    // and the words are all there regardless.
+    profileIs(aProfile());
+    const { at, eventually } = await opened();
+
+    await eventually(() => {
+      expect(textOf(at("[data-part=opening]"))).toContain("Every fact on the right carries");
+      expect(textOf(at("[data-part=tail]"))).toContain("I ask only those");
     });
   });
 });

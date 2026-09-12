@@ -3,7 +3,7 @@ import { UiText } from "../../ui/typography/text/text";
 
 /**
  * The two things a region says about itself once the assistant has been through it (the
- * mockup's `ProfileSheet`): the ask mark, `▲` with `your part?` beside it while a
+ * mockup's `ProfileSheet`): the ask mark, `▲` with `scope to clarify` beside it while a
  * question waits, and the check line, `✓ <the answer>`, once one has been answered.
  *
  * It is one component and not eight copies of the same markup, because a region is a

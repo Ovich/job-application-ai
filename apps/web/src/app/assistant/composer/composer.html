@@ -35,6 +35,12 @@
   </div>
 
   <div class="flex items-center p-2">
+    <!--
+      The one thing that commits what a person wrote, and it says so (the person,
+      2026-09-13): the same gradient mechanic as the prefix, in the blues they chose,
+      sliding on hover. Disabled it goes flat, because a button that looks live and does
+      nothing is worse than one that looks spent.
+    -->
     <button
       type="button"
       data-part="send"
@@ -42,6 +48,7 @@
       size="sm"
       [disabled]="!ready()"
       (click)="save.emit()"
+      class="bg-[linear-gradient(to_right,var(--send)_0%,var(--send-deep)_51%,var(--send)_100%)] bg-[length:200%_auto] px-5 font-semibold text-white shadow-sm transition-[background-position] duration-500 hover:bg-right disabled:bg-none disabled:bg-muted disabled:text-muted-foreground disabled:shadow-none"
     >
       {{ verb() }}
     </button>

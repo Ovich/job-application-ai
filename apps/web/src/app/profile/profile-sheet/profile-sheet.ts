@@ -178,9 +178,17 @@ export class ProfileSheet {
     this.select.emit(region);
   }
 
-  /** Only a press on the sheet's own background is the overlay's; a region's is not. */
+  /**
+   * A press anywhere that is not a region puts the tool down (the person, 2026-09-13).
+   *
+   * It used to be the sheet's own background alone, which meant the gaps between panels
+   * closed the tool and the panels themselves did not — a distinction nobody can see.
+   * What a person means by clicking away is "not this", and anything that is not a
+   * region is not this.
+   */
   protected pressed(event: Event): void {
-    if (event.target !== event.currentTarget) return;
+    const target = event.target as Element | null;
+    if (target !== null && target.closest("[data-region]") !== null) return;
     this.overlayPressed.emit();
   }
 }
