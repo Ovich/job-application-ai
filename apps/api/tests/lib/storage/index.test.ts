@@ -66,12 +66,21 @@ const standInFor = (): { calls: S3Calls; bucketHolds: () => string[] } => {
 
 /** The two implementations, each built fresh, under the names the cases read by. */
 const implementations: [string, () => Storage][] = [
-  ["the directory a developer runs", () => createDirectoryStorage({ directory: temporaryDirectory() })],
-  ["S3, the one the cloud runs", () => createS3Storage({ bucket: "jobapp-dev-documents", calls: standInFor().calls })],
+  [
+    "the directory a developer runs",
+    () => createDirectoryStorage({ directory: temporaryDirectory() }),
+  ],
+  [
+    "S3, the one the cloud runs",
+    () => createS3Storage({ bucket: "jobapp-dev-documents", calls: standInFor().calls }),
+  ],
 ];
 
 const key = keyFor("user-one", "document-one");
-const pdf: StoredObject = { bytes: new Uint8Array([37, 80, 68, 70, 45, 49, 46, 55]), mediaType: "application/pdf" };
+const pdf: StoredObject = {
+  bytes: new Uint8Array([37, 80, 68, 70, 45, 49, 46, 55]),
+  mediaType: "application/pdf",
+};
 
 describe.each(implementations)("%s", (_name, build) => {
   it("hands back the same bytes and the same media type it was given", async () => {

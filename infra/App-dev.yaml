@@ -58,6 +58,23 @@ Resources:
           - - "arn:"
             - !Ref AWS::Partition
             - ":iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
+      # What the function may do with an uploaded document, and nothing more (ID116).
+      # Three actions, on one prefix of one bucket: `u/<user>/<document>` is the only
+      # shape of key the API composes (apps/api/src/lib/storage/key.ts), so a key made
+      # any other way cannot reach an object even if a handler managed to compose one.
+      # No ListBucket: nothing in the product enumerates a bucket, and a role that
+      # cannot list is a role that cannot be used to go looking.
+      Policies:
+        - PolicyName: documents
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - s3:PutObject
+                  - s3:GetObject
+                  - s3:DeleteObject
+                Resource: !Join ["", [!GetAtt DocumentsBucket.Arn, "/u/*"]]
 
   # The API. One function for every route, in response-streaming invoke mode from the
   # first deploy rather than from the slice that needs streaming (ID9): a streaming
@@ -127,6 +144,13 @@ Resources:
           LINKEDIN_CLIENT_ID: "{{resolve:secretsmanager:jobapp/dev/auth:SecretString:linkedinClientId}}"
           LINKEDIN_CLIENT_SECRET: "{{resolve:secretsmanager:jobapp/dev/auth:SecretString:linkedinClientSecret}}"
           BETTER_AUTH_SECRET: "{{resolve:secretsmanager:jobapp/dev/auth:SecretString:betterAuthSecret}}"
+          # Where a person's documents go (ID115, ID116, ID128). The implementation is
+          # named explicitly rather than left to its default, for the same reason
+          # APP_RUNTIME is: a value that is right only because nobody set it is a value
+          # nobody decided. The bucket's name is a reference rather than a literal, so
+          # the function and the resource can never disagree about it.
+          STORAGE_IMPLEMENTATION: s3
+          STORAGE_BUCKET: !Ref DocumentsBucket
 
   # The URL is unreachable except through the distribution, which signs every request it
   # forwards. An unauthenticated function URL would be a second, public front door to the
@@ -137,6 +161,33 @@ Resources:
       TargetFunctionArn: !GetAtt Api.Arn
       AuthType: AWS_IAM
       InvokeMode: RESPONSE_STREAM
+
+  # The documents a person uploads (ID116). One bucket per environment, added by the
+  # slice that needs it so dev never has a function pointing at a bucket that does not
+  # exist.
+  #
+  # It is reached by the function and by nothing else: it is not an origin of the
+  # distribution, it has no bucket policy granting anyone anything, and every public
+  # route into it is blocked. The name is left to CloudFormation, unlike the web
+  # bucket's, because no other stack has to refer to it: the function is handed it as a
+  # reference in the same template.
+  #
+  # DeletionPolicy Delete matches the rest of this stack: development is rebuildable
+  # from the repository, and what a person uploaded to it is their own test data.
+  DocumentsBucket:
+    Type: AWS::S3::Bucket
+    DeletionPolicy: Delete
+    UpdateReplacePolicy: Delete
+    Properties:
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
 
   # The Angular bundle. Reached only through the distribution, as the API is.
   #

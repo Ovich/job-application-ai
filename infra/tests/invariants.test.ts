@@ -168,10 +168,26 @@ describe("an API error reaches the browser as an error (S9.3)", () => {
 describe("the documents bucket (ID116)", () => {
   it("blocks every public route into it, as the web bucket already does", () => {
     expect({
-      acls: at("App-dev", "DocumentsBucket", "Properties.PublicAccessBlockConfiguration.BlockPublicAcls"),
-      policy: at("App-dev", "DocumentsBucket", "Properties.PublicAccessBlockConfiguration.BlockPublicPolicy"),
-      ignoreAcls: at("App-dev", "DocumentsBucket", "Properties.PublicAccessBlockConfiguration.IgnorePublicAcls"),
-      restrict: at("App-dev", "DocumentsBucket", "Properties.PublicAccessBlockConfiguration.RestrictPublicBuckets"),
+      acls: at(
+        "App-dev",
+        "DocumentsBucket",
+        "Properties.PublicAccessBlockConfiguration.BlockPublicAcls",
+      ),
+      policy: at(
+        "App-dev",
+        "DocumentsBucket",
+        "Properties.PublicAccessBlockConfiguration.BlockPublicPolicy",
+      ),
+      ignoreAcls: at(
+        "App-dev",
+        "DocumentsBucket",
+        "Properties.PublicAccessBlockConfiguration.IgnorePublicAcls",
+      ),
+      restrict: at(
+        "App-dev",
+        "DocumentsBucket",
+        "Properties.PublicAccessBlockConfiguration.RestrictPublicBuckets",
+      ),
     }).toEqual({ acls: true, policy: true, ignoreAcls: true, restrict: true });
   });
 
@@ -183,11 +199,11 @@ describe("the documents bucket (ID116)", () => {
   });
 
   it("lets the function put, get and delete, and nothing else", () => {
-    expect(at("App-dev", "ApiRole", "Properties.Policies[0].PolicyDocument.Statement[0].Action")).toEqual([
-      "s3:PutObject",
-      "s3:GetObject",
-      "s3:DeleteObject",
-    ]);
+    const granted = [...leaves(resource("App-dev", "ApiRole") as unknown as Json)]
+      .filter(([path]) => path.startsWith("Properties.Policies"))
+      .filter(([path]) => /\.Action(\[\d+\])?$/.test(path))
+      .map(([, action]) => action);
+    expect(granted).toEqual(["s3:PutObject", "s3:GetObject", "s3:DeleteObject"]);
   });
 
   /**
@@ -197,17 +213,19 @@ describe("the documents bucket (ID116)", () => {
    */
   it("grants those three on the u/ prefix only, never on the bucket whole", () => {
     const statement = "Properties.Policies[0].PolicyDocument.Statement[0]";
-    expect(at("App-dev", "ApiRole", `${statement}.Resource.Fn::Join[1][1]`)).toBe("/u/*");
-    expect(at("App-dev", "ApiRole", `${statement}.Resource.Fn::Join[1][0].Fn::GetAtt`)).toEqual([
-      "DocumentsBucket",
-      "Arn",
-    ]);
+    expect({
+      bucket: [
+        at("App-dev", "ApiRole", `${statement}.Resource.Fn::Join[1][0].Fn::GetAtt[0]`),
+        at("App-dev", "ApiRole", `${statement}.Resource.Fn::Join[1][0].Fn::GetAtt[1]`),
+      ],
+      thenThePrefix: at("App-dev", "ApiRole", `${statement}.Resource.Fn::Join[1][1]`),
+    }).toEqual({ bucket: ["DocumentsBucket", "Arn"], thenThePrefix: "/u/*" });
   });
 
   it("hands the function the bucket's name and the implementation to use", () => {
-    expect(at("App-dev", "Api", "Properties.Environment.Variables.STORAGE_BUCKET")).toEqual({
-      Ref: "DocumentsBucket",
-    });
+    expect(at("App-dev", "Api", "Properties.Environment.Variables.STORAGE_BUCKET.Ref")).toBe(
+      "DocumentsBucket",
+    );
     expect(at("App-dev", "Api", "Properties.Environment.Variables.STORAGE_IMPLEMENTATION")).toBe(
       "s3",
     );

@@ -15,3 +15,8 @@ Thumbs.db
 # agent worktrees: a full second checkout, and every tree-walking tool would
 # descend into it
 .claude/worktrees/
+
+# uploaded documents, when the storage implementation is the directory a developer
+# runs (apps/api/src/lib/storage). Real files a person dropped on the screen; nothing
+# here belongs in the repository.
+.objects/
