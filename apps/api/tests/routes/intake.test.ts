@@ -35,14 +35,8 @@ vi.mock("../../src/lib/storage", async (importOriginal) => ({
 const { testDb } = await import("../support/database");
 const { app } = await import("../../src/app");
 const { cookiesSetBy, signInThrough, signedInAs } = await import("../support/sign-in");
-const {
-  bytesOfFixture,
-  fiveOfThem,
-  theSet,
-  uploadOf,
-  uploadOfAddress,
-  uploadOfFixture,
-} = await import("../support/documents");
+const { bytesOfFixture, fiveOfThem, theSet, uploadOf, uploadOfAddress, uploadOfFixture } =
+  await import("../support/documents");
 const { env } = await import("../../src/env");
 
 let storage: ReturnType<typeof localStorageIn>;
@@ -86,8 +80,7 @@ type Row = {
   status: string;
 };
 
-const rowsOf = async (response: Response): Promise<Row[]> =>
-  (await response.json()) as Row[];
+const rowsOf = async (response: Response): Promise<Row[]> => (await response.json()) as Row[];
 
 describe("the documents a person hands over (US1, criterion 4)", () => {
   it("takes five of the person's own documents in one gesture, each with the kind it was detected as", async () => {
@@ -111,7 +104,9 @@ describe("the documents a person hands over (US1, criterion 4)", () => {
   it("puts the bytes in storage and the key in the database, never the bytes", async () => {
     const person = await signedIn("bytes-in-storage@example.com");
 
-    const created = (await (await post(person.cookie, uploadOfFixture(theSet.diploma.filename))).json()) as Row;
+    const created = (await (
+      await post(person.cookie, uploadOfFixture(theSet.diploma.filename))
+    ).json()) as Row;
 
     const [row] = await testDb.select().from(document).where(eq(document.id, created.id));
     expect(row?.storageKey).toBe(`u/${person.id}/${created.id}`);
@@ -122,7 +117,9 @@ describe("the documents a person hands over (US1, criterion 4)", () => {
 
   it("removes a row and takes its object with it", async () => {
     const person = await signedIn("remove-one@example.com");
-    const created = (await (await post(person.cookie, uploadOfFixture(theSet.cvFrench.filename))).json()) as Row;
+    const created = (await (
+      await post(person.cookie, uploadOfFixture(theSet.cvFrench.filename))
+    ).json()) as Row;
 
     const removed = await app.request(`/api/intake/documents/${created.id}`, {
       method: "DELETE",
@@ -138,7 +135,9 @@ describe("the documents a person hands over (US1, criterion 4)", () => {
 describe("the same document twice (criterion 5)", () => {
   it("refuses the second one by content hash, with a line saying it is already there", async () => {
     const person = await signedIn("same-bytes-twice@example.com");
-    const first = (await (await post(person.cookie, uploadOfFixture(theSet.cvEnglish.filename))).json()) as Row;
+    const first = (await (
+      await post(person.cookie, uploadOfFixture(theSet.cvEnglish.filename))
+    ).json()) as Row;
 
     // The same bytes under another name: what is refused is the document, not the name.
     const again = await post(
@@ -250,7 +249,9 @@ describe("every route filters by the session's user (criterion 13)", () => {
   it("answers another person's document id with not found, never with their row", async () => {
     const owner = await signedIn("the-owner@example.com");
     const stranger = await signedIn("the-stranger@example.com");
-    const theirs = (await (await post(owner.cookie, uploadOfFixture(theSet.cvFrench.filename))).json()) as Row;
+    const theirs = (await (
+      await post(owner.cookie, uploadOfFixture(theSet.cvFrench.filename))
+    ).json()) as Row;
 
     const removed = await app.request(`/api/intake/documents/${theirs.id}`, {
       method: "DELETE",

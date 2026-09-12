@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
-import { document, type Document } from "@app/db";
+import { type Document, document } from "@app/db";
 import { testDb } from "./database";
 
 /**
@@ -77,7 +77,7 @@ const mediaTypeOf = (filename: string): string =>
  */
 export const uploadOf = (bytes: Uint8Array, filename: string): FormData => {
   const body = new FormData();
-  body.set("file", new File([bytes as BlobPart], filename, { type: mediaTypeOf(filename) }));
+  body.set("file", new File([bytes], filename, { type: mediaTypeOf(filename) }));
   return body;
 };
 
