@@ -136,4 +136,70 @@ describe("linking, at the library's default (D17)", () => {
       expect(await providersOf(created?.id ?? "")).toEqual(["google", provider].sort());
     },
   );
+
+  /**
+   * ID106, observed on the dev address on 2026-09-12, with ID105 already deployed.
+   * Every case above puts Google first, so the user row every second provider met was
+   * one Google had created carrying a verified claim. When a provider trusted by name
+   * arrives FIRST, the row it creates records the address unverified, because the
+   * claim it does not send is the whole reason it is trusted. The library then refuses
+   * the next provider on a second gate that `trustedProviders` does not reach: it asks
+   * that the LOCAL row be verified before it links anything (`requireLocalEmailVerified`,
+   * its default). So a hotmail address that signed in through Microsoft turned LinkedIn
+   * away, and the refusal was never LinkedIn's claim but our own row.
+   *
+   * The trust is the one already accepted twice: the address these providers return is
+   * verified at the provider. Here it is written into the row as well.
+   */
+  const trustedFirst: [Provider, Provider][] = [
+    ["microsoft", "linkedin"],
+    ["linkedin", "microsoft"],
+  ];
+
+  it.each(trustedFirst)(
+    "%s arriving first records the address verified, so %s attaches after it",
+    async (first, second) => {
+      const email = `${first}-first@example.com`;
+      const who = { name: "Someone Seeking", email };
+
+      const opened = await signInThrough(first, {
+        ...who,
+        subject: subjectAt(first, email),
+        emailVerified: false,
+      });
+      const created = await signedInAs(opened);
+      expect(created).not.toBeNull();
+      // The row itself, because it is what the next provider is measured against.
+      expect((await usersAt(email))[0]?.emailVerified).toBe(true);
+
+      const next = await signInThrough(second, {
+        ...who,
+        subject: subjectAt(second, email),
+        emailVerified: false,
+      });
+
+      expect(next.status).toBe(302);
+      expect(landingOf(next).pathname).toBe("/");
+      expect((await signedInAs(next))?.id).toBe(created?.id);
+      expect(await usersAt(email)).toHaveLength(1);
+      expect(await providersOf(created?.id ?? "")).toEqual([first, second].sort());
+    },
+  );
+
+  /**
+   * The other half of the same change: Google is not trusted by name and is not mapped,
+   * so the row it creates still carries only what Google said.
+   */
+  it("Google, saying the address is not verified, records it that way", async () => {
+    const email = "google-first-unverified@example.com";
+
+    const opened = await signInThrough("google", {
+      name: "Someone Seeking",
+      email,
+      subject: subjectAt("google", email),
+      emailVerified: false,
+    });
+    expect(await signedInAs(opened)).not.toBeNull();
+    expect((await usersAt(email))[0]?.emailVerified).toBe(false);
+  });
 });
