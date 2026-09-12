@@ -1,6 +1,15 @@
 import { sql } from "drizzle-orm";
 import type { AnyPgColumn } from "drizzle-orm/pg-core";
-import { check, integer, pgEnum, pgTable, text, timestamp, unique } from "drizzle-orm/pg-core";
+import {
+  boolean,
+  check,
+  integer,
+  pgEnum,
+  pgTable,
+  text,
+  timestamp,
+  unique,
+} from "drizzle-orm/pg-core";
 import { user } from "./auth-schema";
 
 /**
@@ -212,3 +221,128 @@ export type NewItemLine = typeof itemLine.$inferInsert;
 export type Provenance = typeof provenance.$inferSelect;
 export type NewProvenance = typeof provenance.$inferInsert;
 export type ItemKind = (typeof itemKind.enumValues)[number];
+
+/**
+ * What only the person can answer, and what they answered (ID121, ID122).
+ *
+ * The three kinds are an enum and not a string, and that is the substance of the spec's
+ * "Three kinds, and nothing else": a fourth kind cannot be stored, so criterion 1 is
+ * held by the column and not only by a test. PostgreSQL refuses a value outside an enum
+ * on PGlite in the suite exactly as it does on the deployed cluster.
+ *
+ * `on delete cascade` from the item is what makes "a question never points at nothing"
+ * true in the database rather than in a query: a later correction that removes an item
+ * takes its question and its rules with it.
+ */
+export const questionKind = pgEnum("question_kind", ["scope", "conflict", "provenance"]);
+
+/**
+ * `waiting` is a question nobody has opened yet, `answered` one that produced a rule,
+ * and `skipped` one the person put off — which is not the same thing as answered and
+ * not the same thing as gone. A skipped question is offered again the first time a CV
+ * needs it, in the builder (`US7`), so it is kept and never deleted.
+ */
+export const questionState = pgEnum("question_state", ["waiting", "answered", "skipped"]);
+
+/**
+ * One thing to ask about one item.
+ *
+ * **`asked` is how the cap of five is kept honestly** (`D19`, `ID122`). The cap is
+ * applied when the run writes the questions, not when a screen reads them: the first
+ * five are written `asked = true` and the rest `asked = false`, against their items,
+ * rather than thrown away. A route that wrote eleven and showed five would leave six
+ * questions that look asked and are not, and this column is what makes the difference a
+ * fact rather than a query's `limit`.
+ *
+ * **There is no run column.** A reading run keeps nothing of its own between its steps —
+ * there is no `read_run` table in this schema and the plan names none (`ID139`, open) —
+ * so a question belongs to its item and its person, and outlives any run. Nothing here
+ * needs one: the assistant reads what is waiting, not what one run produced.
+ *
+ * `where` is the sheet's own words for the region the question is about
+ * (`What you work with · DevOps and cloud · in 2 documents`), and `lead` is the question
+ * itself. Both are the reader's, kept as it wrote them.
+ */
+export const question = pgTable("question", {
+  id: text("id").primaryKey(),
+  userId: text("user_id")
+    .notNull()
+    .references(() => user.id, { onDelete: "cascade" }),
+  itemId: text("item_id")
+    .notNull()
+    .references(() => profileItem.id, { onDelete: "cascade" }),
+  kind: questionKind("kind").notNull(),
+  asked: boolean("asked").notNull(),
+  where: text("where").notNull(),
+  lead: text("lead").notNull(),
+  state: questionState("state").notNull(),
+  position: integer("position").notNull(),
+  answeredAt: timestamp("answered_at"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+/**
+ * One answer a question offers: rows, not a JSON column (`F8`), at most four per
+ * question.
+ *
+ * `rule` is what picking this row writes on the item, in the row's own words rather
+ * than a sentence built about it. It is null on the last row and only there, because
+ * the last row is always the person's own words and carries no rule of its own.
+ */
+export const questionOption = pgTable("question_option", {
+  id: text("id").primaryKey(),
+  questionId: text("question_id")
+    .notNull()
+    .references(() => question.id, { onDelete: "cascade" }),
+  position: integer("position").notNull(),
+  label: text("label").notNull(),
+  hint: text("hint").notNull(),
+  rule: text("rule"),
+});
+
+/** What a rule is about: the person's part in a fact, or what must never be claimed. */
+export const ruleKind = pgEnum("rule_kind", ["scope", "constraint"]);
+
+/** Where the words came from: a row the person picked, or the words they typed. */
+export const ruleSource = pgEnum("rule_source", ["answer", "own words"]);
+
+/**
+ * What the person said about an item (`ID121`, the spec's *The rules*).
+ *
+ * **A rule is inserted, never updated.** Answering again inserts a row and sets the old
+ * row's `superseded_by` to the new one's id, so the history of what the person said
+ * survives being changed. An `update` here would pass every test that reads only the
+ * current rule and quietly destroy the one thing this table exists to keep. The item's
+ * current rule is the single row whose `superseded_by` is null.
+ *
+ * `question_id` is nullable because a rule may come from no question at all: the tool
+ * the person opens themselves proposes nothing and asks nothing, and what they write in
+ * it is still a rule (`SL5`, and `POST /items/:id/rule`, mounted here).
+ */
+export const rule = pgTable("rule", {
+  id: text("id").primaryKey(),
+  userId: text("user_id")
+    .notNull()
+    .references(() => user.id, { onDelete: "cascade" }),
+  itemId: text("item_id")
+    .notNull()
+    .references(() => profileItem.id, { onDelete: "cascade" }),
+  kind: ruleKind("kind").notNull(),
+  text: text("text").notNull(),
+  source: ruleSource("source").notNull(),
+  questionId: text("question_id").references(() => question.id, { onDelete: "set null" }),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  supersededBy: text("superseded_by").references((): AnyPgColumn => rule.id),
+});
+
+/** The row shapes of the questions and the rules, named once, inferred as the rest are. */
+export type Question = typeof question.$inferSelect;
+export type NewQuestion = typeof question.$inferInsert;
+export type QuestionOption = typeof questionOption.$inferSelect;
+export type NewQuestionOption = typeof questionOption.$inferInsert;
+export type Rule = typeof rule.$inferSelect;
+export type NewRule = typeof rule.$inferInsert;
+export type QuestionKind = (typeof questionKind.enumValues)[number];
+export type QuestionState = (typeof questionState.enumValues)[number];
+export type RuleKind = (typeof ruleKind.enumValues)[number];
+export type RuleSource = (typeof ruleSource.enumValues)[number];
