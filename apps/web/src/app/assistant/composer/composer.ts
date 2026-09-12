@@ -21,7 +21,7 @@ import { ToolPrefix } from "../tool-prefix/tool-prefix";
   selector: "composer",
   imports: [HlmBtn, ToolDock, ToolPrefix, UiText],
   templateUrl: "./composer.html",
-  host: { class: "block border-border border-t bg-card px-6 pt-4 pb-5" },
+  host: { class: "flex min-h-0 flex-col border-border border-t bg-card px-6 pt-4 pb-5" },
 })
 export class Composer {
   /**

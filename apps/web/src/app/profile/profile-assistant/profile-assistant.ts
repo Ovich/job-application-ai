@@ -62,7 +62,7 @@ type Said = { kind: "ai"; text: string } | { kind: "ok"; text: string };
   selector: "profile-assistant",
   imports: [Assistant, ProgressLine, ReadingCard, ScopeTool, UiText],
   templateUrl: "./profile-assistant.html",
-  host: { class: "flex min-h-0 min-w-0 flex-col" },
+  host: { class: "flex min-h-0 min-w-0 flex-1 flex-col" },
 })
 export class ProfileAssistant {
   public readonly questions = input<Question[]>([]);

@@ -12,6 +12,6 @@ import { Component } from "@angular/core";
 @Component({
   selector: "tool-dock",
   templateUrl: "./tool-dock.html",
-  host: { class: "mb-2.5 block max-h-[56vh] overflow-auto" },
+  host: { class: "mb-2.5 block max-h-[45dvh] min-h-0 shrink overflow-auto" },
 })
 export class ToolDock {}
