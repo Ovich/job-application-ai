@@ -8,6 +8,13 @@
       "when": 1789079472786,
       "tag": "0000_auth_user_session_account_verification",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1789223011909,
+      "tag": "0001_documents_a_person_handed_over",
+      "breakpoints": true
     }
   ]
 }
