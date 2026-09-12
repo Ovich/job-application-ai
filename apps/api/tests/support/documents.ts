@@ -50,10 +50,25 @@ export const fiveOfThem = [
   theSet.diploma,
 ] as const;
 
-/** What a fixture's bytes are, read from the committed file and never from `C:\JOBS\`. */
+/**
+ * What a fixture's bytes are, read from the file in this directory and never from
+ * `C:\JOBS\`, so the suite passes on a machine that is not the person's laptop.
+ *
+ * A fixture that is not there says which real document it is and where it came from,
+ * because the answer is always the same: copy that file in. It is never to invent one —
+ * a case standing for a document nobody has is what `D20` forbids.
+ */
 export const bytesOfFixture = (filename: string): Uint8Array => {
-  const read = readFileSync(`${fixtures}${filename}`);
-  return new Uint8Array(read.buffer.slice(read.byteOffset, read.byteOffset + read.byteLength));
+  try {
+    const read = readFileSync(`${fixtures}${filename}`);
+    return new Uint8Array(read.buffer.slice(read.byteOffset, read.byteOffset + read.byteLength));
+  } catch (cause) {
+    const from = Object.values(theSet).find((each) => each.filename === filename)?.from;
+    throw new Error(
+      `The fixture ${filename} is not in apps/api/tests/fixtures/documents/. It is one of the person's own documents${from === undefined ? "" : `, C:\\JOBS\\documents\\${from.replaceAll("/", "\\")}`}: copy it in. Do not invent one (spec D20).`,
+      { cause },
+    );
+  }
 };
 
 /** What a browser says a file is, from its name, as the media types this screen accepts. */
