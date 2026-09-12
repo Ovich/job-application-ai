@@ -9,7 +9,9 @@ import {
 } from "@angular/core";
 import { Router } from "@angular/router";
 import type { InferResponseType } from "hono/client";
+import { AppDocuments } from "../../intake/documents/documents";
 import { api } from "../../lib/api";
+import { UiModal } from "../../ui/modal/modal";
 import { UiSpinner } from "../../ui/spinner/spinner";
 import { UiText } from "../../ui/typography/text/text";
 import { ProfileAssistant } from "../profile-assistant/profile-assistant";
@@ -43,7 +45,7 @@ type Answer = InferResponseType<typeof api.intake.profile.$get, 200>;
 
 @Component({
   selector: "profile-viewer",
-  imports: [ProfileAssistant, ProfileBar, ProfileSheet, UiSpinner, UiText],
+  imports: [AppDocuments, ProfileAssistant, ProfileBar, ProfileSheet, UiModal, UiSpinner, UiText],
   templateUrl: "./profile-viewer.html",
   // The layout every assistant screen holds to (the person, 2026-09-12): this fills the
   // page rather than growing past it, so the window never scrolls and each column
@@ -54,6 +56,9 @@ export class ProfileViewer {
   private readonly router = inject(Router);
 
   protected readonly profile = signal<Answer | null>(null);
+
+  /** Whether the drop zone is open over the profile (`ID160`). */
+  protected readonly adding = signal(false);
 
   /** Which column is showing below 1024 px. The profile is what a person came for. */
   protected readonly view = signal<"sheet" | "chat">("sheet");
@@ -343,9 +348,22 @@ export class ProfileViewer {
     await this.load();
   }
 
-  /** The way back to the drop zone, which is what an empty profile needs most. */
-  protected addDocuments(): Promise<boolean> {
-    return this.router.navigateByUrl("/documents");
+  /**
+   * The drop zone, over the profile rather than instead of it (the person, 2026-09-12).
+   * Adding a document is something a person does *to* the profile they are reading, so
+   * the page they are reading stays where it is and the drop zone opens on top of it.
+   */
+  protected addDocuments(): void {
+    this.adding.set(true);
+  }
+
+  /**
+   * The reading inside the modal landed: the drop zone has said its piece in green, so
+   * it closes, and the profile it just changed is read back.
+   */
+  protected async documentsAdded(): Promise<void> {
+    this.adding.set(false);
+    await this.load();
   }
 
   /** The observer and the two listeners the reveal set up go with the column. */

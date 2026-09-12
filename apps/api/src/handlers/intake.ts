@@ -241,11 +241,25 @@ export const readDocuments = factory.createHandlers(async (c) => {
   const person = await asking(c);
   if (person === null) return refused(c);
 
-  const waiting = await db
+  /**
+   * Every document this person handed over, and not only the new ones (`ID157`, the
+   * person 2026-09-12).
+   *
+   * The call is over the documents composed into one, and the answer is the whole
+   * profile — so a run over the new document alone would write a profile made of that
+   * document alone, and the one before it would be gone. What decides whether a run
+   * happens at all is still whether anything is unread; what it reads, once it happens,
+   * is everything.
+   */
+  const everything = await db
     .select()
     .from(document)
-    .where(and(eq(document.userId, person.id), ne(document.status, "read")))
+    .where(eq(document.userId, person.id))
     .orderBy(asc(document.createdAt), asc(document.id));
+
+  // Nothing new, nothing to do: a person pressing Read twice over the same documents
+  // makes one call, not two (`SL2`'s criterion 11).
+  const waiting = everything.some((row) => row.status !== "read") ? everything : [];
 
   // The raw stream helper rather than the server-sent-event one, and the headers that
   // helper would set, set here: the envelope already writes `id:` and `data:` lines.

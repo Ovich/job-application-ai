@@ -57,3 +57,14 @@
     </div>
   </div>
 </div>
+
+<!--
+  The drop zone over the profile (`ID160`): the same screen the intake route renders,
+  told it is somebody else's content, so it says nothing about opening a profile a
+  person is already looking at.
+-->
+@if (adding()) {
+  <ui-modal title="Add documents" width="lg" (close)="adding.set(false)">
+    <app-documents [embedded]="true" (done)="documentsAdded()" />
+  </ui-modal>
+}

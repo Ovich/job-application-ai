@@ -138,6 +138,8 @@ describe("the fixtures this slice ships", () => {
     expect(casesHeld()).toEqual([
       // One document alone, and then the combinations the suite drives a run over.
       "intake.read:2026-08-30_cv_EN",
+      "intake.read:2026-08-30_cv_EN+2026-08-30_cv_FR",
+      "intake.read:2026-08-30_cv_FR",
       "intake.read:2026-08-30_cv_FR+2026-08-30_cv_EN",
       "intake.read:2026-08-30_cv_FR+2026-08-30_cv_EN+BS-HEIGVD-IL-Diplome",
       "intake.read:2026-08-30_cv_FR+leCVWeb+CV-2025",

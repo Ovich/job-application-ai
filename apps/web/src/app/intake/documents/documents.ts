@@ -1,4 +1,4 @@
-import { Component, computed, inject, signal } from "@angular/core";
+import { Component, computed, inject, input, output, signal } from "@angular/core";
 import { Router } from "@angular/router";
 import type { InferResponseType } from "hono/client";
 import { api } from "../../lib/api";
@@ -104,6 +104,19 @@ export class AppDocuments {
   protected readonly landed = signal(false);
 
   /**
+   * Whether this screen is somebody else's content rather than its own page. A modal on
+   * the profile renders it (`ID160`); the route renders it alone.
+   */
+  public readonly embedded = input<boolean>(false);
+
+  /**
+   * The reading landed, said to whoever is holding this screen. The route takes it as
+   * the moment to open the profile; a modal takes it as the moment to close and read
+   * the profile back. Neither decision belongs here.
+   */
+  public readonly done = output<void>();
+
+  /**
    * Which of the mockup's three states the screen is in. `reading` is not a flag a
    * person turned on: a row that says `reading` puts the screen there whoever started
    * the run, which is what makes coming back to a tab agree with leaving it.
@@ -157,9 +170,16 @@ export class AppDocuments {
     void this.load();
   }
 
-  /** The profile, once every document has been read. */
-  protected seeProfile(): Promise<boolean> {
-    return this.router.navigateByUrl("/profile");
+  /**
+   * The way onward once every document is read: the profile itself from the page, and
+   * nothing but a closed modal from inside one — a person there is already on it.
+   */
+  protected seeProfile(): void {
+    if (this.embedded()) {
+      this.done.emit();
+      return;
+    }
+    void this.router.navigateByUrl("/profile");
   }
 
   /**
@@ -257,7 +277,10 @@ export class AppDocuments {
      */
     if (this.allRead()) {
       this.landed.set(true);
-      setTimeout(() => void this.router.navigateByUrl("/profile"), afterTheReading);
+      setTimeout(() => {
+        this.done.emit();
+        if (!this.embedded()) void this.router.navigateByUrl("/profile");
+      }, afterTheReading);
     }
   }
 
