@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { app } from "../../../../src/app";
-import { casesHeld } from "../../../../src/lib/ai/mock";
-import { withCases } from "../../../support/ai";
-import { anthropicWhole, openAiWhole } from "../../../support/envelopes";
+import { app } from "../../../src/app";
+import { casesHeld } from "../../../src/lib/mock";
+import { withCases } from "../../support/ai";
+import { anthropicWhole, openAiWhole } from "../../support/envelopes";
 
 /**
  * Seam B: the mock's router, reached the way HTTP reaches it, through the application's

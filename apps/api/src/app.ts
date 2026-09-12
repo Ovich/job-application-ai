@@ -1,8 +1,8 @@
 import { Hono } from "hono";
-import { mock } from "./lib/ai/mock";
 import { auth } from "./lib/auth";
 import { health } from "./routes/health";
 import { intake } from "./routes/intake";
+import { mock } from "./routes/mock";
 
 /** The product's own API, everything under `/api`. */
 const api = new Hono()
@@ -25,9 +25,16 @@ export const app = new Hono()
   // The AI double, a sibling of `/api` and deliberately not a path under it (ID110).
   // The deployed distribution has a behaviour for `/api/*` that disables caching and
   // forwards headers; a double mounted under it would inherit that behaviour, and would
-  // be reachable by any client of the product's own API. The base URL a caller is given
+  // be reachable by any client of the product's own API. The base URL a laptop is given
   // is therefore `<origin>/mock/v1`, which is what the client appends
   // `/chat/completions` to.
+  //
+  // **It is unreachable in production, and by configuration rather than by a branch**
+  // (ID150, the person, 2026-09-12: *"I just dont like environement conditions in the
+  // code"*). These handlers ship in the deployed bundle and no path of the distribution
+  // reaches them; the deployed function is handed an in-process dispatch as a value at
+  // its composition root, so it answers itself with no network hop (ID130, SL6). No
+  // module here asks which environment it is in, and this line is the same line in both.
   .route("/mock/v1", mock)
   // Hono answers an unmatched path with plain text. Everything else this API says is
   // JSON, and a client that parses every answer the same way should not meet a syntax

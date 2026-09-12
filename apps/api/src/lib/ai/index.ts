@@ -4,12 +4,12 @@ import { createAi } from "./client";
 /**
  * The AI boundary, configured. This file is the module's whole public face: a pipeline
  * step writes `from "../lib/ai"` and learns nothing about the client, the base URL, the
- * key, the model or the case header.
+ * key, the model or the header the call's metadata travels in.
  *
  * The instance is built from `env.ts`, the one reader of the process environment, and
- * the values reach it as arguments. `createAi` is exported beside it for the two
- * callers that must configure their own: the suite, which answers in-process, and SL6's
- * deployed function dispatching to its own mock (ID130).
+ * the values reach it as arguments. `createAi` is exported beside it for the callers
+ * that must configure their own — the suite, and the deployed function that answers
+ * itself in process (`ID130`, `ID150`).
  */
 
 const ai = createAi({
@@ -27,5 +27,4 @@ export const askStreaming = ai.askStreaming;
 /** The answer parsed into the shape the step asked for, or an error. Never half of one. */
 export const askFor = ai.askFor;
 
-export { type Ai, type AiConfig, createAi } from "./client";
-export type { CaseName, Message } from "./types";
+export { type About, type Ai, type AiConfig, createAi, type Message } from "./client";

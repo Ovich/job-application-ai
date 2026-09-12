@@ -69,9 +69,7 @@ describe("the client's own vocabulary", () => {
   const theDouble = [/\bmock/i, /\bfixture/i, /\bdouble\b/i, /CaseName/, /\brecorded\b/i];
 
   const inLibAi = async (): Promise<string[]> =>
-    (await everySourceFile()).filter((file) =>
-      file.replaceAll("\\", "/").includes("/src/lib/ai/"),
-    );
+    (await everySourceFile()).filter((file) => file.replaceAll("\\", "/").includes("/src/lib/ai/"));
 
   it("has sources to grep at all, so the claim below cannot pass on an empty list", async () => {
     expect((await inLibAi()).length).toBeGreaterThan(0);
@@ -136,13 +134,13 @@ describe("the mock's import graph", () => {
   };
 
   it("reaches nothing that can open a connection", () => {
-    const closure = closureOf(join(api, "src/lib/ai/mock/index.ts"));
+    const closure = closureOf(join(api, "src/lib/mock/index.ts"));
 
     expect([...closure].filter((name) => canOpenAConnection.includes(name))).toEqual([]);
   });
 
   it("does not call fetch", () => {
-    const closure = [...closureOf(join(api, "src/lib/ai/mock/index.ts"))].filter((name) =>
+    const closure = [...closureOf(join(api, "src/lib/mock/index.ts"))].filter((name) =>
       name.endsWith(".ts"),
     );
 

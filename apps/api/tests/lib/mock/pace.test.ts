@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { chunksOf, defaultPace, paceFrom, paceOf } from "../../../../src/lib/ai/mock";
+import { chunksOf, defaultPace, paceFrom, paceOf } from "../../../src/lib/mock";
 
 /**
  * The four named settings, read from a value that configuration and the per-request

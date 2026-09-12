@@ -27,7 +27,7 @@ import { stream } from "hono/streaming";
 import { validator } from "hono/validator";
 import { z } from "zod";
 import { env } from "../env";
-import { askFor, type CaseName, type Message } from "../lib/ai";
+import { type About, askFor, type Message } from "../lib/ai";
 import { db } from "../lib/db";
 import { isDuplicate } from "../lib/db/duplicate";
 import { hashOf, kindOf, slugOf } from "../lib/documents";
@@ -226,15 +226,23 @@ const classification = z.object({
 });
 
 /**
- * The case a document's classification is recorded under: the file's own name, without
- * its extension, under the step `intake.classify` (`F3`, `D20`). A case therefore stands
- * for a real file and can be matched to it by eye in the fixture directory, which a
- * content hash could not. The hash keeps its one job, which is the duplicate.
+ * What each call of this feature is about (`ID145`, amending `ID111`).
+ *
+ * Four one-line descriptions of four calls, and they stay here rather than becoming a
+ * module: each has exactly one caller, each would vanish the day its call site did, and
+ * a module that disappears with its only caller buys a file and an import (`S7.3`'s own
+ * rule, the reason `asMegabytes` stayed too).
+ *
+ * The input is always the file's own name without its extension, or a run's files by
+ * slug in the run's order (`F3`, `D20`), so what a call was about can be matched to a
+ * real document by eye, which a content hash could not. The hash keeps its one job,
+ * which is the duplicate.
  */
-const caseFor = (filename: string): CaseName => {
-  const dot = filename.lastIndexOf(".");
-  return `intake.classify:${dot <= 0 ? filename : filename.slice(0, dot)}`;
-};
+const theClassificationOf = (filename: string): About => ({
+  feature: "intake",
+  step: "classify",
+  input: slugOf(filename),
+});
 
 /** What the reader is told. The mock reads none of it; a provider would read all of it. */
 const askingAbout = (filename: string, mediaType: string): Message[] => [
@@ -322,16 +330,16 @@ export const readDocuments = factory.createHandlers(async (c) => {
 
         try {
           const read = await askFor(
-            caseFor(row.filename),
             askingAbout(row.filename, row.mediaType),
+            theClassificationOf(row.filename),
             classification,
           );
           // Read alone, and read whole: what the document is, then what it states. A
           // document whose extraction cannot be read has not been read, so the two are
           // one step and the row moves to `read` only when both have landed.
           const stated = await askFor(
-            extractCaseFor(row.filename),
             extractingFrom(row.filename, read.kind, read.language),
+            theExtractionOf(row.filename),
             extraction,
           );
           await db
@@ -376,8 +384,8 @@ export const readDocuments = factory.createHandlers(async (c) => {
         let merged: z.infer<typeof merge> | null = null;
         try {
           merged = await askFor(
-            mergeCaseFor(slugs),
             merging(readings.map(({ slug, facts }) => ({ slug, facts }))),
+            theMergeOf(slugs),
             merge,
           );
           await writeProfile(
@@ -407,7 +415,7 @@ export const readDocuments = factory.createHandlers(async (c) => {
         if (written !== null) {
           try {
             const asked = await retriedOnce(() =>
-              askFor(questionsCaseFor(slugs), askingWhatOnlyYouKnow(written), proposal),
+              askFor(askingWhatOnlyYouKnow(written), theQuestionsFor(slugs), proposal),
             );
             await writeQuestions(person.id, asked);
           } catch {
@@ -553,11 +561,19 @@ const merging = (readings: { slug: string; facts: unknown }[]): Message[] => [
   { role: "user", content: JSON.stringify({ readings }) },
 ];
 
-/** The case a merge is recorded under: the run's documents, by slug, in the run's order. */
-const mergeCaseFor = (slugs: string[]): CaseName => `intake.merge:${slugs.join("+")}`;
+/** What a merge is about: the run's documents, by slug, in the run's order. */
+const theMergeOf = (slugs: string[]): About => ({
+  feature: "intake",
+  step: "merge",
+  input: slugs.join("+"),
+});
 
-/** The case one document's extraction is recorded under (`ID111`, `D20`). */
-const extractCaseFor = (filename: string): CaseName => `intake.extract:${slugOf(filename)}`;
+/** What one document's extraction is about (`ID145`, `D20`). */
+const theExtractionOf = (filename: string): About => ({
+  feature: "intake",
+  step: "extract",
+  input: slugOf(filename),
+});
 
 /**
  * The merged profile, written whole or not at all.
@@ -704,8 +720,12 @@ const candidate = z.object({
 
 const proposal = z.object({ candidates: z.array(candidate) });
 
-/** The case the fourth step is recorded under: the run's documents, by slug (`ID111`). */
-const questionsCaseFor = (slugs: string[]): CaseName => `intake.questions:${slugs.join("+")}`;
+/** What the fourth step is about: the run's documents, by slug (`ID145`). */
+const theQuestionsFor = (slugs: string[]): About => ({
+  feature: "intake",
+  step: "questions",
+  input: slugs.join("+"),
+});
 
 /**
  * One more attempt, and one only (spec, *Failure modes*). The second failure is the
@@ -746,7 +766,7 @@ const askingWhatOnlyYouKnow = (merged: z.infer<typeof merge>): Message[] => [
  * (`US5`, criterion 3). Two or more documents that stated a fact in the very same words
  * have agreed about it and stated it plainly, so there is nothing there only the person
  * knows, and asking would be quizzing them about their own CV. This is the run's rule
- * and not the fixture's: a reader that proposes such a question is refused here.
+ * and not the reader's: a reader that proposes such a question is refused here.
  */
 const writeQuestions = async (userId: string, asked: z.infer<typeof proposal>): Promise<void> => {
   const items = await db

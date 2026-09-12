@@ -17,6 +17,17 @@ import { aiThroughTheApp, forgetRequests, requestsSent, withCases } from "../../
  */
 
 const cvFr = "intake.classify:2026-08-30_cv_FR" as const;
+
+/**
+ * What the call is about, in the three strings `lib/ai` now takes (`ID145`), and the
+ * case name the double files its answer under — which is what those three strings
+ * serialise to on the wire. They are the same value written twice, deliberately: the
+ * test says the case out loud so that what the header carries is asserted against a
+ * literal rather than against the client's own arithmetic.
+ */
+const aboutCvFr = { feature: "intake", step: "classify", input: "2026-08-30_cv_FR" };
+const aboutNothingRecorded = { feature: "intake", step: "classify", input: "never-recorded" };
+
 const content = '{"kind":"cv","language":"fr","confidence":0.97}';
 
 afterEach(() => {
@@ -27,7 +38,7 @@ describe("a call through lib/ai", () => {
   it("carries the case header, set by the module and not by the caller", async () => {
     const cases = withCases({ [cvFr]: { stands_for: "a CV", content, tool_calls: [] } });
     try {
-      await aiThroughTheApp().ask(cvFr, [{ role: "user", content: "read this" }]);
+      await aiThroughTheApp().ask([{ role: "user", content: "read this" }], aboutCvFr);
     } finally {
       cases.dispose();
     }
@@ -45,7 +56,7 @@ describe("a call through lib/ai", () => {
   it("sends a body of protocol fields only, nothing a provider would reject", async () => {
     const cases = withCases({ [cvFr]: { stands_for: "a CV", content, tool_calls: [] } });
     try {
-      await aiThroughTheApp().ask(cvFr, [{ role: "user", content: "read this" }]);
+      await aiThroughTheApp().ask([{ role: "user", content: "read this" }], aboutCvFr);
     } finally {
       cases.dispose();
     }
@@ -61,7 +72,10 @@ describe("a call through lib/ai", () => {
   it("answers a recorded case with that case's content", async () => {
     const cases = withCases({ [cvFr]: { stands_for: "a CV", content, tool_calls: [] } });
     try {
-      const answer = await aiThroughTheApp().ask(cvFr, [{ role: "user", content: "read this" }]);
+      const answer = await aiThroughTheApp().ask(
+        [{ role: "user", content: "read this" }],
+        aboutCvFr,
+      );
 
       expect(answer).toBe(content);
     } finally {
@@ -73,7 +87,7 @@ describe("a call through lib/ai", () => {
     const cases = withCases({ [cvFr]: { stands_for: "a CV", content, tool_calls: [] } });
     try {
       await expect(
-        aiThroughTheApp().ask("intake.classify:never-recorded", [{ role: "user", content: "?" }]),
+        aiThroughTheApp().ask([{ role: "user", content: "?" }], aboutNothingRecorded),
       ).rejects.toThrow(/intake\.classify:never-recorded/);
     } finally {
       cases.dispose();
@@ -95,12 +109,17 @@ describe("askStreaming", () => {
     try {
       const ai = aiThroughTheApp();
       const pieces: string[] = [];
-      for await (const piece of ai.askStreaming(cvFr, [{ role: "user", content: "read this" }])) {
+      for await (const piece of ai.askStreaming(
+        [{ role: "user", content: "read this" }],
+        aboutCvFr,
+      )) {
         pieces.push(piece);
       }
 
       expect(pieces.join("")).toBe(long);
-      expect(pieces.join("")).toBe(await ai.ask(cvFr, [{ role: "user", content: "read this" }]));
+      expect(pieces.join("")).toBe(
+        await ai.ask([{ role: "user", content: "read this" }], aboutCvFr),
+      );
     } finally {
       cases.dispose();
     }
@@ -109,7 +128,10 @@ describe("askStreaming", () => {
   it("asks for the stream with the protocol's own field, and still nothing else", async () => {
     const cases = withCases({ [cvFr]: { stands_for: "a CV", content: long } });
     try {
-      for await (const _ of aiThroughTheApp().askStreaming(cvFr, [{ role: "user", content: "?" }]));
+      for await (const _ of aiThroughTheApp().askStreaming(
+        [{ role: "user", content: "?" }],
+        aboutCvFr,
+      ));
     } finally {
       cases.dispose();
     }
@@ -123,9 +145,10 @@ describe("askStreaming", () => {
     const cases = withCases({ [cvFr]: { stands_for: "a CV", content: long } });
     try {
       await expect(async () => {
-        for await (const _ of aiThroughTheApp().askStreaming("intake.classify:never-recorded", [
-          { role: "user", content: "?" },
-        ]));
+        for await (const _ of aiThroughTheApp().askStreaming(
+          [{ role: "user", content: "?" }],
+          aboutNothingRecorded,
+        ));
       }).rejects.toThrow(/intake\.classify:never-recorded/);
     } finally {
       cases.dispose();
@@ -144,7 +167,11 @@ describe("askFor", () => {
   it("parses the answer into the shape asked for", async () => {
     const cases = withCases({ [cvFr]: { stands_for: "a CV", content, tool_calls: [] } });
     try {
-      const read = await aiThroughTheApp().askFor(cvFr, [{ role: "user", content: "?" }], shape);
+      const read = await aiThroughTheApp().askFor(
+        [{ role: "user", content: "?" }],
+        aboutCvFr,
+        shape,
+      );
 
       expect(read).toEqual({ kind: "cv", language: "fr" });
     } finally {
@@ -158,7 +185,7 @@ describe("askFor", () => {
     });
     try {
       await expect(
-        aiThroughTheApp().askFor(cvFr, [{ role: "user", content: "?" }], shape),
+        aiThroughTheApp().askFor([{ role: "user", content: "?" }], aboutCvFr, shape),
       ).rejects.toThrow();
     } finally {
       cases.dispose();
@@ -171,7 +198,7 @@ describe("askFor", () => {
     });
     try {
       await expect(
-        aiThroughTheApp().askFor(cvFr, [{ role: "user", content: "?" }], shape),
+        aiThroughTheApp().askFor([{ role: "user", content: "?" }], aboutCvFr, shape),
       ).rejects.toThrow();
     } finally {
       cases.dispose();

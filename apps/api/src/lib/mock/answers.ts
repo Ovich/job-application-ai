@@ -2,31 +2,34 @@ import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { z } from "zod";
-import type { CaseName } from "../types";
 
 /**
- * The recorded cases, and the loader that finds one.
+ * The answer documents, and the loader that finds one (`ID147`, amending `ID112`; the
+ * person's own comment: *"These documents shall be encapsulated in the mock module which
+ * is responsable to route requests to a good response document. It should not be a
+ * fixture"*).
  *
- * A case is one hand-authored JSON file under `lib/ai/fixtures/<feature>/`, namespaced
- * by feature so the builder's cases and the letter's join the intake's later without a
- * second double (ID112, D15). They are expected to be many, and they are written
- * against documents the person actually has, so what a case says is what a reader
- * should get out of a real file.
+ * They live inside this module, under `documents/<feature>/`, and nothing outside it may
+ * read them: they are this module's own data, not a test's furniture. Namespaced by
+ * feature so the builder's answers and the letter's join the intake's later without a
+ * second double, expected to be many, and written against documents the person actually
+ * has — so what a document says is what a reader should get out of a real file (`D15`,
+ * `D20`).
  *
- * **Nothing in a fixture names a protocol.** A case holds the content once and the two
- * serialisers wrap it, which is the whole of D11: the day a provider is reached in
- * Anthropic's shape, the recorded cases do not move.
+ * **Nothing in an answer document names a protocol.** It holds the content once and the
+ * two serialisers wrap it, which is the whole of `D11`: the day a provider is reached in
+ * Anthropic's shape, these documents do not move.
  *
  * This module reads files and nothing else. It imports no client and can open no
- * connection, which is what makes a miss a failure rather than a call (spec D20).
+ * connection, which is what makes a miss a failure rather than a call (spec `D20`).
  */
 
 /**
- * A case's file, minus what its name already says. `usage` is written in the
+ * One document, minus what its name already says. `usage` is written in the
  * envelope-independent names — input and output — and each serialiser maps them into
  * what its own protocol calls them.
  */
-const recordedCase = z.object({
+const answerDocument = z.object({
   case: z.string().regex(/^[^.]+\.[^:]+:.+$/, "a case is named <feature>.<step>:<input>"),
   stands_for: z.string().min(1),
   content: z.string(),
@@ -39,37 +42,40 @@ const recordedCase = z.object({
     .default({ input_tokens: 0, output_tokens: 0 }),
 });
 
-/** One recorded case, as the loader hands it on. */
-export type RecordedCase = z.infer<typeof recordedCase> & { case: CaseName };
+/** One answer document, as the loader hands it on. */
+export type RecordedCase = z.infer<typeof answerDocument>;
 
 /**
- * One recorded case as a file holds it, where the counts and the tool calls may be left
- * out and the loader fills them in. It is what a person hand-authoring a fixture writes,
+ * One answer document as a file holds it, where the counts and the tool calls may be
+ * left out and the loader fills them in. It is what a person hand-authoring one writes,
  * and what the suite's `withCases` takes.
  */
-export type RecordedCaseFile = z.input<typeof recordedCase>;
+export type RecordedCaseFile = z.input<typeof answerDocument>;
 
-/** The tree the product ships: `apps/api/src/lib/ai/fixtures/`. */
-const shipped = fileURLToPath(new URL("../fixtures/", import.meta.url));
+/** The tree this module ships: `apps/api/src/lib/mock/documents/`. */
+const shipped = fileURLToPath(new URL("./documents/", import.meta.url));
 
 let root = shipped;
 
 /**
- * Points the loader at another tree, and hands back the one it was using.
+ * Points the loader at another tree for as long as the caller wants, and hands back the
+ * undoing of it.
  *
- * The suite's own support calls this and puts it back (`tests/support/ai.ts`), so a
- * test can record a case of its own without adding a file to the product's tree.
- * Nothing in the product calls it.
+ * The suite's own support calls this and undoes it (`tests/support/ai.ts`), so a test can
+ * write an answer of its own without adding a file to this module's tree. Nothing in the
+ * product calls it.
  */
-export const useFixtureRoot = (path: string): string => {
+export const withAnswersFrom = (directory: string): (() => void) => {
   const previous = root;
-  root = path;
-  return previous;
+  root = directory;
+  return () => {
+    root = previous;
+  };
 };
 
 /**
- * Every case in the tree, read fresh. A double that caches is a double that answers
- * yesterday's fixture after one is edited, and the cost of reading a directory of small
+ * Every answer in the tree, read fresh. A module that caches is one that answers
+ * yesterday's document after one is edited, and the cost of reading a directory of small
  * files on a laptop is not worth that.
  *
  * A file that does not parse throws with its own path in the message, because a broken
@@ -86,17 +92,17 @@ const everyCase = (): Map<string, RecordedCase> => {
   for (const file of files) {
     if (!file.endsWith(".json")) continue;
     const path = join(root, file);
-    const read = recordedCase.safeParse(JSON.parse(readFileSync(path, "utf8")));
+    const read = answerDocument.safeParse(JSON.parse(readFileSync(path, "utf8")));
     if (!read.success) {
-      throw new Error(`The recorded case ${path} is not a case: ${read.error.message}`);
+      throw new Error(`The answer document ${path} is not one: ${read.error.message}`);
     }
-    held.set(read.data.case, read.data as RecordedCase);
+    held.set(read.data.case, read.data);
   }
   return held;
 };
 
-/** The cases the mock holds, sorted, for the 404's body and for a test's own listing. */
-export const casesHeld = (): CaseName[] => [...everyCase().keys()].sort() as CaseName[];
+/** The cases this module answers, sorted, for the 404's body and for a test's own listing. */
+export const casesHeld = (): string[] => [...everyCase().keys()].sort();
 
 /** The case asked for, or nothing. Nothing is a 404; it is never a call and never a guess. */
 export const caseNamed = (name: string | null | undefined): RecordedCase | undefined =>

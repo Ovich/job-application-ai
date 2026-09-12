@@ -1,32 +1,37 @@
 import type { Context } from "hono";
-import { Hono } from "hono";
+import { createFactory } from "hono/factory";
 import { streamSSE } from "hono/streaming";
+import { caseNamed, casesHeld, type RecordedCase } from "./answers";
 import { anthropicFrames, anthropicWhole } from "./anthropic-envelope";
-import { caseNamed, casesHeld, type RecordedCase } from "./fixtures";
 import type { Frame } from "./frames";
 import { openAiFrames, openAiWhole } from "./openai-envelope";
 import { chunksOf, intervalMs, type Pace, paceOf } from "./pace";
 
 /**
- * The test double, as a router mounted in this same application (ID109, ID110). There
- * is nothing extra to deploy, to start in CI or to keep alive, and the base URL a
- * caller is given is this application's own origin plus `/mock/v1`.
+ * The double's two answers, **as handlers rather than as a router** (`ID146`, amending
+ * `ID109`; the person's own comment: *"We dont need the mock to expose the routes, just
+ * expose them as our typical handlers"*).
  *
- * It holds no client and imports nothing that could open a connection, so a case it
- * does not have is a failure and never a call: a double that can reach the network can
- * spend money and can hide a missing fixture behind a real answer (spec D20).
+ * Nothing here constructs a `Hono`. The paths are a route file's, exactly as
+ * `routes/intake.ts` holds the intake's, so the file that mounts this module is the file
+ * that decides where it is mounted — and this module is standalone enough to be mounted
+ * somewhere else, or not at all (`ID150`).
  *
- * The two paths are the two envelopes, and they are the only thing that differs between
- * them. One recorded case answers on both, wrapped by its own serialiser, streamed or
- * whole by the protocol's own `stream: true`.
+ * It holds no client and imports nothing that could open a connection, so a case it does
+ * not have is a failure and never a call: a double that can reach the network can spend
+ * money and can hide a missing answer behind a real one (spec `D20`).
+ *
+ * The two handlers are the two envelopes, and they are the only thing that differs
+ * between them. One answer document answers on both, wrapped by its own serialiser,
+ * streamed or whole by the protocol's own `stream: true`.
  */
 
 /**
- * Which wrapper a path puts a case in. The case itself names no protocol, which is the
- * whole of D11: one recorded answer, two envelopes, and a fixture that does not move
- * the day a provider is reached in the other shape.
+ * Which wrapper a handler puts an answer in. The document itself names no protocol, which
+ * is the whole of `D11`: one answer, two envelopes, and a document that does not move the
+ * day a provider is reached in the other shape.
  *
- * The case comes last to `frames` because one protocol's stream does not need it: see
+ * The document comes last to `frames` because one protocol's stream does not need it: see
  * `openai-envelope.ts`.
  */
 type Envelope = {
@@ -47,13 +52,13 @@ const answer = async (c: Context, envelope: Envelope, configured: Pace) => {
   const name = c.req.header("X-Jobapp-Case") ?? null;
   const recorded = caseNamed(name);
 
-  // A miss says the case it was asked for, what it holds, and how to record a new one.
-  // No pass-through and no generic answer: a test that reaches an unrecorded path has
+  // A miss says the case it was asked for, what it holds, and how to write a new one.
+  // No pass-through and no generic answer: a test that reaches an unanswered path has
   // to fail rather than pass on something invented (ID113).
   if (recorded === undefined) {
     return c.json(
       {
-        error: `No recorded case ${name ?? "(none named in X-Jobapp-Case)"}. Record it with the intake's recording script, or add its file under apps/api/src/lib/ai/fixtures/<feature>/.`,
+        error: `No recorded case ${name ?? "(none named in X-Jobapp-Case)"}. Record it with the intake's recording script, or add its file under apps/api/src/lib/mock/documents/<feature>/.`,
         case: name,
         held: casesHeld(),
       },
@@ -82,11 +87,13 @@ const answer = async (c: Context, envelope: Envelope, configured: Pace) => {
   });
 };
 
+const factory = createFactory();
+
 /**
- * The router, given the pace its answers fall back to when a request asks for none.
- * The pace is configuration, so this module still reads no environment of its own.
+ * The two handlers, given the pace their answers fall back to when a request asks for
+ * none. The pace is configuration, so this module still reads no environment of its own.
  */
-export const createMockRouter = (configured: Pace) =>
-  new Hono()
-    .post("/chat/completions", (c) => answer(c, openAi, configured))
-    .post("/messages", (c) => answer(c, anthropic, configured));
+export const createAnswers = (configured: Pace) => ({
+  chatCompletions: factory.createHandlers((c) => answer(c, openAi, configured)),
+  messages: factory.createHandlers((c) => answer(c, anthropic, configured)),
+});

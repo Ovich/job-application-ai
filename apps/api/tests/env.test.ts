@@ -358,15 +358,24 @@ describe("the cloud runtime", () => {
    * supplies them from the template. Between here and there every merge deploys, and a
    * value required before the template sets it fails the cold start of a function that
    * does not yet make a single AI call — the health route with it. So they default in
-   * the cloud too, exactly as the provider clients did between SL2 and S5.2, and the
-   * default is the deployed app's own mock. SL6 takes the exception away in the same
-   * breath as it puts the values in the template.
+   * the cloud too, exactly as the provider clients did between SL2 and S5.2. SL6 takes
+   * the exception away in the same breath as it puts the values in the template.
+   *
+   * **And the default is the same string in every runtime** (`S7.1`, `ID150`; the
+   * person, 2026-09-12: *"I just dont like environement conditions in the code"*). It
+   * used to be computed from `APP_RUNTIME`, so that a deployed function was pointed at
+   * `<APP_URL>/mock/v1` — an address the distribution publishes no path to. The double
+   * is unreachable in production by design: it ships in the bundle and the deployed
+   * function is handed an in-process dispatch as a value at its composition root, so the
+   * host in this URL is never dialled there (`ID130`, `SL6`). One address, no branch,
+   * and nothing in the API asks which environment it is running in any more.
    */
-  it("defaults the AI at the deployed app's own mock, until SL6's template sets it", async () => {
-    const env = await load(deployed);
+  it("defaults the AI at the same address whichever runtime it is, because nothing branches", async () => {
+    const laptop = await load({ ...nothingSet, ...everyValue });
+    const cloud = await load(deployed);
 
-    expect({ baseUrl: env.AI_BASE_URL, key: env.AI_API_KEY, model: env.AI_MODEL }).toEqual({
-      baseUrl: "https://dev.job-application.app/mock/v1",
+    expect({ baseUrl: cloud.AI_BASE_URL, key: cloud.AI_API_KEY, model: cloud.AI_MODEL }).toEqual({
+      baseUrl: laptop.AI_BASE_URL,
       key: "local_dev_only_the_mock_ignores_it",
       model: "mock-model",
     });

@@ -1,26 +1,24 @@
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-// The client and the case name from the modules that define them, never from
-// `lib/ai`'s index. A test of a route that calls `lib/ai` stands that index in through
-// `vi.mock`, whose factory reaches this file; importing the index here would put this
-// module inside the graph of the module it is standing in for, and the two would wait
-// on each other for ever.
+// The client from the module that defines it, never from `lib/ai`'s index. A test of a
+// route that calls `lib/ai` stands that index in through `vi.mock`, whose factory
+// reaches this file; importing the index here would put this module inside the graph of
+// the module it is standing in for, and the two would wait on each other for ever.
 import { createAi } from "../../src/lib/ai/client";
-import { type RecordedCaseFile, useFixtureRoot } from "../../src/lib/ai/mock";
-import type { CaseName } from "../../src/lib/ai/types";
+import { type RecordedCaseFile, withAnswersFrom } from "../../src/lib/mock";
 
 /**
  * The suite's own AI support (ID129).
  *
  * It hides three things: pointing the client at the application's own fetch handler, so
  * the serialisers are exercised the way HTTP would exercise them and no port is opened;
- * a temporary fixture root, so a test can record a case of its own without adding a file
- * to the product's fixture tree; and the recording of what was actually sent, which is
+ * a temporary tree of answer documents, so a test can record a case of its own without
+ * adding a file to the product's own tree; and the recording of what was actually sent, which is
  * how the request's shape is asserted (criterion 3).
  *
- * It leaves nothing behind: `withCases` removes its directory and puts the fixture root
- * back where it was.
+ * It leaves nothing behind: `withCases` removes its directory and puts the double's own
+ * tree back.
  */
 
 /** One request as it left `lib/ai`, before anything on the other side read it. */
@@ -74,17 +72,14 @@ export const aiThroughTheApp = () =>
 export type CasesInPlace = { dispose: () => void };
 
 /**
- * Writes the given cases into a temporary fixture tree and points the mock's loader at
- * it, for the length of one test. The key is the case name; the value is the recorded
- * case as a fixture file holds it, minus the name, which the key already carries.
+ * Writes the given cases into a temporary tree and points the double's loader at it, for the length of one test. The key is the case name; the value is the recorded
+ * case as an answer document holds it, minus the name, which the key already carries.
  *
  * A `Disposable` would be the natural shape, and is not available: this repository's
  * TypeScript library is `ES2023`, which has no `Symbol.dispose`. `dispose()` in a
  * `finally` or an `afterEach` is the same discipline written by hand.
  */
-export const withCases = (
-  cases: Record<CaseName, Omit<RecordedCaseFile, "case">>,
-): CasesInPlace => {
+export const withCases = (cases: Record<string, Omit<RecordedCaseFile, "case">>): CasesInPlace => {
   const root = mkdtempSync(join(tmpdir(), "jobapp-cases-"));
   for (const [name, recorded] of Object.entries(cases)) {
     const directory = join(root, name.slice(0, name.indexOf(".")));
@@ -98,10 +93,10 @@ export const withCases = (
       "utf8",
     );
   }
-  const previous = useFixtureRoot(root);
+  const undo = withAnswersFrom(root);
   return {
     dispose: () => {
-      useFixtureRoot(previous);
+      undo();
       rmSync(root, { recursive: true, force: true });
     },
   };

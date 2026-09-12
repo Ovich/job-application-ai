@@ -1,5 +1,4 @@
-import type { RecordedCaseFile } from "../../src/lib/ai/mock";
-import type { CaseName } from "../../src/lib/ai/types";
+import type { RecordedCaseFile } from "../../src/lib/mock";
 
 /**
  * The suite's own intake support for the questions and the rules (ID129, on SL1's,
@@ -129,7 +128,7 @@ const recorded = (stands_for: string, content: string): Omit<RecordedCaseFile, "
  * out of them (`D20`). What this function invents is nothing — it fills in the two
  * steps whose content no case here asserts.
  */
-export const casesForRun = (run: RunCases): Record<CaseName, Omit<RecordedCaseFile, "case">> => {
+export const casesForRun = (run: RunCases): Record<string, Omit<RecordedCaseFile, "case">> => {
   const slugs = run.documents.map(slugOf);
   const cases: Record<string, Omit<RecordedCaseFile, "case">> = {};
   for (const [at, slug] of slugs.entries()) {
@@ -159,7 +158,7 @@ export const casesForRun = (run: RunCases): Record<CaseName, Omit<RecordedCaseFi
       JSON.stringify(run.questions),
     );
   }
-  return cases as Record<CaseName, Omit<RecordedCaseFile, "case">>;
+  return cases as Record<string, Omit<RecordedCaseFile, "case">>;
 };
 
 /**

@@ -141,7 +141,6 @@ const configuration = z.object({
 // notation on the process environment and Biome's literal-keys rule forbids it, and
 // this form is the one both accept.
 const {
-  APP_RUNTIME,
   PORT,
   DATABASE_URL,
   STORAGE_URL,
@@ -161,24 +160,21 @@ const {
 } = process.env;
 
 /**
- * Where this application's own mock answers, which is what the AI's base URL defaults
- * to. It is computed rather than written into the schema because it is the address of
- * this very process: locally the port the server binds, in the cloud the name the
- * browser reaches the app by. `/mock/v1` is a sibling of `/api`, so nothing about the
+ * Where this process's own double answers, which is what the AI's base URL defaults to.
+ * It is computed rather than written into the schema because it is built from `PORT`,
+ * which a developer may change. `/mock/v1` is a sibling of `/api`, so nothing about the
  * distribution's `/api/*` behaviour applies to it (ID110).
  *
- * `APP_RUNTIME` survives only here, and it is no longer part of the configuration this
- * module exports: nothing outside this file reads it, no schema branches on it, and the
- * one line that used to — `lib/db`'s `ssl` — reads the connection string's own
- * `sslmode` instead. What is left is which of two addresses this process answers at,
- * and where the mock is mounted is `S7.1`'s to settle; until it does, this is the line
- * it is settled on, unchanged.
+ * **One address, in every runtime, and that is the point** (`S7.1`, `ID150`; the person,
+ * 2026-09-12: *"I just dont like environement conditions in the code"*). This line used
+ * to be a branch on `APP_RUNTIME`, computing a deployed address for a double the
+ * distribution publishes no path to. It is the last reader of that variable and it is
+ * gone with it: a deployed function does not reach its own double over a socket at all —
+ * it is handed an in-process dispatch as a value at its composition root, so the host in
+ * this URL is never dialled there (`ID130`, `SL6`). Nothing in this repository now asks
+ * which environment it is running in.
  */
-const ownMock = `${
-  APP_RUNTIME === "cloud"
-    ? (APP_URL ?? "").replace(/\/$/, "")
-    : `http://localhost:${PORT === undefined || PORT === "" ? defaultPort : PORT}`
-}/mock/v1`;
+const ownMock = `http://localhost:${PORT === undefined || PORT === "" ? defaultPort : PORT}/mock/v1`;
 
 /** The parsed, frozen configuration. The only export, and the only reader of the environment. */
 export const env = Object.freeze(
