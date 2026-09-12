@@ -1,4 +1,5 @@
 import {
+  afterRenderEffect,
   Component,
   computed,
   type ElementRef,
@@ -219,12 +220,23 @@ export class ProfileViewer {
     });
 
     /**
-     * The reveal, redone whenever the lifted region changes. It is an effect and not a
+     * The reveal, redone whenever the lifted region changes — **after the render that
+     * draws it**, which is the whole reason this is `afterRenderEffect` and not
+     * `effect` (the person, 2026-09-13).
+     *
+     * The first question opens the moment the profile arrives, so a plain effect ran on
+     * that same change and asked the sheet for an item the sheet had not drawn yet. It
+     * found nothing, did nothing, and never ran again, because `lifted` never changed
+     * a second time: the tool asked about something forty rows down while the column
+     * sat at its head. Running after render is not a retry; it is the guarantee that
+     * what is being looked for exists.
+     *
+     * It is an effect and not a
      * handler because the region is a computed over the profile the interface answered:
      * a run that ends, a question that is skipped and a reload all move it, and each of
      * them should place the column the same way.
      */
-    effect((onCleanup) => {
+    afterRenderEffect(() => {
       const column = this.scroller()?.nativeElement;
       const lifted = this.lifted();
       if (column === undefined) return;
@@ -239,7 +251,6 @@ export class ProfileViewer {
       }
       const region = column.querySelector<HTMLElement>(`[data-id="${lifted}"]`);
       if (region !== null) revealInColumn(column, region);
-      onCleanup(() => {});
     });
   }
 

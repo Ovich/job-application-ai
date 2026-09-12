@@ -414,3 +414,33 @@ describe("a second visit, days later (criterion 7)", () => {
     expect(textOf(at("profile-bar"))).toContain("From 5 documents, read on");
   });
 });
+
+/**
+ * What the column does with nobody touching it (the person, 2026-09-13).
+ *
+ * The first question opens the instant the profile arrives, and the item it is about is
+ * usually far down the sheet. The column has to go there — which it did not, for a
+ * while: the reveal ran on the same change that opened the question, asked the sheet for
+ * an item the sheet had not drawn yet, found nothing, and never ran again. `data-at` is
+ * what catches it, because a runtime with no layout has no other way to see it.
+ */
+describe("the column, before anybody clicks anything", () => {
+  it("follows the first question's own item, without a click", async () => {
+    profileIs(
+      aProfile([
+        questionOf({
+          id: "q1",
+          itemId: "chip-docker",
+          itemTitle: "Docker",
+          lead: "Did you write the Dockerfiles or run the registry?",
+        }),
+      ]),
+    );
+    const { at, columnIsAt, eventually } = await opened();
+
+    await eventually(() => {
+      expect(at("scope-tool")).not.toBeNull();
+      expect(columnIsAt()).toBe("region");
+    });
+  });
+});
