@@ -174,6 +174,17 @@ export class ProfileViewer {
     void this.load();
 
     /**
+     * A person with nothing read has nothing to read here, and a page saying so is a
+     * page that makes them find the way out themselves. The drop zone is the way out,
+     * so they are taken to it (the person, 2026-09-12). An effect rather than a line in
+     * `load`, because a profile emptied by a deletion has to leave too, not only one
+     * that arrived empty.
+     */
+    effect(() => {
+      if (this.state() === "empty") void this.router.navigateByUrl("/documents");
+    });
+
+    /**
      * The reveal, redone whenever the lifted region changes. It is an effect and not a
      * handler because the region is a computed over the profile the interface answered:
      * a run that ends, a question that is skipped and a reload all move it, and each of

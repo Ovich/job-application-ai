@@ -1,5 +1,5 @@
 import { TestBed } from "@angular/core/testing";
-import { provideRouter } from "@angular/router";
+import { provideRouter, Router } from "@angular/router";
 import { RouterTestingHarness } from "@angular/router/testing";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { routes } from "../../../src/app/app.routes";
@@ -241,9 +241,7 @@ const opened = async () => {
     (all("button").find((button) => textOf(button) === label) ?? undefined) as
       HTMLButtonElement | undefined;
   const panel = (name: string) => page()?.querySelector(`[data-panel="${name}"]`) ?? null;
-  await eventually(() =>
-    expect(page()?.querySelector("profile-sheet, [data-empty]")).not.toBeNull(),
-  );
+  await eventually(() => expect(page()?.querySelector("profile-sheet")).not.toBeNull());
   return { harness, page, all, buttonSaying, panel, eventually };
 };
 
@@ -433,13 +431,14 @@ describe("every item, line, project and chip is a region (criterion 10)", () => 
 });
 
 describe("a person whose documents yielded nothing (the empty branch)", () => {
-  it("opens on one message and the way back to the documents, not an error", async () => {
+  it("is taken to the documents, because there is nothing here to read", async () => {
     profileIs(emptyProfile);
-    const { page, buttonSaying } = await opened();
+    const harness = await RouterTestingHarness.create();
+    await harness.navigateByUrl("/profile");
 
-    expect(page()?.querySelector("[data-empty]")).not.toBeNull();
-    expect(page()?.querySelector("profile-sheet")).toBeNull();
-    expect(textOf(page())).not.toMatch(/error|something went wrong/i);
-    expect(buttonSaying("Add documents")).not.toBeUndefined();
+    await vi.waitFor(() => {
+      harness.detectChanges();
+      expect(TestBed.inject(Router).url).toBe("/documents");
+    });
   });
 });

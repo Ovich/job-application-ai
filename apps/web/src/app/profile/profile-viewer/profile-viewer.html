@@ -42,14 +42,6 @@
         @case ("loading") {
           <div uiSpinner></div>
         }
-        @case ("empty") {
-          <div data-empty class="w-full max-w-[794px] rounded-lg border border-border bg-card p-4">
-            <p uiText tone="muted">
-              Nothing could be read from your documents yet. Add documents above and I will read
-              them.
-            </p>
-          </div>
-        }
         @default {
           @if (profile(); as loaded) {
             <profile-sheet

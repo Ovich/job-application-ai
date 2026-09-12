@@ -120,7 +120,7 @@ const opened = async () => {
   };
   /** What the scrolling column is following: `region`, or `head` when it was sent back. */
   const columnIsAt = () => page()?.querySelector("[data-at]")?.getAttribute("data-at") ?? null;
-  await eventually(() => expect(at("profile-sheet, [data-empty]")).not.toBeNull());
+  await eventually(() => expect(at("profile-sheet")).not.toBeNull());
   return { harness, page, at, all, region, press, type, saveIt, columnIsAt, eventually };
 };
 
