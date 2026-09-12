@@ -49,6 +49,10 @@ const nothingSet = {
   LINKEDIN_CLIENT_ID: undefined,
   LINKEDIN_CLIENT_SECRET: undefined,
   BETTER_AUTH_SECRET: undefined,
+  AI_BASE_URL: undefined,
+  AI_API_KEY: undefined,
+  AI_MODEL: undefined,
+  AI_MOCK_PACE: undefined,
 };
 
 /** A registered Google client app, as the person's `.env` names it. Nobody's real one. */
@@ -186,6 +190,53 @@ describe("the local runtime", () => {
     },
   );
 
+  /**
+   * ID114 and ID127, and the whole of criterion 9: a fresh clone runs the AI boundary
+   * with nothing set. There is no key to obtain and no account to open, because the
+   * base URL points at the application's own mock, mounted in this same process, and
+   * the key is a committed throwaway the mock never reads — the precedent
+   * `BETTER_AUTH_SECRET` and the database password already set (ID103).
+   *
+   * The address follows `PORT`, because the mock is served by the same process the port
+   * belongs to. It ends at `/mock/v1` and not a segment further: the client appends
+   * `/chat/completions` itself.
+   */
+  it("points the AI at the app's own mock, with no value set and no key", async () => {
+    const env = await load({ ...nothingSet, ...everyValue });
+
+    expect({
+      baseUrl: env.AI_BASE_URL,
+      key: env.AI_API_KEY,
+      model: env.AI_MODEL,
+      pace: env.AI_MOCK_PACE,
+    }).toEqual({
+      baseUrl: "http://localhost:3000/mock/v1",
+      key: "local_dev_only_the_mock_ignores_it",
+      model: "mock-model",
+      pace: "tps=40;ttft=400;chunk=3;jitter=0.15",
+    });
+  });
+
+  it("follows the port, because the mock is served by this same process", async () => {
+    const env = await load({ ...nothingSet, ...everyValue, PORT: "4100" });
+
+    expect(env.AI_BASE_URL).toBe("http://localhost:4100/mock/v1");
+  });
+
+  it("takes a provider's base URL when one is given, which is the whole switch", async () => {
+    const env = await load({
+      ...nothingSet,
+      ...everyValue,
+      AI_BASE_URL: "https://api.openai.com/v1",
+      AI_MODEL: "gpt-5",
+    });
+
+    expect({ baseUrl: env.AI_BASE_URL, model: env.AI_MODEL }).toEqual({
+      baseUrl: "https://api.openai.com/v1",
+      model: "gpt-5",
+    });
+  });
+
   it("refuses an empty value as it refuses a missing one", async () => {
     await expect(load({ ...nothingSet, ...everyValue, GOOGLE_CLIENT_SECRET: "" })).rejects.toThrow(
       /GOOGLE_CLIENT_SECRET/,
@@ -265,6 +316,37 @@ describe("the cloud runtime", () => {
       appUrl: "https://dev.job-application.app",
       authSecret: "test-better-auth-secret-of-a-decent-length",
     });
+  });
+
+  /**
+   * ID114 says the four AI values are required in the cloud, and SL6 is the slice that
+   * supplies them from the template. Between here and there every merge deploys, and a
+   * value required before the template sets it fails the cold start of a function that
+   * does not yet make a single AI call — the health route with it. So they default in
+   * the cloud too, exactly as the provider clients did between SL2 and S5.2, and the
+   * default is the deployed app's own mock. SL6 takes the exception away in the same
+   * breath as it puts the values in the template.
+   */
+  it("defaults the AI at the deployed app's own mock, until SL6's template sets it", async () => {
+    const env = await load(deployed);
+
+    expect({ baseUrl: env.AI_BASE_URL, key: env.AI_API_KEY, model: env.AI_MODEL }).toEqual({
+      baseUrl: "https://dev.job-application.app/mock/v1",
+      key: "local_dev_only_the_mock_ignores_it",
+      model: "mock-model",
+    });
+  });
+
+  it("takes the values the template hands over when they are there", async () => {
+    const env = await load({
+      ...deployed,
+      AI_BASE_URL: "https://dev.job-application.app/mock/v1",
+      AI_API_KEY: "not-read-by-the-mock",
+      AI_MODEL: "mock-model",
+      AI_MOCK_PACE: "tps=40;ttft=400;chunk=3;jitter=0.15",
+    });
+
+    expect(env.AI_BASE_URL).toBe("https://dev.job-application.app/mock/v1");
   });
 
   it("reads the port when the string carries one", async () => {

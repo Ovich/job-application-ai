@@ -30,6 +30,37 @@ describe("an unknown path", () => {
 });
 
 /**
+ * The mock's mount (ID110). It is a sibling of `/api`, not a path under it, and that is
+ * not tidiness: the deployed distribution has a behaviour for `/api/*` that disables
+ * caching and forwards headers, and a double mounted under it would inherit that
+ * behaviour and be reachable by any client of the product's own API.
+ *
+ * The base URL a caller is given therefore ends at `/mock/v1`, which is what the client
+ * expects to append `/chat/completions` to.
+ */
+describe("the AI mock's mount", () => {
+  it("answers outside the /api base path", async () => {
+    const answer = await app.request("/mock/v1/chat/completions", {
+      method: "POST",
+      headers: { "content-type": "application/json", "X-Jobapp-Case": "nothing.at:all" },
+      body: JSON.stringify({ model: "m", messages: [] }),
+    });
+
+    // A miss, because no such case is recorded — but a miss from the mock's own router,
+    // which is what proves the path is matched at all.
+    expect(answer.status).toBe(404);
+    expect((await answer.json()) as { case: unknown }).toMatchObject({ case: "nothing.at:all" });
+  });
+
+  it("adds no route under /api, so the SPA's routes and the distribution are untouched", async () => {
+    const answer = await app.request("/api/mock/v1/chat/completions", { method: "POST" });
+
+    expect(answer.status).toBe(404);
+    expect(await answer.json()).toEqual({ error: "no such route" });
+  });
+});
+
+/**
  * The library's own routes, reached through the one mount the API gives them (ID59):
  * there is no `/api/me` and no sign-in route of ours, and "who am I" is the library's
  * `get-session`. Two answers are what US4's isolation and SL5's cookie question will

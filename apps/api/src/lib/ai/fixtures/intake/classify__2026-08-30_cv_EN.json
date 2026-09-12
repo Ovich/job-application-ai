@@ -1,0 +1,7 @@
+{
+  "case": "intake.classify:2026-08-30_cv_EN",
+  "stands_for": "cv-generic/2026-08-30_cv_EN.pdf, the person's own general CV in English, recognised as a CV written in English. It carries the same career as the French case beside it, which is what SL3's merge has to fold into one profile with two sources per fact.",
+  "content": "{\"kind\":\"cv\",\"language\":\"en\",\"confidence\":0.96,\"why\":\"A reverse-chronological career document: a header with contact details, a summary, dated posts with their bullets, an education section and a language list. The section titles and the body are English.\"}",
+  "tool_calls": [],
+  "usage": { "input_tokens": 1145, "output_tokens": 58 }
+}

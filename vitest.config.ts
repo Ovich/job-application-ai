@@ -30,6 +30,14 @@ export default defineConfig({
       LINKEDIN_CLIENT_ID: "test-linkedin-client-id",
       LINKEDIN_CLIENT_SECRET: "test-linkedin-client-secret",
       BETTER_AUTH_SECRET: "test-better-auth-secret-of-a-decent-length",
+      /*
+       * The mock paces a recorded answer the way a model would, so that the reading
+       * screen can be watched behaving as it will in production. A suite must not wait
+       * for it: every setting is zero here, which is one chunk, instantly, and a test
+       * that wants a slow or a stalled answer asks for it per request with the
+       * `X-Jobapp-Mock-Pace` header rather than with a second endpoint (spec D13).
+       */
+      AI_MOCK_PACE: "tps=0;ttft=0;chunk=0;jitter=0",
     },
   },
 });
