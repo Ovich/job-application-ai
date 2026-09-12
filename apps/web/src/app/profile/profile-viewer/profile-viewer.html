@@ -1,0 +1,46 @@
+<!--
+  `-mt-6` undoes the shell's own opening step: the profile's bar sits directly under the
+  AppBar in the mockup, where every other signed-in page opens with air above it.
+-->
+<div
+  [attr.data-view]="view()"
+  class="-mt-6 grid min-h-0 flex-1 lg:grid-cols-[minmax(440px,42%)_minmax(0,1fr)]"
+>
+  <!--
+    The assistant's column (SL4): ProgressLine, ReadingCard, Composer, ToolDock,
+    ScopeTool and ToolPrefix all live here. Nothing is drawn in it in this slice, and
+    what this element does is hold open the space it will take.
+  -->
+  <section aria-label="Assistant" [class]="assistantClass()"></section>
+
+  <div class="flex min-h-0 flex-col overflow-hidden max-lg:order-1">
+    <profile-bar
+      [name]="name()"
+      [readLine]="readLine()"
+      [view]="view()"
+      (addDocuments)="addDocuments()"
+      (toggleView)="toggleView()"
+    />
+
+    <div [class]="scrollClass()">
+      @switch (state()) {
+        @case ("loading") {
+          <div uiSpinner></div>
+        }
+        @case ("empty") {
+          <div data-empty class="w-full max-w-[794px] rounded-lg border border-border bg-card p-4">
+            <p uiText tone="muted">
+              Nothing could be read from your documents yet. Add documents above and I will read
+              them.
+            </p>
+          </div>
+        }
+        @default {
+          @if (profile(); as loaded) {
+            <profile-sheet [profile]="loaded" (select)="chosen($event)" />
+          }
+        }
+      }
+    </div>
+  </div>
+</div>

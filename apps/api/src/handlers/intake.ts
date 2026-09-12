@@ -464,29 +464,34 @@ const extraction = z.object({
 });
 
 /** One item the merge produced, and what hangs under it. Recursive, so a project nests. */
+type Quoted = { document: string; said: string };
+
+/** What a shape may leave out. The repository's TypeScript has `exactOptionalPropertyTypes`. */
+type Maybe<T> = T | null | undefined;
+
 type MergedItem = {
   kind: ItemKind;
   title: string;
-  subtitle?: string | null;
-  start_text?: string | null;
-  end_text?: string | null;
-  experience?: {
+  subtitle?: Maybe<string>;
+  start_text?: Maybe<string>;
+  end_text?: Maybe<string>;
+  experience?: Maybe<{
     organisation: string;
-    organisation_note?: string | null;
-    location?: string | null;
-    arrangement?: string | null;
-  } | null;
-  project?: { description: string; dates_text?: string | null } | null;
-  education?: {
+    organisation_note?: Maybe<string>;
+    location?: Maybe<string>;
+    arrangement?: Maybe<string>;
+  }>;
+  project?: Maybe<{ description: string; dates_text?: Maybe<string> }>;
+  education?: Maybe<{
     institution: string;
-    location?: string | null;
-    credential?: string | null;
-    note?: string | null;
-  } | null;
-  entry?: { label: string; qualifier?: string | null } | null;
-  lines?: { text: string; sources: { document: string; said: string }[] }[];
+    location?: Maybe<string>;
+    credential?: Maybe<string>;
+    note?: Maybe<string>;
+  }>;
+  entry?: Maybe<{ label: string; qualifier?: Maybe<string> }>;
+  lines?: { text: string; sources: Quoted[] }[];
   children?: MergedItem[];
-  sources: { document: string; said: string }[];
+  sources: Quoted[];
 };
 
 const quoted = z.object({ document: z.string().min(1), said: z.string().min(1) });

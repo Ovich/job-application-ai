@@ -1,0 +1,38 @@
+<div
+  uiRow
+  gap="md"
+  class="min-h-16 flex-wrap border-border border-b bg-card px-4 py-2 lg:flex-nowrap lg:px-7 lg:py-0"
+>
+  <span class="flex min-w-0 flex-col leading-tight max-lg:w-full">
+    <b uiText variant="ui" weight="semibold" class="truncate">{{ name() }}</b>
+    <small uiText variant="caption" tone="muted" class="truncate">{{ readLine() }}</small>
+  </span>
+
+  <span class="ms-auto max-lg:hidden"></span>
+
+  <button
+    hlmBtn
+    variant="secondary"
+    size="sm"
+    type="button"
+    class="lg:hidden"
+    (click)="toggleView.emit()"
+  >
+    {{ view() === "sheet" ? "Back to the chat" : "See my profile" }}
+  </button>
+
+  <button
+    hlmBtn
+    variant="secondary"
+    size="sm"
+    type="button"
+    class="ms-auto lg:ms-0"
+    (click)="addDocuments.emit()"
+  >
+    Add documents
+  </button>
+
+  <button hlmBtn size="sm" type="button" (click)="startApplication.emit()">
+    Start an application
+  </button>
+</div>

@@ -12,10 +12,20 @@ export const routes: Routes = [
     canActivate: [signedOut],
     loadComponent: () => import("./auth/sign-in/sign-in").then((m) => m.AppSignIn),
   },
+  // The viewer (SL3). `/profile` has been the shell with an empty outlet since the
+  // foundation; this is the child that fills it. No logic on the line, and the guard is
+  // the one that was already there.
   {
     path: "profile",
     canActivate: [signedIn],
     loadComponent: () => import("./shell/app-shell/app-shell").then((m) => m.AppShell),
+    children: [
+      {
+        path: "",
+        loadComponent: () =>
+          import("./profile/profile-viewer/profile-viewer").then((m) => m.ProfileViewer),
+      },
+    ],
   },
   // The intake (SL2, F4). The shell is the layout, so the documents screen has the
   // AppBar above it as the mockup draws it, and the screen itself renders in the
