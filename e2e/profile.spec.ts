@@ -108,12 +108,12 @@ test("the profile shows everything that was read, and each region lights alone",
    */
   const chip = page.locator("[data-row=chip]").first();
   const post = page.locator("[data-row=post]").first();
-  const dark = await post.evaluate((element) => getComputedStyle(element).boxShadow);
+  const dark = await post.evaluate((element) => window.getComputedStyle(element).boxShadow);
   await chip.hover();
   await expect
-    .poll(async () => chip.evaluate((element) => getComputedStyle(element).boxShadow))
+    .poll(async () => chip.evaluate((element) => window.getComputedStyle(element).boxShadow))
     .not.toBe(dark);
-  expect(await post.evaluate((element) => getComputedStyle(element).boxShadow)).toBe(dark);
+  expect(await post.evaluate((element) => window.getComputedStyle(element).boxShadow)).toBe(dark);
 
   await context.close();
 });
