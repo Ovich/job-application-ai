@@ -5,9 +5,11 @@ import { ToolDock } from "../tool-dock/tool-dock";
 import { ToolPrefix } from "../tool-prefix/tool-prefix";
 
 /**
- * The bar the person answers in, and the dock above it (the builder's `Composer`).
+ * The bar the person answers in, and the dock above it. **Abstract**: one chrome for
+ * every tool of every use case, and it holds no word of any of them — the prefix's own
+ * word arrives with the tool it is about.
  *
- * One chrome for every tool: the tool sits in the dock, its `ToolPrefix` at the head of
+ * The tool sits in the dock, its `ToolPrefix` at the head of
  * the bar, the text as the comment, and the button as the verb — `Save` while a tool is
  * open, `Send` otherwise. It is **disabled until a row is picked or something is typed**,
  * because a save that writes nothing is a rule that says nothing.
@@ -22,8 +24,11 @@ import { ToolPrefix } from "../tool-prefix/tool-prefix";
   host: { class: "block border-border border-t bg-card px-6 pt-4 pb-5" },
 })
 export class Composer {
-  /** The prefix's text, or `null` when no tool is open and the dock is closed. */
-  public readonly tool = input<{ what: string } | null>(null);
+  /**
+   * What the open tool is about — the word its use case names the relation with, and the
+   * thing itself — or `null` when no tool is open and the dock is closed.
+   */
+  public readonly tool = input<{ label: string; what: string } | null>(null);
 
   /** Whether what is already chosen would be enough to save. */
   public readonly canSave = input<boolean>(false);
