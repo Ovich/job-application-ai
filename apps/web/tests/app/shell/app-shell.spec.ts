@@ -4,6 +4,7 @@ import { RouterTestingHarness } from "@angular/router/testing";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { routes } from "../../../src/app/app.routes";
 import type { Provider } from "../../../src/app/auth/session";
+import { resetIntake } from "../../support/intake";
 import { failing, reset, sentTo, signedInAs, signedOut, unreachable } from "../../support/session";
 
 /**
@@ -30,11 +31,15 @@ const textOf = (element: Element | null | undefined): string =>
 describe("the shell", () => {
   beforeEach(() => {
     reset();
+    // SL3 filled the outlet: `/profile` now loads the viewer, which asks the intake
+    // for the profile the moment it is created. The stand-in answers an empty one.
+    resetIntake();
     TestBed.configureTestingModule({ providers: [provideRouter(routes)] });
   });
 
   afterEach(() => {
     reset();
+    resetIntake();
   });
 
   /** `/profile` opened signed in, and what a person can reach on it. */
@@ -104,12 +109,13 @@ describe("the shell", () => {
     };
   };
 
-  it("shows the bar with the initials, and nothing below it", async () => {
+  it("shows the bar with the initials, and the viewer below it", async () => {
     const { page, slot } = await profileOpened();
     await vi.waitFor(() => expect(slot()).not.toBeNull());
 
     expect(textOf(slot())).toBe("ST");
-    expect(page()?.querySelector("main")?.textContent?.trim() ?? "").toBe("");
+    // Empty since the foundation, and this is the slice that filled it (SL3).
+    expect(page()?.querySelector("main profile-viewer")).not.toBeNull();
   });
 
   it("signs out through the library and lands on the entry route", async () => {

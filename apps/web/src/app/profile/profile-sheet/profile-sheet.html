@@ -1,0 +1,267 @@
+<article class="flex w-full max-w-[794px] flex-col gap-4" aria-label="Your profile">
+  @if (profile().summary; as summary) {
+    <section data-panel="summary" class="rounded-lg border border-border bg-card p-4">
+      <h2 uiText variant="ui" weight="semibold" class="mb-1">Summary</h2>
+      <div
+        data-row="summary"
+        class="-mx-2 flex flex-col gap-0.5 px-2 py-2.5"
+        [profileRegion]="{ kind: 'item', id: summary.id }"
+        (select)="chosen($event)"
+      >
+        <span uiText variant="ui">{{ summary.title }}</span>
+        <span data-part="from" uiText variant="caption" tone="muted" class="ms-auto">{{
+          from(summary.documents)
+        }}</span>
+      </div>
+    </section>
+  }
+
+  @if (profile().identity; as identity) {
+    <section data-panel="identity" class="rounded-lg border border-border bg-card p-4">
+      <h2 uiText variant="ui" weight="semibold" class="mb-1">Identity</h2>
+      <div
+        data-row="identity"
+        class="-mx-2 flex flex-col gap-0.5 px-2 py-2.5"
+        [profileRegion]="{ kind: 'item', id: identity.id }"
+        (select)="chosen($event)"
+      >
+        <span class="flex flex-wrap items-baseline gap-2.5">
+          <b uiText variant="ui" weight="semibold">{{ identity.title }}</b>
+          <span data-part="from" uiText variant="caption" tone="muted" class="ms-auto">{{
+            from(identity.documents)
+          }}</span>
+        </span>
+        @if (detail(identity); as under) {
+          <span uiText variant="caption" tone="muted">{{ under }}</span>
+        }
+      </div>
+    </section>
+  }
+
+  @if (profile().experience.length > 0) {
+    <section data-panel="experience" class="rounded-lg border border-border bg-card p-4">
+      <h2 uiText variant="ui" weight="semibold" class="mb-1 flex flex-wrap items-baseline gap-2.5">
+        Experience
+        <small uiText variant="caption" tone="muted" class="font-normal">{{
+          experienceLine()
+        }}</small>
+      </h2>
+      @for (post of profile().experience; track post.id) {
+        <div
+          data-row="post"
+          class="-mx-2 flex flex-col gap-0.5 border-border border-t px-2 py-2.5 first-of-type:border-t-0"
+          [profileRegion]="{ kind: 'item', id: post.id }"
+          (select)="chosen($event)"
+        >
+          <span class="flex flex-wrap items-baseline gap-2.5">
+            <b uiText variant="ui" weight="semibold">{{ post.title }}</b>
+            <span uiText variant="caption" tone="muted">{{ dates(post) }}</span>
+            <span data-part="from" uiText variant="caption" tone="muted" class="ms-auto">{{
+              from(post.documents)
+            }}</span>
+          </span>
+          @if (detail(post); as under) {
+            <span uiText variant="caption" tone="muted">{{ under }}</span>
+          }
+
+          @if (post.lines.length > 0) {
+            <ul class="mt-1 mb-0 ps-0">
+              @for (line of post.lines; track line.id) {
+                <li
+                  data-row="line"
+                  class="-mx-2 flex list-none flex-col gap-1 px-2 py-1.5"
+                  [profileRegion]="{ kind: 'line', id: line.id }"
+                  (select)="chosen($event)"
+                >
+                  <span uiText variant="ui">{{ line.text }}</span>
+                </li>
+              }
+            </ul>
+          }
+
+          @if (projectsOf(post); as projects) {
+            @if (projects.length > 0) {
+              <div class="mt-2 flex flex-col">
+                <span uiText variant="caption" tone="muted" class="py-1">{{
+                  label(projects.length, "project")
+                }}</span>
+                @for (project of projects; track project.id) {
+                  <div
+                    data-row="project"
+                    class="-mx-2 flex flex-wrap items-baseline gap-x-2.5 gap-y-0.5 border-border border-t px-2 py-1.5"
+                    [profileRegion]="{ kind: 'item', id: project.id }"
+                    (select)="chosen($event)"
+                  >
+                    <b uiText variant="caption" weight="semibold">{{ project.title }}</b>
+                    <span uiText variant="caption" tone="muted">{{ dates(project) }}</span>
+                    <span data-part="from" uiText variant="caption" tone="muted" class="ms-auto">{{
+                      from(project.documents)
+                    }}</span>
+                    @if (detail(project); as under) {
+                      <span uiText variant="caption" tone="muted" class="basis-full">{{
+                        under
+                      }}</span>
+                    }
+                    @if (chipsOf(project).length > 0) {
+                      <div class="flex basis-full flex-wrap gap-1.5">
+                        @for (chip of chipsOf(project); track chip.id) {
+                          <span
+                            data-row="chip"
+                            class="inline-flex items-center gap-1.5 rounded-full bg-muted px-2.5 py-0.5 text-caption"
+                            [profileRegion]="{ kind: 'item', id: chip.id }"
+                            (select)="chosen($event)"
+                            >{{ chip.title }}</span
+                          >
+                        }
+                      </div>
+                    }
+                  </div>
+                }
+              </div>
+            }
+          }
+
+          @if (chipsOf(post).length > 0) {
+            <div class="mt-1 flex flex-wrap gap-1.5">
+              @for (chip of chipsOf(post); track chip.id) {
+                <span
+                  data-row="chip"
+                  class="inline-flex items-center gap-1.5 rounded-full bg-muted px-2.5 py-0.5 text-caption"
+                  [profileRegion]="{ kind: 'item', id: chip.id }"
+                  (select)="chosen($event)"
+                  >{{ chip.title }}</span
+                >
+              }
+            </div>
+          }
+        </div>
+      }
+    </section>
+  }
+
+  @if (profile().projects.length > 0) {
+    <section data-panel="projects" class="rounded-lg border border-border bg-card p-4">
+      <h2 uiText variant="ui" weight="semibold" class="mb-1 flex flex-wrap items-baseline gap-2.5">
+        Personal projects
+        <small uiText variant="caption" tone="muted" class="font-normal">{{
+          profile().projects.length
+        }}</small>
+      </h2>
+      @for (project of profile().projects; track project.id) {
+        <div
+          data-row="project"
+          class="-mx-2 flex flex-col gap-0.5 border-border border-t px-2 py-2.5 first-of-type:border-t-0"
+          [profileRegion]="{ kind: 'item', id: project.id }"
+          (select)="chosen($event)"
+        >
+          <span class="flex flex-wrap items-baseline gap-2.5">
+            <b uiText variant="ui" weight="semibold">{{ project.title }}</b>
+            <span uiText variant="caption" tone="muted">{{ dates(project) }}</span>
+            <span data-part="from" uiText variant="caption" tone="muted" class="ms-auto">{{
+              from(project.documents)
+            }}</span>
+          </span>
+          @if (detail(project); as under) {
+            <span uiText variant="caption" tone="muted">{{ under }}</span>
+          }
+          @if (chipsOf(project).length > 0) {
+            <div class="mt-1 flex flex-wrap gap-1.5">
+              @for (chip of chipsOf(project); track chip.id) {
+                <span
+                  data-row="chip"
+                  class="inline-flex items-center gap-1.5 rounded-full bg-muted px-2.5 py-0.5 text-caption"
+                  [profileRegion]="{ kind: 'item', id: chip.id }"
+                  (select)="chosen($event)"
+                  >{{ chip.title }}</span
+                >
+              }
+            </div>
+          }
+        </div>
+      }
+    </section>
+  }
+
+  @if (profile().groups.length > 0) {
+    <section data-panel="groups" class="rounded-lg border border-border bg-card p-4">
+      <h2 uiText variant="ui" weight="semibold" class="mb-1 flex flex-wrap items-baseline gap-2.5">
+        What you work with
+        <small uiText variant="caption" tone="muted" class="font-normal">{{ groupsLine() }}</small>
+      </h2>
+      @for (group of profile().groups; track group.id) {
+        <div
+          data-row="group"
+          class="-mx-2 flex flex-col gap-0.5 border-border border-t px-2 py-2.5 first-of-type:border-t-0"
+        >
+          <span class="flex flex-wrap items-baseline gap-2.5">
+            <b uiText variant="ui" weight="semibold">{{ group.title }}</b>
+            <span uiText variant="caption" tone="muted">{{ group.children.length }}</span>
+            <span data-part="from" uiText variant="caption" tone="muted" class="ms-auto">{{
+              from(group.documents)
+            }}</span>
+          </span>
+          <div class="mt-1 flex flex-wrap gap-1.5">
+            @for (chip of group.children; track chip.id) {
+              <span
+                data-row="chip"
+                class="inline-flex items-center gap-1.5 rounded-full bg-muted px-2.5 py-0.5 text-caption"
+                [profileRegion]="{ kind: 'item', id: chip.id }"
+                (select)="chosen($event)"
+                >{{ chip.title }}</span
+              >
+            }
+          </div>
+        </div>
+      }
+    </section>
+  }
+
+  @if (profile().education.length > 0) {
+    <section data-panel="education" class="rounded-lg border border-border bg-card p-4">
+      <h2 uiText variant="ui" weight="semibold" class="mb-1 flex flex-wrap items-baseline gap-2.5">
+        Education, publication and languages
+        <small uiText variant="caption" tone="muted" class="font-normal">{{
+          educationLine()
+        }}</small>
+      </h2>
+      @for (item of profile().education; track item.id) {
+        <div
+          [attr.data-row]="
+            item.kind === 'education'
+              ? 'diploma'
+              : item.kind === 'publication'
+                ? 'publication'
+                : 'language'
+          "
+          class="-mx-2 flex flex-col gap-0.5 border-border border-t px-2 py-2.5 first-of-type:border-t-0"
+          [profileRegion]="{ kind: 'item', id: item.id }"
+          (select)="chosen($event)"
+        >
+          <span class="flex flex-wrap items-baseline gap-2.5">
+            <b uiText variant="ui" weight="semibold">{{ item.title }}</b>
+            <span uiText variant="caption" tone="muted">{{ dates(item) }}</span>
+            <span data-part="from" uiText variant="caption" tone="muted" class="ms-auto">{{
+              from(item.documents)
+            }}</span>
+          </span>
+          @if (detail(item); as under) {
+            <span uiText variant="caption" tone="muted">{{ under }}</span>
+          }
+          @if (chipsOf(item).length > 0) {
+            <div class="mt-1 flex flex-wrap gap-1.5">
+              @for (chip of chipsOf(item); track chip.id) {
+                <span
+                  data-row="chip"
+                  class="inline-flex items-center gap-1.5 rounded-full bg-muted px-2.5 py-0.5 text-caption"
+                  [profileRegion]="{ kind: 'item', id: chip.id }"
+                  (select)="chosen($event)"
+                  >{{ chip.title }}</span
+                >
+              }
+            </div>
+          }
+        </div>
+      }
+    </section>
+  }
+</article>

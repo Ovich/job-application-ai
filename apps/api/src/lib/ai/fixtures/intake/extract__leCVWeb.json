@@ -1,0 +1,7 @@
+{
+  "case": "intake.extract:leCVWeb",
+  "stands_for": "cv-archive/2022/leCVWeb.docx, the Word CV of 2022. It states the HEIG-VD post under an older title and in fewer words than the 2025 one does, which is the disagreement criterion 5 is about: two documents, one post, two wordings, and no third one written by anybody.",
+  "content": "{\"facts\":[{\"kind\":\"experience\",\"title\":\"Assistant HES\",\"said\":\"Assistant HES a la HEIG-VD, Yverdon-les-Bains, depuis 2022.\",\"lines\":[{\"text\":\"Assistanat des cours de programmation.\",\"said\":\"Assistanat des cours de programmation.\"}]},{\"kind\":\"group\",\"title\":\"Langages de programmation\",\"said\":\"Langages: JavaScript, Java.\",\"lines\":[]}]}",
+  "tool_calls": [],
+  "usage": { "input_tokens": 980, "output_tokens": 160 }
+}

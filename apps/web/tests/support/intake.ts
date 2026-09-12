@@ -44,6 +44,91 @@ export const rowOf = (row: Partial<Row> & { id: string; filename: string }): Row
   ...row,
 });
 
+/**
+ * One item of a profile, as `GET /api/intake/profile` answers it: the spine, the block
+ * for its own kind, its lines, what hangs under it, and what each document said about
+ * it. Nothing here is reshaped, because nothing is reshaped on the wire either.
+ */
+export type Item = {
+  id: string;
+  kind: string;
+  title: string;
+  subtitle: string | null;
+  startText: string | null;
+  endText: string | null;
+  documents: number;
+  experience: {
+    organisation: string;
+    organisationNote: string | null;
+    location: string | null;
+    arrangement: string | null;
+  } | null;
+  project: { description: string; datesText: string | null } | null;
+  education: {
+    institution: string;
+    location: string | null;
+    credential: string | null;
+    note: string | null;
+  } | null;
+  entry: { label: string; qualifier: string | null } | null;
+  lines: { id: string; text: string; documents: number; sources: Quote[] }[];
+  children: Item[];
+  sources: Quote[];
+};
+
+type Quote = { document: string; said: string };
+
+export type Profile = {
+  name: string | null;
+  documents: number;
+  readOn: string | null;
+  summary: Item | null;
+  identity: Item | null;
+  experience: Item[];
+  projects: Item[];
+  groups: Item[];
+  education: Item[];
+};
+
+/** An item with everything but what a case cares about filled in. */
+export const itemOf = (
+  item: Partial<Item> & { id: string; kind: string; title: string },
+): Item => ({
+  subtitle: null,
+  startText: null,
+  endText: null,
+  documents: 1,
+  experience: null,
+  project: null,
+  education: null,
+  entry: null,
+  lines: [],
+  children: [],
+  sources: [],
+  ...item,
+});
+
+/** A profile with nothing in it: the answer a person who has read nothing gets. */
+export const emptyProfile: Profile = {
+  name: null,
+  documents: 0,
+  readOn: null,
+  summary: null,
+  identity: null,
+  experience: [],
+  projects: [],
+  groups: [],
+  education: [],
+};
+
+let profile: Profile = emptyProfile;
+
+/** What the profile route answers. */
+export const profileIs = (given: Partial<Profile>): Profile => {
+  profile = { ...emptyProfile, ...given };
+  return profile;
+};
+
 let rows: Row[] = [];
 let refusal: { status: number; body: unknown } | null = null;
 let frames: Frame[] = [];
@@ -80,6 +165,7 @@ export const runSays = (given: Frame[]): void => {
 export const intakeRequests = (): { method: string; address: string }[] => requests;
 
 export const resetIntake = (): void => {
+  profile = emptyProfile;
   rows = [];
   refusal = null;
   frames = [];
@@ -155,6 +241,8 @@ alsoAnswering((address, init) => {
   if (!path.startsWith("/api/intake")) return undefined;
   const method = init?.method ?? "GET";
   requests.push({ method, address: path });
+
+  if (path === "/api/intake/profile") return json(profile);
 
   if (path === "/api/intake/read") return asStream(frames);
 
