@@ -59,7 +59,9 @@ const aProfile = (questions: Question[] = []): Profile => ({
         location: "Yverdon-les-Bains",
         arrangement: null,
       },
-      lines: [{ id: "line-migration", text: "Ran the migration programme", documents: 1, sources: [] }],
+      lines: [
+        { id: "line-migration", text: "Ran the migration programme", documents: 1, sources: [] },
+      ],
       children: [
         itemOf({
           id: "project-opendidac",

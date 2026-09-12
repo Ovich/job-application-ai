@@ -285,7 +285,12 @@ describe("a rule on an item nobody asked about (SL5's caller)", () => {
     const line = post.lines[0];
     if (line === undefined) throw new Error("the post has no line");
 
-    const response = await ruleOn(person.cookie, post.id, "I coordinated it, others ran it", line.id);
+    const response = await ruleOn(
+      person.cookie,
+      post.id,
+      "I coordinated it, others ran it",
+      line.id,
+    );
     expect(response.status).toBe(200);
 
     const again = (await profileOf(person.cookie)).experience.find((each) => each.id === post.id);

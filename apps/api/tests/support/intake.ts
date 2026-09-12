@@ -54,6 +54,8 @@ export type ProfileItem = {
   rule: ItemRule | null;
   rules: ItemRule[];
   question: AskedQuestion | null;
+  /** The bullets under a post, each with its own id, which a rule may be about. */
+  lines: { id: string; text: string }[];
   children: ProfileItem[];
 };
 
