@@ -32,8 +32,9 @@ import { db } from "../lib/db";
 import { isDuplicate } from "../lib/db/duplicate";
 import { hashOf, kindOf, slugOf } from "../lib/documents";
 import { asking, refused } from "../lib/session";
-import { keyFor, storage } from "../lib/storage";
+import { keyFor, type ObjectKey, storage } from "../lib/storage";
 import { createEnvelope } from "../lib/stream";
+import { composed, textOf } from "../lib/text";
 
 /**
  * The intake's document handlers: what each route proves, written where it is done, as
@@ -214,47 +215,6 @@ export const removeDocument = factory.createHandlers(async (c) => {
 });
 
 /**
- * What a reader is asked for, and what it must answer with. The kinds are the column's
- * own; the language is what the document is written in, which is a separate question
- * from what the person reads (`Q14`, still open).
- */
-const classification = z.object({
-  kind: z.enum(["cv", "diploma", "work_certificate", "linkedin_export", "photo_of_cv", "unknown"]),
-  language: z.string().min(2),
-  confidence: z.number(),
-  why: z.string(),
-});
-
-/**
- * What each call of this feature is about (`ID145`, amending `ID111`).
- *
- * Four one-line descriptions of four calls, and they stay here rather than becoming a
- * module: each has exactly one caller, each would vanish the day its call site did, and
- * a module that disappears with its only caller buys a file and an import (`S7.3`'s own
- * rule, the reason `asMegabytes` stayed too).
- *
- * The input is always the file's own name without its extension, or a run's files by
- * slug in the run's order (`F3`, `D20`), so what a call was about can be matched to a
- * real document by eye, which a content hash could not. The hash keeps its one job,
- * which is the duplicate.
- */
-const theClassificationOf = (filename: string): About => ({
-  feature: "intake",
-  step: "classify",
-  input: slugOf(filename),
-});
-
-/** What the reader is told. The mock reads none of it; a provider would read all of it. */
-const askingAbout = (filename: string, mediaType: string): Message[] => [
-  {
-    role: "system",
-    content:
-      "You classify one document a job seeker has handed over. Answer with JSON alone: kind, one of cv, diploma, work_certificate, linkedin_export, photo_of_cv, unknown; language, as an ISO 639-1 code; confidence, between 0 and 1; why, one or two sentences naming what in the document decided it.",
-  },
-  { role: "user", content: `The document is named ${filename} and is a ${mediaType}.` },
-];
-
-/**
  * The reading run (ID119, `D8`).
  *
  * Four things make this route what the slice asks for, and each of them is a decision:
@@ -302,14 +262,15 @@ export const readDocuments = factory.createHandlers(async (c) => {
     });
 
     /**
-     * What each document of this run said, kept for the merge that follows it.
+     * Every file of this run, read as text and kept for the one call that follows
+     * (`ID157`, `ID158`).
      *
      * They are held for the length of the run and not written to a table of their own,
-     * because the register has none: a fact becomes a row when the merge places it, as
-     * `profile_item` with its `provenance`. A run that reads nothing new merges nothing,
-     * which is what keeps a second run free of calls (`SL2`'s criterion 11).
+     * because the register has none: a fact becomes a row when the reading places it,
+     * as `profile_item` with its `provenance`. A run with nothing new to read makes no
+     * call at all, which is what keeps a second run free of them (`SL2`'s criterion 11).
      */
-    const readings: { slug: string; id: string; facts: unknown }[] = [];
+    const read: { name: string; id: string; text: string }[] = [];
 
     try {
       for (const row of waiting) {
@@ -319,7 +280,7 @@ export const readDocuments = factory.createHandlers(async (c) => {
         // The typed address is the one source with nothing to read: nothing is fetched,
         // which is what the spec's non-goals say and what the screen's lead promises
         // (F5). So it is read the moment the run reaches it, with no call and no kind.
-        if (row.source !== "file") {
+        if (row.source !== "file" || row.storageKey === null) {
           await db
             .update(document)
             .set({ status: "read", readAt: new Date() })
@@ -328,36 +289,31 @@ export const readDocuments = factory.createHandlers(async (c) => {
           continue;
         }
 
+        /**
+         * A document that cannot become text fails alone, and only here.
+         *
+         * This is the one failure that belongs to a single document, because it happens
+         * before the call: a format nothing can read as characters, or bytes that are
+         * not there any more. Everything past this point is one call over all of them,
+         * so it succeeds or fails for all of them (`ID157`).
+         */
         try {
-          const read = await askFor(
-            askingAbout(row.filename, row.mediaType),
-            theClassificationOf(row.filename),
-            classification,
-          );
-          // Read alone, and read whole: what the document is, then what it states. A
-          // document whose extraction cannot be read has not been read, so the two are
-          // one step and the row moves to `read` only when both have landed.
-          const stated = await askFor(
-            extractingFrom(row.filename, read.kind, read.language),
-            theExtractionOf(row.filename),
-            extraction,
-          );
-          await db
-            .update(document)
-            .set({
-              status: "read",
-              detectedKind: read.kind,
-              detectedLanguage: read.language,
-              failureReason: null,
-              readAt: new Date(),
-            })
-            .where(eq(document.id, row.id));
-          readings.push({ slug: slugOf(row.filename), id: row.id, facts: stated.facts });
-          await envelope.send({ kind: "document", id: row.id, status: "read", reason: null });
+          // The key was written by the upload, which is the only writer of it (`ID115`).
+          const object = await storage.get(row.storageKey as ObjectKey);
+          if (object === null) throw new Error(`${row.filename} is not in storage any more`);
+          read.push({
+            name: slugOf(row.filename),
+            id: row.id,
+            text: await textOf({
+              filename: row.filename,
+              mediaType: object.mediaType,
+              bytes: object.bytes,
+            }),
+          });
         } catch {
-          // Why it failed is not carried out to the person: an AI failure names the case
-          // and the endpoint, which says nothing they can act on. What they are told is
-          // which of their documents could not be read, and that the rest were.
+          // Why it failed is not carried out to the person in the reader's words: what
+          // they are told is which of their documents could not be read, and that the
+          // rest were.
           const reason = `${row.filename} could not be read. The others were.`;
           await db
             .update(document)
@@ -366,61 +322,67 @@ export const readDocuments = factory.createHandlers(async (c) => {
           await envelope.send({ kind: "document", id: row.id, status: "failed", reason });
         }
       }
+
       /**
-       * The merge, once, over what this run read (`S3.2`).
+       * The reading: one composed document, one call (`ID157`, the person 2026-09-12).
        *
-       * It is one call over several readings, never one call over several documents:
-       * what makes two CVs of one month yield one experience with two sources is that
-       * two separate extractions were reconciled, and a call over concatenated
-       * documents would pass every count and lose the provenance.
+       * Every document this run could read is joined into a single document, each part
+       * under the name the profile's sources cite, and one call answers with the whole
+       * profile and the questions it leaves open. There is no classification step and no
+       * merge: nothing branches on what kind a document is (`ID158`), and nothing needs
+       * reconciling when the model saw every document at once.
        *
-       * A malformed answer is a failed step and nothing else. Nothing is written, the
-       * documents stay read, and the person's previous profile is untouched — because
-       * the shape is refused before `writeProfile` opens its transaction, and that
-       * transaction writes the whole profile or none of it.
+       * What the shape of the pipeline used to guarantee, the answer now has to carry:
+       * a fact cites the part it came from, and `writeProfile` refuses a citation naming
+       * a document this run did not read. A malformed answer is a failed reading and
+       * nothing else — nothing is written, and the rows stay unread so the next run
+       * takes them again.
        */
-      if (readings.length > 0) {
-        const slugs = readings.map((reading) => reading.slug);
-        let merged: z.infer<typeof merge> | null = null;
+      if (read.length > 0) {
+        const names = read.map((part) => part.name);
         try {
-          merged = await askFor(
-            merging(readings.map(({ slug, facts }) => ({ slug, facts }))),
-            theMergeOf(slugs),
-            merge,
+          const answered = await retriedOnce(() =>
+            askFor(
+              readingAll(composed(read.map(({ name, text }) => ({ name, text })))),
+              theReadingOf(names),
+              reading,
+            ),
           );
           await writeProfile(
             person.id,
-            merged,
-            new Map(readings.map((reading) => [reading.slug, reading.id])),
+            { items: answered.items },
+            new Map(read.map((part) => [part.name, part.id])),
           );
-        } catch {
-          // Said to nobody on the wire: the run is over either way and the profile route
-          // is what the screen asks next. What a failed merge leaves is documents that
-          // are read and a profile that is not there yet.
-          merged = null;
-        }
-
-        /**
-         * The fourth step, over the profile the merge just wrote (`S4.1`).
-         *
-         * **It retries once and no more** (spec, *Failure modes*). On a second failure
-         * the run stops here: nothing is written, the rows already read are kept, and
-         * the person's profile is exactly what the merge produced. Nothing is charged,
-         * because the mock is what answers in every environment this slice runs in.
-         *
-         * A malformed answer is a failed step too, refused by the shape below before a
-         * row is written, so there is never a partly written set of questions.
-         */
-        const written = merged;
-        if (written !== null) {
-          try {
-            const asked = await retriedOnce(() =>
-              askFor(askingWhatOnlyYouKnow(written), theQuestionsFor(slugs), proposal),
+          await db
+            .update(document)
+            .set({ status: "read", failureReason: null, readAt: new Date() })
+            .where(
+              inArray(
+                document.id,
+                read.map((part) => part.id),
+              ),
             );
-            await writeQuestions(person.id, asked);
-          } catch {
-            // The same silence as the merge's, and for the same reason: the run is over,
-            // what was read is kept, and the profile route is what the screen asks next.
+          for (const part of read) {
+            await envelope.send({ kind: "document", id: part.id, status: "read", reason: null });
+          }
+          await writeQuestions(person.id, { candidates: answered.candidates });
+        } catch {
+          // One call over all of them, so one failure over all of them. The rows stay
+          // where they were — not `read`, so the next run takes them again — and the
+          // person's previous profile is untouched, because `writeProfile` writes the
+          // whole profile or none of it.
+          const reason = "Your documents could not be read this time. Nothing was lost: try again.";
+          await db
+            .update(document)
+            .set({ status: "failed", failureReason: reason })
+            .where(
+              inArray(
+                document.id,
+                read.map((part) => part.id),
+              ),
+            );
+          for (const part of read) {
+            await envelope.send({ kind: "document", id: part.id, status: "failed", reason });
           }
         }
       }
@@ -430,26 +392,6 @@ export const readDocuments = factory.createHandlers(async (c) => {
       envelope.close();
     }
   });
-});
-
-/**
- * One fact a single document states, with the sentence that document states it in.
- *
- * Extraction is **per document**, and that is the whole point of it: what makes the
- * merge provable is that two separate readings were reconciled. One call over two
- * concatenated CVs would pass every count and lose the provenance.
- */
-const extraction = z.object({
-  facts: z
-    .array(
-      z.object({
-        kind: z.enum(itemKind.enumValues),
-        title: z.string().min(1),
-        said: z.string().min(1),
-        lines: z.array(z.object({ text: z.string().min(1), said: z.string().min(1) })).default([]),
-      }),
-    )
-    .min(1),
 });
 
 /** One item the merge produced, and what hangs under it. Recursive, so a project nests. */
@@ -529,51 +471,6 @@ const mergedItem: z.ZodType<MergedItem> = z.lazy(() =>
 );
 
 const merge = z.object({ items: z.array(mergedItem).min(1) });
-
-/** What a reader is asked of one document. The mock reads none of it; a provider would. */
-const extractingFrom = (
-  filename: string,
-  kind: string | null,
-  language: string | null,
-): Message[] => [
-  {
-    role: "system",
-    content:
-      "You read one document a job seeker handed over and list what it states. Answer with JSON alone: facts, an array of objects with kind, one of summary, identity, experience, project, education, publication, language, group, entry; title; said, the sentence this document states the fact in, copied word for word and never translated or rewritten; and lines, an array of objects with text and said, for the bullets of a post or a project. Invent nothing. A figure no sentence of the document contains is not a fact.",
-  },
-  {
-    role: "user",
-    content: `The document is ${filename}, read as a ${kind ?? "document"} written in ${language ?? "an unstated language"}.`,
-  },
-];
-
-/**
- * What the merge is asked. Each document's reading arrives under its own slug, so the
- * model reconciles readings rather than concatenated documents, and every source it
- * cites names one of them.
- */
-const merging = (readings: { slug: string; facts: unknown }[]): Message[] => [
-  {
-    role: "system",
-    content:
-      "You merge the readings of several documents into one profile. Answer with JSON alone: items, each with kind, title, the optional subtitle, start_text and end_text as the documents wrote them, the block for its kind (experience, project, education, entry), lines, children, and sources. A source is the document's slug and what that document said, word for word in that document's own language. When two documents state the same fact differently, keep both sources against the one item and write no third wording of your own. Never state a figure no document states: no duration, no seniority, no total.",
-  },
-  { role: "user", content: JSON.stringify({ readings }) },
-];
-
-/** What a merge is about: the run's documents, by slug, in the run's order. */
-const theMergeOf = (slugs: string[]): About => ({
-  feature: "intake",
-  step: "merge",
-  input: slugs.join("+"),
-});
-
-/** What one document's extraction is about (`ID145`, `D20`). */
-const theExtractionOf = (filename: string): About => ({
-  feature: "intake",
-  step: "extract",
-  input: slugOf(filename),
-});
 
 /**
  * The merged profile, written whole or not at all.
@@ -720,11 +617,46 @@ const candidate = z.object({
 
 const proposal = z.object({ candidates: z.array(candidate) });
 
-/** What the fourth step is about: the run's documents, by slug (`ID145`). */
-const theQuestionsFor = (slugs: string[]): About => ({
+/**
+ * What the reading is asked: one composed document, one answer (`ID157`, `ID158`).
+ *
+ * The whole of the pipeline is this prompt. It replaces four — a classification per
+ * document, an extraction per document, a merge over the extractions and a pass for the
+ * questions — because a model that is shown every document at once has nothing to
+ * reconcile and no reason to be told first what kind of thing it is looking at.
+ *
+ * The one thing the shape of the old pipeline guaranteed and this prompt has to ask for
+ * is **attribution**: a reading per document made a source true by construction, and a
+ * reading over all of them makes it a claim. So the answer names, for every fact, the
+ * part it came from and the words that part used, and `writeProfile` refuses a citation
+ * naming a part this run did not read.
+ */
+const readingAll = (document: string): Message[] => [
+  {
+    role: "system",
+    content:
+      "You read everything a job seeker has handed over, given as one document whose parts are marked <<<DOCUMENT name>>> … <<<END>>>, and you write their profile and the questions it leaves open. Answer with JSON alone, as an object with items and candidates. Each item has kind, one of summary, identity, experience, project, education, publication, language, group, entry; title; the optional subtitle, start_text and end_text as the documents wrote them; the block for its kind (experience, project, education, entry); lines; children; and sources. A source is the name of the part the fact came from and what that part said, word for word in that part's own language. A fact stated by several parts carries one source per part and no third wording of your own. Never state a figure no part states: no duration, no seniority, no total. Each candidate is a question the documents themselves cannot answer, with kind, one of scope (a fact says what was done but not what the person's part was), conflict (two parts state the same thing differently) or provenance (a term appears in a way that leaves its standing unclear); item, the exact title of the item it is about; where, the item's place said the way the profile says it; lead, the question itself in one or two sentences; and options, two to four answers, each with label, hint and the rule that answer writes, the last of which is the person's own words and carries no rule. Never ask about a fact the parts agree on and state plainly, never ask about a date a part states, and never ask what a person can be assumed to know about their own job.",
+  },
+  { role: "user", content: document },
+];
+
+/** What a reading is about: the run's documents, by name, in the run's order. */
+const theReadingOf = (names: string[]): About => ({
   feature: "intake",
-  step: "questions",
-  input: slugs.join("+"),
+  step: "read",
+  input: names.join("+"),
+});
+
+/**
+ * What the reading answers: the profile, and the questions it leaves open, together.
+ *
+ * One shape for one call. A malformed half is a malformed answer — there is no partly
+ * written profile with unasked questions beside it, because neither is written until
+ * both have been read.
+ */
+const reading = z.object({
+  items: z.array(mergedItem).min(1),
+  candidates: z.array(candidate),
 });
 
 /**
@@ -738,16 +670,6 @@ const retriedOnce = async <T>(call: () => Promise<T>): Promise<T> => {
     return call();
   }
 };
-
-/** What the reader is asked of the profile it has just written. */
-const askingWhatOnlyYouKnow = (merged: z.infer<typeof merge>): Message[] => [
-  {
-    role: "system",
-    content:
-      "You have read a job seeker's documents and written their profile. Name only the things the documents themselves cannot answer. Answer with JSON alone: candidates, each with kind, one of scope (a fact says what was done but not what the person's part was), conflict (two documents state the same thing differently) or provenance (a term appears once, in a way that leaves its standing unclear); item, the exact title of the profile item it is about; where, the item's place said the way the profile says it; lead, the question itself, in one or two sentences; and options, two to four answers, each with label, hint and the rule that answer writes, the last of which is the person's own words and carries no rule. Never ask about a fact the documents agree on and state plainly, never ask about a date a document states, and never ask what a person can be assumed to know about their own job.",
-  },
-  { role: "user", content: JSON.stringify(merged) },
-];
 
 /**
  * The questions written, whole or not at all.

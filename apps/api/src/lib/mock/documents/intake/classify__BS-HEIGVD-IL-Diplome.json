@@ -1,7 +1,0 @@
-{
-  "case": "intake.classify:BS-HEIGVD-IL-Diplome",
-  "stands_for": "diplomas/BS-HEIGVD-IL-Diplome.pdf, the person's own bachelor's degree from HEIG-VD in software engineering, December 2022. It stands for the kind that is not a CV at all: one page, an awarding institution, a title and a date, and no career on it. SL3's merge needs a document whose facts cannot come from any CV.",
-  "content": "{\"kind\":\"diploma\",\"language\":\"fr\",\"confidence\":0.98,\"why\":\"Une page unique portant l'en-tete d'une haute ecole, la formule de delivrance d'un titre, l'intitule du bachelor et sa date, avec les signatures de la direction. Aucun parcours professionnel, aucune rubrique d'experience: ce n'est pas un CV. Le texte est en francais.\"}",
-  "tool_calls": [],
-  "usage": { "input_tokens": 410, "output_tokens": 71 }
-}
