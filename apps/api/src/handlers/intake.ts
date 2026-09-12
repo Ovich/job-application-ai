@@ -5,6 +5,7 @@ import {
   itemEducation,
   itemEntry,
   itemExperience,
+  itemKind,
   itemLine,
   itemProject,
   type ProfileItem,
@@ -328,6 +329,16 @@ export const readDocuments = factory.createHandlers(async (c) => {
       envelope.close();
     });
 
+    /**
+     * What each document of this run said, kept for the merge that follows it.
+     *
+     * They are held for the length of the run and not written to a table of their own,
+     * because the register has none: a fact becomes a row when the merge places it, as
+     * `profile_item` with its `provenance`. A run that reads nothing new merges nothing,
+     * which is what keeps a second run free of calls (`SL2`'s criterion 11).
+     */
+    const readings: { slug: string; id: string; facts: unknown }[] = [];
+
     try {
       for (const row of waiting) {
         await db.update(document).set({ status: "reading" }).where(eq(document.id, row.id));
@@ -351,6 +362,14 @@ export const readDocuments = factory.createHandlers(async (c) => {
             askingAbout(row.filename, row.mediaType),
             classification,
           );
+          // Read alone, and read whole: what the document is, then what it states. A
+          // document whose extraction cannot be read has not been read, so the two are
+          // one step and the row moves to `read` only when both have landed.
+          const stated = await askFor(
+            extractCaseFor(row.filename),
+            extractingFrom(row.filename, read.kind, read.language),
+            extraction,
+          );
           await db
             .update(document)
             .set({
@@ -361,6 +380,7 @@ export const readDocuments = factory.createHandlers(async (c) => {
               readAt: new Date(),
             })
             .where(eq(document.id, row.id));
+          readings.push({ slug: slugOf(row.filename), id: row.id, facts: stated.facts });
           await envelope.send({ kind: "document", id: row.id, status: "read", reason: null });
         } catch {
           // Why it failed is not carried out to the person: an AI failure names the case
@@ -374,12 +394,287 @@ export const readDocuments = factory.createHandlers(async (c) => {
           await envelope.send({ kind: "document", id: row.id, status: "failed", reason });
         }
       }
+      /**
+       * The merge, once, over what this run read (`S3.2`).
+       *
+       * It is one call over several readings, never one call over several documents:
+       * what makes two CVs of one month yield one experience with two sources is that
+       * two separate extractions were reconciled, and a call over concatenated
+       * documents would pass every count and lose the provenance.
+       *
+       * A malformed answer is a failed step and nothing else. Nothing is written, the
+       * documents stay read, and the person's previous profile is untouched — because
+       * the shape is refused before `writeProfile` opens its transaction, and that
+       * transaction writes the whole profile or none of it.
+       */
+      if (readings.length > 0) {
+        try {
+          const merged = await askFor(
+            mergeCaseFor(readings.map((reading) => reading.slug)),
+            merging(readings.map(({ slug, facts }) => ({ slug, facts }))),
+            merge,
+          );
+          await writeProfile(
+            person.id,
+            merged,
+            new Map(readings.map((reading) => [reading.slug, reading.id])),
+          );
+        } catch {
+          // Said to nobody on the wire: the run is over either way and the profile route
+          // is what the screen asks next. What a failed merge leaves is documents that
+          // are read and a profile that is not there yet.
+        }
+      }
+
       await envelope.send({ kind: "run", status: "done" });
     } finally {
       envelope.close();
     }
   });
 });
+
+/**
+ * What a document's own slug is: its filename without the extension (`F1`, settled here
+ * for extraction as `caseFor` settled it for classification). Stable across runs, and
+ * matchable to a real file by eye in the fixture directory.
+ */
+const slugOf = (filename: string): string => {
+  const dot = filename.lastIndexOf(".");
+  return dot <= 0 ? filename : filename.slice(0, dot);
+};
+
+/**
+ * One fact a single document states, with the sentence that document states it in.
+ *
+ * Extraction is **per document**, and that is the whole point of it: what makes the
+ * merge provable is that two separate readings were reconciled. One call over two
+ * concatenated CVs would pass every count and lose the provenance.
+ */
+const extraction = z.object({
+  facts: z
+    .array(
+      z.object({
+        kind: z.enum(itemKind.enumValues),
+        title: z.string().min(1),
+        said: z.string().min(1),
+        lines: z.array(z.object({ text: z.string().min(1), said: z.string().min(1) })).default([]),
+      }),
+    )
+    .min(1),
+});
+
+/** One item the merge produced, and what hangs under it. Recursive, so a project nests. */
+type MergedItem = {
+  kind: ItemKind;
+  title: string;
+  subtitle?: string | null;
+  start_text?: string | null;
+  end_text?: string | null;
+  experience?: {
+    organisation: string;
+    organisation_note?: string | null;
+    location?: string | null;
+    arrangement?: string | null;
+  } | null;
+  project?: { description: string; dates_text?: string | null } | null;
+  education?: {
+    institution: string;
+    location?: string | null;
+    credential?: string | null;
+    note?: string | null;
+  } | null;
+  entry?: { label: string; qualifier?: string | null } | null;
+  lines?: { text: string; sources: { document: string; said: string }[] }[];
+  children?: MergedItem[];
+  sources: { document: string; said: string }[];
+};
+
+const quoted = z.object({ document: z.string().min(1), said: z.string().min(1) });
+
+/**
+ * What the merge must answer with, validated at the boundary before a row is written.
+ *
+ * A malformed answer is a failed step and never a partly written profile (spec,
+ * *Failure modes*): `askFor` parses, this shape refuses, and the writer below never
+ * runs. `sources` is required on every item, because an item nothing said is exactly
+ * the thing this product promises not to produce.
+ */
+const mergedItem: z.ZodType<MergedItem> = z.lazy(() =>
+  z.object({
+    kind: z.enum(itemKind.enumValues),
+    title: z.string().min(1),
+    subtitle: z.string().nullish(),
+    start_text: z.string().nullish(),
+    end_text: z.string().nullish(),
+    experience: z
+      .object({
+        organisation: z.string().min(1),
+        organisation_note: z.string().nullish(),
+        location: z.string().nullish(),
+        arrangement: z.string().nullish(),
+      })
+      .nullish(),
+    project: z
+      .object({ description: z.string().min(1), dates_text: z.string().nullish() })
+      .nullish(),
+    education: z
+      .object({
+        institution: z.string().min(1),
+        location: z.string().nullish(),
+        credential: z.string().nullish(),
+        note: z.string().nullish(),
+      })
+      .nullish(),
+    entry: z.object({ label: z.string().min(1), qualifier: z.string().nullish() }).nullish(),
+    lines: z
+      .array(z.object({ text: z.string().min(1), sources: z.array(quoted).min(1) }))
+      .default([]),
+    children: z.array(mergedItem).default([]),
+    sources: z.array(quoted).min(1),
+  }),
+);
+
+const merge = z.object({ items: z.array(mergedItem).min(1) });
+
+/** What a reader is asked of one document. The mock reads none of it; a provider would. */
+const extractingFrom = (
+  filename: string,
+  kind: string | null,
+  language: string | null,
+): Message[] => [
+  {
+    role: "system",
+    content:
+      "You read one document a job seeker handed over and list what it states. Answer with JSON alone: facts, an array of objects with kind, one of summary, identity, experience, project, education, publication, language, group, entry; title; said, the sentence this document states the fact in, copied word for word and never translated or rewritten; and lines, an array of objects with text and said, for the bullets of a post or a project. Invent nothing. A figure no sentence of the document contains is not a fact.",
+  },
+  {
+    role: "user",
+    content: `The document is ${filename}, read as a ${kind ?? "document"} written in ${language ?? "an unstated language"}.`,
+  },
+];
+
+/**
+ * What the merge is asked. Each document's reading arrives under its own slug, so the
+ * model reconciles readings rather than concatenated documents, and every source it
+ * cites names one of them.
+ */
+const merging = (readings: { slug: string; facts: unknown }[]): Message[] => [
+  {
+    role: "system",
+    content:
+      "You merge the readings of several documents into one profile. Answer with JSON alone: items, each with kind, title, the optional subtitle, start_text and end_text as the documents wrote them, the block for its kind (experience, project, education, entry), lines, children, and sources. A source is the document's slug and what that document said, word for word in that document's own language. When two documents state the same fact differently, keep both sources against the one item and write no third wording of your own. Never state a figure no document states: no duration, no seniority, no total.",
+  },
+  { role: "user", content: JSON.stringify({ readings }) },
+];
+
+/** The case a merge is recorded under: the run's documents, by slug, in the run's order. */
+const mergeCaseFor = (slugs: string[]): CaseName => `intake.merge:${slugs.join("+")}`;
+
+/** The case one document's extraction is recorded under (`ID111`, `D20`). */
+const extractCaseFor = (filename: string): CaseName => `intake.extract:${slugOf(filename)}`;
+
+/**
+ * The merged profile, written whole or not at all.
+ *
+ * Every source is resolved to a document row **before** the transaction opens, so a
+ * merge that cites a document this run never read fails as a step rather than as half a
+ * profile. Inside, the person's previous items go and the new ones land: a profile is
+ * what this run's documents say, and a stale item nothing cites any more is not a fact.
+ */
+const writeProfile = async (
+  userId: string,
+  merged: z.infer<typeof merge>,
+  documents: Map<string, string>,
+): Promise<void> => {
+  const documentFor = (slug: string): string => {
+    const id = documents.get(slug);
+    if (id === undefined) throw new Error(`the merge cited ${slug}, which this run did not read`);
+    return id;
+  };
+  const everySource = (item: MergedItem): void => {
+    for (const source of item.sources) documentFor(source.document);
+    for (const line of item.lines ?? []) {
+      for (const source of line.sources) documentFor(source.document);
+    }
+    for (const child of item.children ?? []) everySource(child);
+  };
+  for (const item of merged.items) everySource(item);
+
+  await db.transaction(async (tx) => {
+    await tx.delete(profileItem).where(eq(profileItem.userId, userId));
+
+    const write = async (item: MergedItem, position: number, parentId: string | null) => {
+      const id = randomUUID();
+      await tx.insert(profileItem).values({
+        id,
+        userId,
+        kind: item.kind,
+        parentId,
+        title: item.title,
+        subtitle: item.subtitle ?? null,
+        startText: item.start_text ?? null,
+        endText: item.end_text ?? null,
+        position,
+      });
+      if (item.experience != null) {
+        await tx.insert(itemExperience).values({
+          itemId: id,
+          organisation: item.experience.organisation,
+          organisationNote: item.experience.organisation_note ?? null,
+          location: item.experience.location ?? null,
+          arrangement: item.experience.arrangement ?? null,
+        });
+      }
+      if (item.project != null) {
+        await tx.insert(itemProject).values({
+          itemId: id,
+          description: item.project.description,
+          datesText: item.project.dates_text ?? null,
+        });
+      }
+      if (item.education != null) {
+        await tx.insert(itemEducation).values({
+          itemId: id,
+          institution: item.education.institution,
+          location: item.education.location ?? null,
+          credential: item.education.credential ?? null,
+          note: item.education.note ?? null,
+        });
+      }
+      if (item.entry != null) {
+        await tx
+          .insert(itemEntry)
+          .values({ itemId: id, label: item.entry.label, qualifier: item.entry.qualifier ?? null });
+      }
+      for (const [at, line] of (item.lines ?? []).entries()) {
+        const lineId = randomUUID();
+        await tx.insert(itemLine).values({ id: lineId, itemId: id, text: line.text, position: at });
+        for (const source of line.sources) {
+          await tx.insert(provenance).values({
+            id: randomUUID(),
+            documentId: documentFor(source.document),
+            lineId,
+            said: source.said,
+          });
+        }
+      }
+      for (const source of item.sources) {
+        await tx.insert(provenance).values({
+          id: randomUUID(),
+          documentId: documentFor(source.document),
+          itemId: id,
+          said: source.said,
+        });
+      }
+      // A group's entries are entries and an entry has nothing under it: that is what
+      // makes a group flat by construction rather than by the screen's restraint (D17).
+      const children = item.kind === "entry" ? [] : (item.children ?? []);
+      for (const [at, child] of children.entries()) await write(child, at, id);
+    };
+
+    for (const [at, item] of merged.items.entries()) await write(item, at, null);
+  });
+};
 
 /**
  * The profile a person reads back (`ID118`'s `GET /profile`, criteria 2, 6, 8, 9).

@@ -1,0 +1,7 @@
+{
+  "case": "intake.extract:certificat_travail",
+  "stands_for": "work-certificates/certificat_travail.pdf, an employer's own certificate. It states a post and its dates in the employer's words, which is a different wording of a post a CV also states — the class of disagreement the merge must keep both sides of rather than resolve.",
+  "content": "{\"facts\":[{\"kind\":\"experience\",\"title\":\"Collaborateur scientifique HES\",\"said\":\"Monsieur Stefan Teofanovic a travaille au sein de notre institut en qualite de collaborateur scientifique HES du 1er aout 2022 au 31 aout 2026.\",\"lines\":[{\"text\":\"Encadrement des etudiants et suivi des laboratoires.\",\"said\":\"Il a assure l encadrement des etudiants et le suivi des laboratoires.\"}]}]}",
+  "tool_calls": [],
+  "usage": { "input_tokens": 720, "output_tokens": 150 }
+}
