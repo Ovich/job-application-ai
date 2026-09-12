@@ -97,11 +97,11 @@ const answer = (
     body: JSON.stringify(said),
   });
 
-const ruleOn = (cookie: string, itemId: string, words: string) =>
+const ruleOn = (cookie: string, itemId: string, words: string, lineId?: string) =>
   app.request(`/api/intake/items/${itemId}/rule`, {
     method: "POST",
     headers: { cookie, "content-type": "application/json" },
-    body: JSON.stringify({ words }),
+    body: JSON.stringify(lineId === undefined ? { words } : { words, lineId }),
   });
 
 /** The question a case is about, by the item it hangs on. */
@@ -271,5 +271,37 @@ describe("a rule on an item nobody asked about (SL5's caller)", () => {
 
     expect((await ruleOn(stranger.cookie, docker.id, "not mine")).status).toBe(404);
     expect(itemNamed(await profileOf(owner.cookie), "Docker").rule).toBeNull();
+  });
+
+  /**
+   * A line is a fact of its post and carries no rule of its own (`rule.item_id`), so what
+   * a person says about one is kept on the post, about the line, in the line's own words
+   * (the person, 2026-09-13: a line is clickable too).
+   */
+  it("keeps what is said about one of the item's lines as the item's rule, about the line", async () => {
+    const person = await asked("rule-on-a-line@example.com");
+    const post = person.profile.experience.find((each) => each.lines.length > 0);
+    if (post === undefined) throw new Error("the shipped case has no post with lines");
+    const line = post.lines[0];
+    if (line === undefined) throw new Error("the post has no line");
+
+    const response = await ruleOn(person.cookie, post.id, "I coordinated it, others ran it", line.id);
+    expect(response.status).toBe(200);
+
+    const again = (await profileOf(person.cookie)).experience.find((each) => each.id === post.id);
+    expect(again?.rule?.text).toBe(`${line.text}: I coordinated it, others ran it`);
+    expect(again?.rule?.source).toBe("own words");
+  });
+
+  it("answers 404 for a line that is not under that item", async () => {
+    const person = await asked("rule-on-a-foreign-line@example.com");
+    const post = person.profile.experience.find((each) => each.lines.length > 0);
+    if (post === undefined) throw new Error("the shipped case has no post with lines");
+    const docker = itemNamed(person.profile, "Docker");
+    const line = post.lines[0];
+    if (line === undefined) throw new Error("the post has no line");
+
+    expect((await ruleOn(person.cookie, docker.id, "not its line", line.id)).status).toBe(404);
+    expect(itemNamed(await profileOf(person.cookie), "Docker").rule).toBeNull();
   });
 });

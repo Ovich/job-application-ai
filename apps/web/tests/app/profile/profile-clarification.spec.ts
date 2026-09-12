@@ -59,6 +59,7 @@ const aProfile = (questions: Question[] = []): Profile => ({
         location: "Yverdon-les-Bains",
         arrangement: null,
       },
+      lines: [{ id: "line-migration", text: "Ran the migration programme", documents: 1, sources: [] }],
       children: [
         itemOf({
           id: "project-opendidac",
@@ -169,6 +170,71 @@ describe("a click on a region with no question waiting (criteria 1 and 3)", () =
 
     await eventually(() => expect(at("scope-tool")).toBeNull());
     expect(at("[data-part=rule]")).toBeNull();
+  });
+});
+
+describe("a click on an item whose question is still open (the person, 2026-09-13)", () => {
+  const docker = (state: "waiting" | "skipped") =>
+    questionOf({
+      id: "q-docker",
+      itemId: "chip-docker",
+      itemTitle: "Docker",
+      lead: "Did you write the Dockerfiles or run the registry?",
+      state,
+    });
+
+  it("opens the question waiting on it, with its own rows, and never the sentence", async () => {
+    profileIs(aProfile([docker("waiting")]));
+    const { at, all, press } = await opened();
+
+    await press("chip-docker");
+
+    expect(textOf(at("scope-tool [data-part=lead]"))).toBe(
+      "Did you write the Dockerfiles or run the registry?",
+    );
+    expect(all("[data-action=alt]").length).toBeGreaterThan(0);
+  });
+
+  it("reopens a question that was skipped, with its own rows, so it can still be answered", async () => {
+    profileIs(aProfile([docker("skipped")]));
+    const { at, all, press } = await opened();
+
+    await press("chip-docker");
+
+    // The mark still says `your part?` on it: the appropriate tool is the question, not
+    // the one-sentence tool that proposes nothing.
+    expect(textOf(at("scope-tool [data-part=lead]"))).toBe(
+      "Did you write the Dockerfiles or run the registry?",
+    );
+    expect(all("[data-action=alt]").length).toBeGreaterThan(0);
+    expect(textOf(at("[data-part=what]"))).toBe("Adjusting scope");
+  });
+});
+
+describe("a click on a line (the person, 2026-09-13)", () => {
+  it("opens the tool on the line, about the line's own words", async () => {
+    profileIs(aProfile());
+    const { at, press } = await opened();
+
+    await press("line-migration");
+
+    expect(textOf(at("scope-tool [data-part=lead]"))).toBe(theSentence);
+    expect(textOf(at("scope-tool [data-part=about]"))).toBe("Ran the migration programme");
+  });
+
+  it("keeps what is written as a rule on the line's post, about the line", async () => {
+    profileIs(aProfile());
+    const { region, press, type, saveIt, eventually } = await opened();
+
+    await press("line-migration");
+    await type("I coordinated it, others ran it");
+    await saveIt();
+
+    await eventually(() =>
+      expect(textOf(region("post-heig")?.querySelector("[data-part=rule]"))).toBe(
+        "✓ Ran the migration programme: I coordinated it, others ran it",
+      ),
+    );
   });
 });
 

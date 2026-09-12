@@ -428,12 +428,17 @@ alsoAnswering((address, init) => {
     if (item === undefined) return json({ error: "no such item" }, 404);
     const said = (typeof init?.body === "string" ? JSON.parse(init.body) : {}) as {
       words?: string;
+      lineId?: string;
     };
     const words = (said.words ?? "").trim();
     if (words === "") return json({ error: "say it in your own words" }, 400);
+    // A rule written from one of the item's lines is about that line, in the line's own
+    // words, and lands on the item the line belongs to: a line carries no rule of its own.
+    const line = said.lineId === undefined ? null : item.lines.find((each) => each.id === said.lineId);
+    if (line === undefined) return json({ error: "no such line" }, 404);
     const kept: Rule = {
       id: `rule-own-${ruleCount++}`,
-      text: `${item.title}: ${words}`,
+      text: `${line === null ? item.title : line.text}: ${words}`,
       kind: "scope",
       source: "own words",
       createdAt: "2026-09-12T10:14:00.000Z",
