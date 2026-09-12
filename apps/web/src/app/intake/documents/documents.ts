@@ -95,16 +95,25 @@ export class AppDocuments {
    * Which of the mockup's three states the screen is in. `reading` is not a flag a
    * person turned on: a row that says `reading` puts the screen there whoever started
    * the run, which is what makes coming back to a tab agree with leaving it.
+   *
+   * A run that has finished puts the screen back to `added`, not `reading`: the list is
+   * a person's documents, not a receipt, and they add to it and take from it whenever
+   * they like (the person, 2026-09-12). Only a run still in flight locks it.
    */
   protected readonly state = computed<"empty" | "added" | "reading">(() => {
     const documents = this.documents();
-    if (this.started() || documents.some((row) => row.status !== "waiting")) return "reading";
-    return documents.length === 0 ? "empty" : "added";
+    if (documents.length === 0) return "empty";
+    const inFlight = this.started() || documents.some((row) => row.status === "reading");
+    return inFlight ? "reading" : "added";
   });
 
-  /** At least one document or an address: the whole of the primary button's condition. */
+  /**
+   * Something unread, or an address: the whole of the primary button's condition. A
+   * document already read is not read again (SL2), so a list of nothing but read rows
+   * leaves the button off until a new one is dropped.
+   */
   protected readonly ready = computed(
-    () => this.documents().length > 0 || this.address().trim() !== "",
+    () => this.documents().some((row) => row.status === "waiting") || this.address().trim() !== "",
   );
 
   protected readonly failures = computed(() =>
@@ -117,6 +126,14 @@ export class AppDocuments {
 
   constructor() {
     void this.load();
+  }
+
+  /**
+   * What a row says on its right: what the reading made of it once there is a reading,
+   * and what kind it looks like before then.
+   */
+  protected sideOf(row: Document): string {
+    return row.status === "waiting" ? this.kindOf(row) : row.status;
   }
 
   /** What a row is called on the screen: the reader's kind, or what the source is. */

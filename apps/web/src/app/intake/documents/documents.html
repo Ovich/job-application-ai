@@ -27,7 +27,7 @@
           >
             <span uiText variant="ui" class="min-w-0 flex-1 truncate">{{ row.filename }}</span>
             <span uiText variant="caption" tone="muted" class="whitespace-nowrap">{{
-              kindOf(row)
+              sideOf(row)
             }}</span>
             <button
               hlmBtn
@@ -99,10 +99,10 @@
         </div>
       </div>
     </div>
+  }
 
-    @for (reason of failures(); track reason) {
-      <app-notice tone="warn" lead="One document could not be read.">{{ reason }}</app-notice>
-    }
+  @for (reason of failures(); track reason) {
+    <app-notice tone="warn" lead="One document could not be read.">{{ reason }}</app-notice>
   }
 
   @if (state() !== "reading") {
@@ -127,7 +127,7 @@
   }
 
   <div uiRow gap="md" class="flex-wrap">
-    @if (state() === "added") {
+    @if (state() === "added" && ready()) {
       <span uiText variant="caption" tone="muted"
         >About two minutes. You can leave, the reading goes on.</span
       >
