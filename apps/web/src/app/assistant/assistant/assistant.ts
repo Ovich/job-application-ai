@@ -29,7 +29,7 @@ import { Composer } from "../composer/composer";
   selector: "assistant",
   imports: [Composer],
   templateUrl: "./assistant.html",
-  host: { class: "flex min-h-0 min-w-0 flex-1 flex-col" },
+  host: { class: "flex h-full min-h-0 min-w-0 flex-1 flex-col" },
 })
 export class Assistant {
   /** What the open tool is about, or `null` when the dock is closed. */

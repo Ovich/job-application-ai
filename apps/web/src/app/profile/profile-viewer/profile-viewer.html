@@ -6,7 +6,7 @@
 -->
 <div
   [attr.data-view]="view()"
-  class="-mt-10 grid min-h-0 flex-1 lg:grid-cols-[minmax(440px,42%)_minmax(0,1fr)]"
+  class="-mt-10 grid h-full min-h-0 flex-1 overflow-hidden lg:grid-cols-[minmax(440px,42%)_minmax(0,1fr)]"
 >
   <section aria-label="Assistant" [class]="assistantClass()">
     @if (profile(); as loaded) {

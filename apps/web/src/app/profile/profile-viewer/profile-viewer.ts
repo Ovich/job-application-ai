@@ -45,6 +45,10 @@ type Answer = InferResponseType<typeof api.intake.profile.$get, 200>;
   selector: "profile-viewer",
   imports: [ProfileAssistant, ProfileBar, ProfileSheet, UiSpinner, UiText],
   templateUrl: "./profile-viewer.html",
+  // The layout every assistant screen holds to (the person, 2026-09-12): this fills the
+  // page rather than growing past it, so the window never scrolls and each column
+  // decides for itself what moves inside it.
+  host: { class: "flex min-h-0 flex-1 flex-col" },
 })
 export class ProfileViewer {
   private readonly router = inject(Router);
@@ -165,8 +169,8 @@ export class ProfileViewer {
    */
   protected readonly assistantClass = computed(() =>
     [
-      "min-h-0 min-w-0 border-border bg-card max-lg:order-2 lg:block lg:border-r",
-      this.view() === "chat" ? "block" : "hidden",
+      "flex h-full min-h-0 min-w-0 flex-col overflow-hidden border-border bg-card max-lg:order-2 lg:flex lg:border-r",
+      this.view() === "chat" ? "flex" : "hidden",
     ].join(" "),
   );
 
