@@ -113,6 +113,26 @@ const answer = (route: string): Response => {
   }
 };
 
+/**
+ * A stand-in for a route outside the library, registered by another support module.
+ *
+ * This file owns `fetch`, because the library's client takes it once and this must be
+ * in place before any client exists. Since SL2 the app has routes of its own, and their
+ * stand-in (`tests/support/intake.ts`) hangs off here rather than replacing the global a
+ * second time, which would take the library's answers away with it. A handler that
+ * answers `undefined` has not recognised the address, and the next one is asked.
+ */
+type Elsewhere = (
+  address: string,
+  init?: RequestInit,
+) => Promise<Response | undefined> | Response | undefined;
+
+const elsewhere: Elsewhere[] = [];
+
+export const alsoAnswering = (handler: Elsewhere): void => {
+  elsewhere.push(handler);
+};
+
 const addressOf = (input: RequestInfo | URL): string =>
   input instanceof Request ? input.url : input instanceof URL ? input.href : String(input);
 
@@ -123,6 +143,10 @@ const standIn = vi.fn(async (input: RequestInfo | URL, init?: RequestInit): Prom
   }
   const at = address.indexOf(basePath);
   if (at < 0) {
+    for (const handler of elsewhere) {
+      const answered = await handler(address, init);
+      if (answered !== undefined) return answered;
+    }
     throw new Error(`no stand-in for a request outside the library: ${address}`);
   }
   const route = address.slice(at + basePath.length).split("?")[0] ?? "";

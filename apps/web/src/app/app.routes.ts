@@ -17,4 +17,19 @@ export const routes: Routes = [
     canActivate: [signedIn],
     loadComponent: () => import("./shell/app-shell/app-shell").then((m) => m.AppShell),
   },
+  // The intake (SL2, F4). The shell is the layout, so the documents screen has the
+  // AppBar above it as the mockup draws it, and the screen itself renders in the
+  // shell's outlet. `/profile` is untouched: it is still the shell with nothing in it
+  // until the viewer arrives (SL3), which is also the slice `app.routes.ts` belongs to.
+  {
+    path: "documents",
+    canActivate: [signedIn],
+    loadComponent: () => import("./shell/app-shell/app-shell").then((m) => m.AppShell),
+    children: [
+      {
+        path: "",
+        loadComponent: () => import("./intake/documents/documents").then((m) => m.AppDocuments),
+      },
+    ],
+  },
 ];

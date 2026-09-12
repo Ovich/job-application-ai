@@ -1,0 +1,29 @@
+<div
+  class="flex flex-col items-center gap-1.5 rounded-lg border-[1.5px] border-input border-dashed bg-card px-5 py-7 text-center transition-colors data-[dragging=true]:border-primary data-[dragging=true]:bg-accent"
+  [class]="compact() ? 'flex-row! justify-center gap-3 px-5 py-4' : ''"
+  [attr.data-dragging]="dragging() ? 'true' : null"
+  (dragenter)="onDragEnter($event)"
+  (dragover)="onDragOver($event)"
+  (dragleave)="onDragLeave()"
+  (drop)="onDrop($event)"
+>
+  @if (compact()) {
+    <span uiText variant="caption" tone="muted">Drop more here, or</span>
+  } @else {
+    <span uiText variant="body" weight="semibold">Drop everything here</span>
+    <span uiText variant="caption" tone="muted" class="max-w-[52ch]"
+      >CVs in PDF or Word, LinkedIn's data export, diplomas and certificates, photos of paper ones.
+      Any language, any year. I sort out what each one is.</span
+    >
+  }
+  <button
+    hlmBtn
+    variant="secondary"
+    type="button"
+    [class]="compact() ? '' : 'mt-2'"
+    (click)="choose()"
+  >
+    Choose files
+  </button>
+  <input type="file" multiple hidden [accept]="accept()" (change)="onPicked()" />
+</div>
