@@ -5,14 +5,22 @@
 # `check:format` is Prettier, the one formatter, every file type; `check:lint` is `biome
 # check`, the linter and import sorting. Both are gates here rather than a later surprise.
 #
-# Nothing here touches AWS and nothing here needs a service running. The query layer is
-# tested against a real PostgreSQL, but one compiled to WebAssembly and running inside
-# the test process (ID49, amending ID13), so there is still no service step, no
-# container and no credential. The checks that need a deployed address are not here and
-# cannot be: `pnpm test:e2e:deployed` asks the development environment whether the merge
-# reached it, so it is a step of the deploy workflow, after the migration (D20). No
-# Playwright project runs here at all: the local one needs `pnpm dev` up, and `pnpm
-# check` must stay green with nothing running.
+# Nothing here touches AWS. The `check` job needs no service running either: the query
+# layer is tested against a real PostgreSQL, but one compiled to WebAssembly and running
+# inside the test process (ID49, amending ID13), so it has no service step, no container
+# and no credential, and `pnpm check` stays green on a laptop with nothing up.
+#
+# `e2e-local` is the second job and the exception, deliberately kept apart: the local
+# Playwright project needs the stack actually running, so that job brings the container
+# up, migrates it, builds the web bundle and starts `pnpm dev` before it runs. It exists
+# because until it did, the nine specs that cover sign-in through the proxy, isolation,
+# the deletion gate and the JavaScript-off entry route ran in no pipeline at all — a
+# regression in them reached `main` green and was first seen by the deployed run, after
+# the deploy, where the failure costs more to read.
+#
+# The checks that need a deployed address are still not here and cannot be:
+# `pnpm test:e2e:deployed` asks the development environment whether the merge reached it,
+# so it is a step of the deploy workflow, after the migration (D20).
 name: check
 
 on:
@@ -69,3 +77,81 @@ jobs:
       - name: Lint the CloudFormation templates
         working-directory: infra
         run: pipx run cfn-lint==1.56.2
+
+  # The local end-to-end project, which needs the stack up: the container, the schema,
+  # the API on 3000 and the dev server on 4200 forwarding `/api` to it.
+  #
+  # The seven values below are what `env.ts` requires of the local runtime and refuses
+  # to start without (ID60, ID71). Six are placeholders because no spec reaches a real
+  # provider: `auth.spec.ts` stands each door in for and asserts only that a client id
+  # travelled and that the redirect URI is the one registered. The seventh is not a
+  # placeholder and must stay this exact literal: it is the committed throwaway of
+  # `apps/api/.env.example`, and `e2e/support/session.ts` signs its cookies with the
+  # same one (ID103). The day the two disagree, the isolation and deletion cases go red
+  # with a failure that reads like a session bug and is a configuration one.
+  e2e-local:
+    runs-on: ubuntu-24.04
+    # The suite takes about ten seconds; the ceiling is for a dev server that never
+    # comes up, so the job fails rather than holding a runner for six hours.
+    timeout-minutes: 15
+    env:
+      GOOGLE_CLIENT_ID: ci-google-client-id.apps.googleusercontent.com
+      GOOGLE_CLIENT_SECRET: ci-google-client-secret
+      MICROSOFT_CLIENT_ID: ci-microsoft-client-id
+      MICROSOFT_CLIENT_SECRET: ci-microsoft-client-secret
+      LINKEDIN_CLIENT_ID: ci-linkedin-client-id
+      LINKEDIN_CLIENT_SECRET: ci-linkedin-client-secret
+      BETTER_AUTH_SECRET: local_dev_only_not_a_real_secret_00000000
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4.3.0
+
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      # The same two commands `pnpm dev` runs first, so a failure here is reproducible
+      # on a laptop with `pnpm run dev:db && pnpm run dev:migrate`.
+      - name: Bring the database up and move the schema onto it
+        run: |
+          pnpm run dev:db
+          pnpm run dev:migrate
+
+      # `entry-route.spec.ts` reads the built `index.html` from `apps/web/dist` and
+      # throws rather than skips when it is not there, because a green run that never
+      # read the file would prove nothing about the prerender (ID63).
+      - name: Build the web bundle the prerender case reads
+        run: pnpm --filter @app/web run build
+
+      - name: Install the browser the suite runs in
+        run: pnpm exec playwright install --with-deps chromium
+
+      # `pnpm dev` never returns, so it is backgrounded and both ports are waited on.
+      # The wait is what turns "the server was not up yet" into a named failure instead
+      # of a spec that cannot reach the page.
+      - name: Start the stack the specs talk to
+        run: |
+          set -euo pipefail
+          pnpm -r --parallel run dev > /tmp/dev.log 2>&1 &
+          for _ in $(seq 1 90); do
+            if curl -sf http://localhost:3000/api/health > /dev/null 2>&1 &&
+               curl -sf http://localhost:4200/ > /dev/null 2>&1; then
+              echo "the API and the dev server are answering"
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "the stack did not come up within 180s; the last of its output:"
+          tail -40 /tmp/dev.log
+          exit 1
+
+      - run: pnpm test:e2e
+
+      # What the run saw, when it did not see what it expected.
+      - name: The stack's own output, if the suite failed
+        if: failure()
+        run: tail -80 /tmp/dev.log
