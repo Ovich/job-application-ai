@@ -46,8 +46,23 @@ import { db } from "../db";
  * claim does not arrive truthy either. LinkedIn requires confirming an email at signup,
  * which is what makes this the same trade.
  *
- * Google alone stays at the default. `tests/lib/auth/linking.test.ts` proves both
- * halves on this database, and asks the refusal of Google, the one not trusted.
+ * Trusting a provider by name is only half of what that trust means, and ID106 (the
+ * person's amendment of 2026-09-12) is the other half. `trustedProviders` is read when
+ * a provider arrives SECOND; it says nothing about the row a provider writes when it
+ * arrives first. That row records the address unverified, because the claim the
+ * provider does not send is the very reason it is trusted, and the library's linking
+ * check has a second gate that reads it: before it attaches anything it asks that the
+ * local row be verified (`requireLocalEmailVerified`, on by its default, and a gate the
+ * library is making unconditional in its next minor). So on the dev address a hotmail
+ * account that had signed in through Microsoft turned LinkedIn away with
+ * `account_not_linked` even with both names trusted, and the refusal was never
+ * LinkedIn's claim but ours. `mapProfileToUser` below writes into the row what the two
+ * amendments above already decided: the address these providers return is verified at
+ * the provider. It costs nothing the names did not already cost.
+ *
+ * Google alone stays at the default, unmapped and untrusted: it sends the claim, so the
+ * row it writes is only ever what Google said. `tests/lib/auth/linking.test.ts` proves
+ * every half on this database, and asks the refusal of Google, the one not trusted.
  *
  * Deletion is the library's too (D8, ID65): its `deleteUser` feature, switched on as it
  * documents, serves `delete-user` under the mount `app.ts` already has, and the web app
@@ -96,6 +111,13 @@ import { db } from "../db";
  */
 const beforeDelete = async (): Promise<void> => {};
 
+/**
+ * What a provider trusted by name says about its address, for the row this application
+ * writes: verified. See ID106 in the note above. Only the two providers named there are
+ * mapped, and the mapping says nothing else about the person.
+ */
+const verifiedAtTheProvider = () => ({ emailVerified: true });
+
 export const auth = betterAuth({
   baseURL: env.APP_URL,
   // Configuration, never the library's own reading of the environment (ID71, and the
@@ -113,10 +135,14 @@ export const auth = betterAuth({
       // `common` is the library's default too; written out because it is the decision
       // (D4), and `organizations` would turn personal accounts away at Microsoft's door.
       tenantId: "common",
+      // The trust of ID72, written into the row this provider creates: ID106.
+      mapProfileToUser: verifiedAtTheProvider,
     },
     linkedin: {
       clientId: env.LINKEDIN_CLIENT_ID,
       clientSecret: env.LINKEDIN_CLIENT_SECRET,
+      // The trust of ID105, the same way: ID106.
+      mapProfileToUser: verifiedAtTheProvider,
     },
   },
   // Off its default (D20), see the note above: ID72, then ID105.
