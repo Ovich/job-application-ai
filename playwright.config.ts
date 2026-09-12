@@ -46,7 +46,10 @@ export default defineConfig({
       // environment's storage has never been exercised and its AI values are that
       // slice's, so a run there would be a run against a bucket nothing has written to
       // and a mock the template does not yet point at.
-      testMatch: /(health-stream|auth|entry-route|intake)\.spec\.ts$/,
+      // `profile` joins them at SL3, and is local-only for the same reason `intake` is:
+      // the deployed environment's storage has never been exercised and its AI values
+      // are SL6's, so a run there would read documents no bucket holds.
+      testMatch: /(health-stream|auth|entry-route|intake|profile)\.spec\.ts$/,
       use: { baseURL: "http://localhost:4200" },
     },
     {
