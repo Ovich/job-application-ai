@@ -46,7 +46,7 @@ const { testDb } = await import("../support/database");
 const { app } = await import("../../src/app");
 const { cookiesSetBy, signInThrough, signedInAs } = await import("../support/sign-in");
 const { documentsFor, theSet } = await import("../support/documents");
-const { forgetRequests, requestsSent } = await import("../support/ai");
+const { forgetRequests, requestsSent, withCases } = await import("../support/ai");
 
 let storage: ReturnType<typeof localStorageIn>;
 
@@ -113,7 +113,14 @@ describe("the reading run (criterion 10, D8)", () => {
     expect(leaves.at(-1)?.kind).toBe("run");
   });
 
-  it("classifies each document alone, with the case header lib/ai sets and one call each", async () => {
+  /**
+   * One document at a time, classified then read for what it states, and the merge once
+   * at the end over all of them (SL3, criterion 3). Extraction is per document on
+   * purpose: what makes the merge provable is that separate readings were reconciled,
+   * and one call over concatenated documents would pass every count and lose the
+   * provenance.
+   */
+  it("classifies and extracts each document alone, then merges once, every call naming its case", async () => {
     const person = await signedIn("one-call-each@example.com");
     await documentsFor(person.id, three);
 
@@ -121,8 +128,12 @@ describe("the reading run (criterion 10, D8)", () => {
 
     expect(requestsSent().map((request) => request.headers["x-jobapp-case"])).toEqual([
       "intake.classify:2026-08-30_cv_FR",
+      "intake.extract:2026-08-30_cv_FR",
       "intake.classify:2026-08-30_cv_EN",
+      "intake.extract:2026-08-30_cv_EN",
       "intake.classify:BS-HEIGVD-IL-Diplome",
+      "intake.extract:BS-HEIGVD-IL-Diplome",
+      "intake.merge:2026-08-30_cv_FR+2026-08-30_cv_EN+BS-HEIGVD-IL-Diplome",
     ]);
   });
 
@@ -259,6 +270,220 @@ describe("resume is a read of the rows (criterion 11, US3)", () => {
     await (await read(person.cookie)).text();
 
     expect(requestsSent()).toEqual([]);
+  });
+});
+
+/**
+ * Seam B's other half: the two steps this slice adds to the run (criteria 3, 4, 5, 9).
+ *
+ * Behind it, the same PGlite and the same in-process mock. What is asserted is read
+ * back through `GET /api/intake/profile`, because the route that writes a profile is
+ * the route that reads it; nothing here selects from `profile_item`.
+ *
+ * Not past it: the fixtures' contents. That a case says what a real reader would say is
+ * the business of whoever records it, and these were hand-written from the person's own
+ * documents (`D20`).
+ */
+type Item = {
+  kind: string;
+  title: string;
+  documents: number;
+  entry: { label: string; qualifier: string | null } | null;
+  lines: { text: string; sources: { document: string; said: string }[] }[];
+  children: Item[];
+  sources: { document: string; said: string }[];
+};
+
+type Profile = {
+  documents: number;
+  experience: Item[];
+  groups: Item[];
+  education: Item[];
+};
+
+const profileOf = async (cookie: string): Promise<Profile> => {
+  const answer = await app.request("/api/intake/profile", { headers: { cookie } });
+  return (await answer.json()) as Profile;
+};
+
+describe("the extraction and the merge (criteria 3, 4, 5)", () => {
+  it("turns the two CVs of one month into one experience with two sources", async () => {
+    const person = await signedIn("one-month-two-languages@example.com");
+    await documentsFor(person.id, [theSet.cvFrench.filename, theSet.cvEnglish.filename]);
+
+    await (await read(person.cookie)).text();
+    const profile = await profileOf(person.cookie);
+
+    expect(profile.experience).toHaveLength(1);
+    expect(profile.experience[0]?.documents).toBe(2);
+    // Each provenance row carries its own document's wording, in its own language: the
+    // merge translated nothing and summarised nothing (S3.2's done-when).
+    expect(profile.experience[0]?.sources).toEqual([
+      {
+        document: "2026-08-30_cv_FR.pdf",
+        said: "Collaborateur R&D en genie logiciel, HEIG-VD, Yverdon-les-Bains, aout 2022 - aout 2026.",
+      },
+      {
+        document: "2026-08-30_cv_EN.pdf",
+        said: "R&D Collaborator in Software Engineering, HEIG-VD, Yverdon-les-Bains, Hybrid, Aug 2022 - Aug 2026.",
+      },
+    ]);
+  });
+
+  it("keeps what a document said against the line it produced, word for word", async () => {
+    const person = await signedIn("verbatim-against-the-fact@example.com");
+    await documentsFor(person.id, [theSet.cvFrench.filename, theSet.cvEnglish.filename]);
+
+    await (await read(person.cookie)).text();
+    const profile = await profileOf(person.cookie);
+    const line = profile.experience[0]?.lines[1];
+
+    expect(line?.text).toBe("Responsible for practical lab support on the DevOps course.");
+    expect(line?.sources.map((source) => source.said)).toEqual([
+      // The French document's own sentence, as `extract:2026-08-30_cv_FR` states it.
+      "Responsable du suivi des laboratoires du cours DevOps.",
+      "Responsible for practical lab support on the DevOps course.",
+    ]);
+  });
+
+  it("records both wordings of one post against the one item and writes no third", async () => {
+    const person = await signedIn("two-documents-disagree@example.com");
+    await documentsFor(person.id, [theSet.cvWord2022.filename, theSet.cv2025.filename]);
+
+    await (await read(person.cookie)).text();
+    const profile = await profileOf(person.cookie);
+    const post = profile.experience[0];
+
+    expect(profile.experience).toHaveLength(1);
+    // Both, in the documents' own words. The merge picked no winner and invented no
+    // sentence of its own: what it chose as the title is one of the two the documents
+    // state, and everything either of them said is still there to be shown.
+    expect(post?.sources.map((source) => source.said)).toEqual([
+      "Assistant HES a la HEIG-VD, Yverdon-les-Bains, depuis 2022.",
+      "R&D Collaborator in Software Engineering at HEIG-VD, Yverdon-les-Bains, since 2022.",
+    ]);
+    expect(["Assistant HES", "R&D Collaborator in Software Engineering"]).toContain(post?.title);
+  });
+
+  it("writes a group's entries flat, and no year on any of them", async () => {
+    const person = await signedIn("flat-groups-no-years@example.com");
+    await documentsFor(person.id, [theSet.cvFrench.filename, theSet.cvEnglish.filename]);
+
+    await (await read(person.cookie)).text();
+    const profile = await profileOf(person.cookie);
+    const entries = profile.groups.flatMap((group) => group.children);
+
+    expect(profile.groups.map((group) => group.title)).toEqual([
+      "Programming languages",
+      "DevOps and cloud",
+    ]);
+    expect(entries.map((entry) => entry.title)).toEqual([
+      "JavaScript",
+      "TypeScript",
+      "Python",
+      "Docker",
+      "Kubernetes",
+    ]);
+    // Flat by construction: an entry has nothing under it, whatever a merge answers.
+    expect(entries.flatMap((entry) => entry.children)).toEqual([]);
+    // And no duration anywhere: `item_entry` has no column for one, so a year on a chip
+    // is a thing the database cannot hold rather than a thing the screen omits (D16).
+    for (const entry of entries) {
+      expect(`${entry.title} ${entry.entry?.label} ${entry.entry?.qualifier ?? ""}`).not.toMatch(
+        /\d/,
+      );
+    }
+  });
+});
+
+describe("an answer that cannot be used (spec, Failure modes)", () => {
+  it("marks the document whose extraction is malformed, and reads the others", async () => {
+    const person = await signedIn("malformed-extract@example.com");
+    await documentsFor(person.id, [theSet.cvFrench.filename, theSet.cvEnglish.filename]);
+    const cases = withCases({
+      "intake.classify:2026-08-30_cv_FR": {
+        stands_for: "the French CV, classified",
+        content: '{"kind":"cv","language":"fr","confidence":0.97,"why":"a CV in French"}',
+      },
+      "intake.classify:2026-08-30_cv_EN": {
+        stands_for: "the English CV, classified",
+        content: '{"kind":"cv","language":"en","confidence":0.97,"why":"a CV in English"}',
+      },
+      "intake.extract:2026-08-30_cv_FR": {
+        stands_for: "the French CV, read",
+        content:
+          '{"facts":[{"kind":"identity","title":"Stefan Teofanovic","said":"Stefan Teofanovic, Montreux, Suisse.","lines":[]}]}',
+      },
+      // A reader that answered with prose where facts were asked for. Validated at the
+      // boundary, so it is a failed step and never a half-written anything.
+      "intake.extract:2026-08-30_cv_EN": {
+        stands_for: "the English CV, answered with something that is not a reading",
+        content: '{"facts":[]}',
+      },
+      "intake.merge:2026-08-30_cv_FR": {
+        stands_for: "the one document that could be read, merged alone",
+        content:
+          '{"items":[{"kind":"identity","title":"Stefan Teofanovic","sources":[{"document":"2026-08-30_cv_FR","said":"Stefan Teofanovic, Montreux, Suisse."}]}]}',
+      },
+    });
+
+    try {
+      await (await read(person.cookie)).text();
+
+      expect(await statusesOf(person.id)).toEqual([
+        ["2026-08-30_cv_FR.pdf", "read"],
+        ["2026-08-30_cv_EN.pdf", "failed"],
+      ]);
+    } finally {
+      cases.dispose();
+    }
+  });
+
+  it("writes no part of a profile when the merge answers something unusable", async () => {
+    const person = await signedIn("malformed-merge@example.com");
+    await documentsFor(person.id, [theSet.cvFrench.filename, theSet.cvEnglish.filename]);
+    const cases = withCases({
+      "intake.classify:2026-08-30_cv_FR": {
+        stands_for: "the French CV, classified",
+        content: '{"kind":"cv","language":"fr","confidence":0.97,"why":"a CV in French"}',
+      },
+      "intake.classify:2026-08-30_cv_EN": {
+        stands_for: "the English CV, classified",
+        content: '{"kind":"cv","language":"en","confidence":0.97,"why":"a CV in English"}',
+      },
+      "intake.extract:2026-08-30_cv_FR": {
+        stands_for: "the French CV, read",
+        content:
+          '{"facts":[{"kind":"identity","title":"Stefan Teofanovic","said":"Stefan Teofanovic, Montreux, Suisse.","lines":[]}]}',
+      },
+      "intake.extract:2026-08-30_cv_EN": {
+        stands_for: "the English CV, read",
+        content:
+          '{"facts":[{"kind":"identity","title":"Stefan Teofanovic","said":"Stefan Teofanovic, Montreux, Switzerland.","lines":[]}]}',
+      },
+      // An item citing nothing: the one thing this product promises not to produce, and
+      // so the one thing the boundary refuses before a row is written.
+      "intake.merge:2026-08-30_cv_FR+2026-08-30_cv_EN": {
+        stands_for: "a merge that answered with an item no document stands behind",
+        content: '{"items":[{"kind":"identity","title":"Somebody","sources":[]}]}',
+      },
+    });
+
+    try {
+      await (await read(person.cookie)).text();
+
+      // The documents are read and their facts are not lost: a second run over them is
+      // what puts them back through the merge. What must not be there is half a profile.
+      expect(await statusesOf(person.id)).toEqual([
+        ["2026-08-30_cv_FR.pdf", "read"],
+        ["2026-08-30_cv_EN.pdf", "read"],
+      ]);
+      const profile = await profileOf(person.cookie);
+      expect(profile.documents).toBe(0);
+      expect([...profile.experience, ...profile.groups, ...profile.education]).toEqual([]);
+    } finally {
+      cases.dispose();
+    }
   });
 });
 
