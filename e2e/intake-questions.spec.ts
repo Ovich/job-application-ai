@@ -101,3 +101,90 @@ test("the assistant asks, the answers become rules, and a reload still has them"
 
   await context.close();
 });
+
+/**
+ * The correction, the return and the deletion beside it (`SL5`, criteria 4, 7, 10 and
+ * 12; `US8`, `US9`, `US11`).
+ *
+ * The same walk, carried past the questions: a chip nobody asked about, clicked and
+ * spoken about in the person's own words, a reload that keeps nothing in the page, and
+ * somebody else deleting their account through the gate while this profile is open.
+ *
+ * The `local` project alone collects it, as `intake` and `profile` are, until `SL6`.
+ */
+test("a chip clicked, a rule written on it, and somebody else's deletion beside it", async ({
+  browser,
+}) => {
+  const context = await signedIn(browser, {
+    name: "Stefan Teofanovic",
+    email: "clarification-end-to-end@example.com",
+  });
+  const page = await context.newPage();
+
+  await page.goto("/documents");
+  await page.locator("input[type=file]").setInputFiles(three);
+  await page.getByRole("button", { name: "Read my documents" }).click();
+  await expect(page.locator("[data-row=document]").filter({ hasText: "read" })).toHaveCount(3, {
+    timeout: 60_000,
+  });
+
+  await page.goto("/profile");
+  await expect(page.locator("profile-sheet")).toBeVisible();
+  await expect(page.locator("scope-tool")).toBeVisible();
+
+  // A chip nobody asked about: no mark on it, and no rule under it yet.
+  const plain = page
+    .locator("[data-row=chip]")
+    .filter({ hasNot: page.locator("[data-part=ask], [data-part=rule]") })
+    .first();
+  const label = (await plain.textContent())?.trim() ?? "";
+  expect(label).not.toBe("");
+
+  await plain.click();
+
+  // The tool proposes nothing at all, and only the prefix says what is in scope.
+  await expect(page.locator("scope-tool [data-part=lead]")).toHaveText(
+    "Tell me what I should know about it, in your own words.",
+  );
+  await expect(page.locator("[data-action=alt]")).toHaveCount(0);
+  await expect(page.locator("[data-part=what]")).toHaveText(`Scope · ${label}`);
+
+  const ownWords = "I only ever wrote the Dockerfiles, somebody else ran them";
+  await page.locator("[data-part=composer]").fill(ownWords);
+  await page.locator("[data-part=send]").click();
+
+  // The check line is under that chip, and the assistant is back on what still waits.
+  await expect(page.locator("[data-part=rule]").filter({ hasText: ownWords })).toHaveCount(1);
+  await expect(page.locator("[data-action=alt]").first()).toBeVisible();
+
+  // A second visit, which keeps nothing in the page: the profile, the rule, and the
+  // first question still waiting. No done state and no exit.
+  await page.reload();
+  await expect(page.locator("profile-sheet")).toBeVisible();
+  await expect(page.locator("[data-part=rule]").filter({ hasText: ownWords })).toHaveCount(1);
+  await expect(page.locator("scope-tool")).toBeVisible();
+  await expect(page.locator("body")).not.toContainText("That is all I needed.");
+
+  // Somebody else deletes their account through the gate, and this profile is untouched.
+  const other = await signedIn(browser, {
+    name: "Ben Seeker",
+    email: `deleting-beside-${Date.now()}@example.com`,
+  });
+  const theirPage = await other.newPage();
+  await theirPage.goto("/profile");
+  await theirPage.getByRole("button", { name: "Your account" }).click();
+  await theirPage.getByRole("menuitem", { name: "Delete my account" }).click();
+  const gate = theirPage.getByRole("dialog", { name: "Delete your account?" });
+  await gate.getByRole("button", { name: "Acknowledge" }).click();
+  const code = (await gate.getByText(/^\s*[A-Z0-9]{8}\s*$/).textContent())?.trim() ?? "";
+  await gate.getByRole("textbox").fill(code);
+  await gate.getByRole("button", { name: "Delete account" }).click();
+  await theirPage.waitForURL((url) => url.pathname === "/" && url.searchParams.has("deleted"));
+
+  await page.reload();
+  await expect(page.locator("profile-sheet")).toBeVisible();
+  await expect(page.locator("[data-part=rule]").filter({ hasText: ownWords })).toHaveCount(1);
+
+  await other.close();
+  await context.close();
+});
