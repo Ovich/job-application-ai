@@ -37,6 +37,9 @@ import { UiText } from "../../ui/typography/text/text";
  * every document is read, is the way to the profile — the thing they came here to make.
  */
 
+/** How long the green line stands before the profile opens (the person, 2026-09-12). */
+const afterTheReading = 1000;
+
 /** A row, as the list route answers it. Inferred; nothing about it is declared here. */
 type Document = InferResponseType<typeof api.intake.documents.$get, 200>[number];
 
@@ -96,6 +99,9 @@ export class AppDocuments {
 
   /** The route's own sentence for the last refusal, or nothing. */
   protected readonly refusal = signal<string | null>(null);
+
+  /** Whether the reading has just landed, which is what the green line says. */
+  protected readonly landed = signal(false);
 
   /**
    * Which of the mockup's three states the screen is in. `reading` is not a flag a
@@ -239,6 +245,20 @@ export class AppDocuments {
     // only thing that would still say otherwise.
     this.started.set(false);
     await this.load();
+
+    /**
+     * The reading landed, so the person is taken to what it made (the person,
+     * 2026-09-12). The word comes first and the move a second later: a screen that
+     * jumps the instant a run ends leaves nobody sure it worked, and a second is long
+     * enough to read four words and short enough not to be a wait.
+     *
+     * Only when something was actually read. A run whose documents all failed says so
+     * in its own notices and stays where it is, because there is nothing to go to.
+     */
+    if (this.allRead()) {
+      this.landed.set(true);
+      setTimeout(() => void this.router.navigateByUrl("/profile"), afterTheReading);
+    }
   }
 
   /** One block of the stream, if it carries a leaf this screen draws. */

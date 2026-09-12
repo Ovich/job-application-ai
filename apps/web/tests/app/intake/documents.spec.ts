@@ -443,3 +443,60 @@ describe("documents already read", () => {
     });
   });
 });
+
+/**
+ * What happens the moment a reading lands (the person, 2026-09-12): a green line, and a
+ * second later the profile it made.
+ */
+describe("the reading lands", () => {
+  it("says so in green, then opens the profile a second later", async () => {
+    documentsAre([rowOf({ id: "one", filename: "2026-08-30_cv_EN.pdf" })]);
+    runSays([
+      { kind: "document", id: "one", status: "reading", reason: null },
+      { kind: "document", id: "one", status: "read", reason: null },
+      { kind: "run", status: "done" },
+    ]);
+    const screen = await opened();
+    const going = vi.spyOn(TestBed.inject(Router), "navigateByUrl");
+
+    await screen.eventually(() => expect(screen.read()?.disabled).toBe(false));
+    screen.read()?.click();
+
+    // The word first, and the page still where the person left it.
+    await screen.eventually(() => {
+      const notice = screen.page()?.querySelector('app-notice[role="status"]');
+      expect(textOf(notice)).toContain("Read.");
+      expect(textOf(notice)).toContain("Opening your profile.");
+    });
+    expect(going).not.toHaveBeenCalled();
+
+    // Then the move, and only then.
+    await vi.waitFor(() => expect(going).toHaveBeenCalledWith("/profile"), { timeout: 4000 });
+  });
+
+  it("stays where it is when the reading failed, because there is nothing to open", async () => {
+    documentsAre([rowOf({ id: "one", filename: "2026-08-30_cv_EN.pdf" })]);
+    runSays([
+      { kind: "document", id: "one", status: "reading", reason: null },
+      {
+        kind: "document",
+        id: "one",
+        status: "failed",
+        reason: "2026-08-30_cv_EN.pdf could not be read.",
+      },
+      { kind: "run", status: "done" },
+    ]);
+    const screen = await opened();
+    const going = vi.spyOn(TestBed.inject(Router), "navigateByUrl");
+
+    await screen.eventually(() => expect(screen.read()?.disabled).toBe(false));
+    screen.read()?.click();
+
+    await screen.eventually(() => {
+      expect(textOf(screen.page())).toContain("could not be read");
+    });
+    await new Promise((resolve) => setTimeout(resolve, 1400));
+    expect(going).not.toHaveBeenCalled();
+    expect(screen.page()?.querySelector('app-notice[role="status"]')).toBeNull();
+  });
+});

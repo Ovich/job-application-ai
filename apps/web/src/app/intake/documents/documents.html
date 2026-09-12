@@ -11,6 +11,10 @@
     <app-notice tone="warn" lead="Not added.">{{ sentence }}</app-notice>
   }
 
+  @if (landed()) {
+    <app-notice tone="ok" lead="Read.">Opening your profile.</app-notice>
+  }
+
   @if (state() === "empty") {
     <ui-drop-zone [accept]="accept" (filesChosen)="onFilesChosen($event)" />
   }
