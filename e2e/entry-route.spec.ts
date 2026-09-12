@@ -24,9 +24,25 @@ const builtEntryRoute = fileURLToPath(
 const heading = "Your job application in the era of AI";
 const sentence = "A tailored CV and cover letter for every job offer. Let the silence stop.";
 const title = "AI CV builder for every job offer | job-application.app";
+/** Under 155 characters, the length a result page shows whole; the h1 is not repeated in it. */
 const description =
-  "Your job application in the era of AI. A tailored CV and cover letter for every job offer. Let the silence stop. Built from one profile made of the CVs you already have.";
+  "A tailored CV and cover letter for every job offer, built from one profile made of the CVs you already have. Let the silence stop.";
 const canonical = "https://job-application.app/";
+
+/**
+ * What a link to `/` unfurls as when pasted into LinkedIn, Slack or a chat: the Open
+ * Graph tags every unfurler reads, and the one Twitter card tag X does not take from
+ * them. No `og:image` yet: a tag naming an image that is not there is cached as a
+ * failure by some unfurlers, so the tag waits for the image.
+ */
+const unfurl = {
+  "og:type": "website",
+  "og:site_name": "job-application.app",
+  "og:title": heading,
+  "og:description": description,
+  "og:url": canonical,
+};
+const twitterCard = "summary";
 
 test.describe("the entry route with JavaScript disabled", () => {
   test.use({ javaScriptEnabled: false });
@@ -47,6 +63,13 @@ test.describe("the entry route with JavaScript disabled", () => {
     await expect(page).toHaveTitle(title);
     await expect(page.locator('meta[name="description"]')).toHaveAttribute("content", description);
     await expect(page.locator('link[rel="canonical"]')).toHaveAttribute("href", canonical);
+    for (const [property, content] of Object.entries(unfurl)) {
+      await expect(page.locator(`meta[property="${property}"]`)).toHaveAttribute(
+        "content",
+        content,
+      );
+    }
+    await expect(page.locator('meta[name="twitter:card"]')).toHaveAttribute("content", twitterCard);
   });
 });
 
@@ -68,6 +91,10 @@ test.describe("the built HTML of /", () => {
       new RegExp(`<meta name="description" content="${description.replace(/\./g, "\\.")}"`),
     );
     expect(html).toContain(`<link rel="canonical" href="${canonical}">`);
+    for (const [property, content] of Object.entries(unfurl)) {
+      expect(html).toContain(`<meta property="${property}" content="${content}">`);
+    }
+    expect(html).toContain(`<meta name="twitter:card" content="${twitterCard}">`);
     expect(html).toMatch(new RegExp(`<h1[^>]*>\\s*${heading}\\s*</h1>`));
     expect(html).toContain(sentence);
   });
