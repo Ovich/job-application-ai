@@ -1,6 +1,6 @@
 import { Component, computed, input, output, signal, viewChild } from "@angular/core";
 import { UiText } from "../../ui/typography/text/text";
-import { Composer } from "../composer/composer";
+import { Composer } from "../../assistant/composer/composer";
 import { ProgressLine } from "../progress-line/progress-line";
 import { ReadingCard } from "../reading-card/reading-card";
 import type { OpenQuestion, OpenTool, Option } from "../scope-tool/scope-tool";
