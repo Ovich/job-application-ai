@@ -17,6 +17,7 @@ const textOf = (element: Element | null | undefined): string =>
   (element?.textContent ?? "").replace(/\s+/g, " ").trim();
 
 const aQuestion = {
+  kind: "asked",
   where: "What you work with · DevOps and cloud · in 2 documents",
   lead: "Kubernetes is in two of your documents and neither says your part. Which was it?",
   options: [
@@ -43,10 +44,13 @@ const aQuestion = {
 } as const;
 
 const rendered = async (
-  question: typeof aQuestion | { where: string; lead: string; options: readonly unknown[] },
+  tool:
+    | typeof aQuestion
+    | { kind: "asked"; where: string; lead: string; options: readonly unknown[] }
+    | { kind: "clarification" },
 ) => {
   const fixture = TestBed.createComponent(ScopeTool);
-  fixture.componentRef.setInput("question", question);
+  fixture.componentRef.setInput("tool", tool);
   await fixture.whenStable();
   const element = fixture.nativeElement as HTMLElement;
   const rows = () => Array.from(element.querySelectorAll<HTMLButtonElement>("[data-action=alt]"));
@@ -77,6 +81,7 @@ describe("the answers, as rows (criterion 5)", () => {
 
   it("keeps the person's own words as the last row when the reader proposed three", async () => {
     const { rows } = await rendered({
+      kind: "asked",
       where: "Experience · HEIG-VD · 2 documents disagree",
       lead: "Which was on your contract?",
       options: [
@@ -117,6 +122,48 @@ describe("the answers, as rows (criterion 5)", () => {
 
     expect(picked).toEqual([{ optionId: "own" }]);
     expect(rows()[3]?.getAttribute("data-rule")).toBeNull();
+  });
+});
+
+/**
+ * `SL5`'s second shape: the tool the person opened themselves. It proposes nothing at
+ * all, and the input is what makes that so — a `clarification` carries no option to
+ * render, so a suggested answer is unrepresentable rather than merely absent.
+ */
+describe("the tool the person opened themselves (SL5, criteria 1 and 3)", () => {
+  it("renders one fixed sentence, the foot line and nothing else: no option anywhere", async () => {
+    const { element, rows } = await rendered({ kind: "clarification" });
+
+    expect(textOf(element.querySelector("[data-part=lead]"))).toBe(
+      "Tell me what I should know about it, in your own words.",
+    );
+    expect(rows()).toHaveLength(0);
+    expect(element.querySelector("fieldset")).toBeNull();
+    expect(element.querySelector("[data-action=skip]")).toBeNull();
+    expect(textOf(element.querySelector("[data-part=foot]"))).toContain(
+      "What you write is kept as your rule for it.",
+    );
+  });
+
+  it("names nothing: the clicked thing's own text is the prefix's, and the tool says where it is not", async () => {
+    const { element } = await rendered({ kind: "clarification" });
+
+    // The one fixed sentence says "it", never what "it" is. A tool that composed
+    // "Your part in Kubernetes at Nestlé" would be inferring, in a smaller place.
+    expect(textOf(element.querySelector("[data-part=where]"))).toBe("");
+    expect(textOf(element)).not.toContain("Kubernetes");
+  });
+
+  it("offers Cancel, and says so when it is pressed", async () => {
+    const { fixture, element } = await rendered({ kind: "clarification" });
+    const cancelled: true[] = [];
+    fixture.componentInstance.cancel.subscribe(() => cancelled.push(true));
+
+    const cancel = element.querySelector<HTMLButtonElement>("[data-action=cancel]");
+    expect(textOf(cancel)).toBe("Cancel");
+
+    cancel?.click();
+    expect(cancelled.length).toBe(1);
   });
 });
 
