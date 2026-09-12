@@ -4,17 +4,21 @@
   2026-09-12). So it carries a gradient twice its own width and slides it on hover — the
   mechanic from the snippet they sent — in this product's own blue rather than the
   snippet's purple, because the palette belongs to `styles.css` and not to a paste.
+
+  It has no rounding and no margin of its own: the composer's box has no padding, so the
+  prefix meets the border on three sides and the box's own corners clip it (the person,
+  2026-09-13).
 -->
 <span
   data-part="prefix"
   [uiTooltip]="what()"
-  class="flex items-center gap-1.5 rounded-md bg-[linear-gradient(to_right,var(--primary)_0%,var(--cv-accent)_51%,var(--primary)_100%)] bg-[length:200%_auto] py-1 pe-1.5 ps-2.5 font-semibold text-primary-foreground shadow-sm transition-[background-position] duration-500 hover:bg-right"
+  class="flex items-center gap-1.5 self-stretch bg-[linear-gradient(to_right,var(--primary)_0%,var(--cv-accent)_51%,var(--primary)_100%)] bg-[length:200%_auto] py-2 pe-2 ps-3 font-semibold text-primary-foreground transition-[background-position] duration-500 hover:bg-right"
 >
   <!--
-    The relation and nothing else: the chip says what kind of thing is open — `Scope` —
-    and never what it is about. The item's own title is data, and data is in the tool
-    below, which is also why nothing here can grow long enough to crowd the text bar
-    beside it.
+    The relation and nothing else: the chip says what kind of thing is open — `Adjusting
+    scope` — and never what it is about. Where the person is, is the tool's to say and
+    this chip's to whisper on hover, which is also why nothing here can grow long enough
+    to crowd the text bar beside it.
   -->
   <span data-part="what" uiText variant="ui" class="whitespace-nowrap">{{ label() }}</span>
   <button

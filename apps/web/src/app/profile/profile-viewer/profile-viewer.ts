@@ -337,17 +337,25 @@ export class ProfileViewer {
     return every;
   }
 
-  /** An item, in its own text, by its id. */
+  /** An item, by its id: where it is, which for an item is its own name. */
   private itemOf(id: string): Pressed | null {
     const item = this.items().find((each) => each.id === id);
-    return item === undefined ? null : { itemId: item.id, title: item.title, lineId: null };
+    return item === undefined ? null : { itemId: item.id, where: item.title, lineId: null };
   }
 
-  /** A line, in its own text, with the item it belongs to. */
+  /**
+   * A line, as the path to it rather than as itself (the person, 2026-09-13).
+   *
+   * A bullet is a sentence, sometimes a long one, and repeating it in the tool says
+   * twice what the highlight already says once. What the tool needs is where a person
+   * is: the post it belongs to, and which row.
+   */
   private lineOf(id: string): Pressed | null {
     for (const item of this.items()) {
-      const line = item.lines.find((each) => each.id === id);
-      if (line !== undefined) return { itemId: item.id, title: line.text, lineId: line.id };
+      const at = item.lines.findIndex((each) => each.id === id);
+      if (at !== -1) {
+        return { itemId: item.id, where: `${item.title} · row ${at + 1}`, lineId: id };
+      }
     }
     return null;
   }

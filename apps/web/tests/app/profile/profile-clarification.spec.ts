@@ -214,14 +214,20 @@ describe("a click on an item whose question is still open (the person, 2026-09-1
 });
 
 describe("a click on a line (the person, 2026-09-13)", () => {
-  it("opens the tool on the line, about the line's own words", async () => {
+  it("opens the tool on the line, saying where it is and not what it says", async () => {
     profileIs(aProfile());
     const { at, press } = await opened();
 
     await press("line-migration");
 
     expect(textOf(at("scope-tool [data-part=lead]"))).toBe(theSentence);
-    expect(textOf(at("scope-tool [data-part=about]"))).toBe("Ran the migration programme");
+    // The path, not the sentence: the sheet has lifted the line already, and a bullet
+    // repeated here would be the same thing said twice (the person, 2026-09-13). What
+    // the highlight cannot say is which row of which post is about to be written on.
+    expect(textOf(at("scope-tool [data-part=where]"))).toBe(
+      "R&D Collaborator in Software Engineering · row 1",
+    );
+    expect(textOf(at("profile-assistant"))).not.toContain("Ran the migration programme");
   });
 
   it("keeps what is written as a rule on the line's post, about the line", async () => {

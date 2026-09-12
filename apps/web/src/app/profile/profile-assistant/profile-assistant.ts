@@ -50,11 +50,15 @@ export type Question = {
 };
 
 /**
- * The region the person pressed, in its own words: the item, and its own text. A line
- * carries the item it belongs to and its own id beside it, because what is written about
- * a line is kept on that item (the person, 2026-09-13).
+ * The region the person pressed: which item it is, and **where** it is — a name for an
+ * item, and `the post · row 3` for a line. Never the line's own sentence: the sheet has
+ * already lifted it, and saying it again in the tool is the same thing twice (the
+ * person, 2026-09-13).
+ *
+ * A line carries the item it belongs to and its own id beside it, because what is
+ * written about a line is kept on that item.
  */
-export type Pressed = { itemId: string; title: string; lineId: string | null };
+export type Pressed = { itemId: string; where: string; lineId: string | null };
 
 /** The word the intake names the thing in the prefix with. The builder will have its own. */
 const scope = "Adjusting scope";
@@ -191,12 +195,12 @@ export class ProfileAssistant {
   });
 
   /**
-   * What is open in the dock. A clarification carries what it is about and no option,
+   * What is open in the dock. A clarification carries where the person is and no option,
    * which is what makes the shape that proposes nothing unable to propose.
    */
   protected readonly asked = computed<OpenTool | null>(() => {
     const pressed = this.clarifying();
-    return pressed === null ? this.question() : { kind: "clarification", about: pressed.title };
+    return pressed === null ? this.question() : { kind: "clarification", where: pressed.where };
   });
 
   /**
@@ -207,7 +211,7 @@ export class ProfileAssistant {
    */
   protected readonly tool = computed(() => {
     const pressed = this.clarifying();
-    if (pressed !== null) return { label: scope, what: pressed.title };
+    if (pressed !== null) return { label: scope, what: pressed.where };
     const question = this.open();
     return question === null ? null : { label: scope, what: question.itemTitle };
   });

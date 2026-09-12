@@ -19,7 +19,7 @@ import { UiText } from "../../ui/typography/text/text";
   // A flex item of the composer's row, and one that keeps what it needs: beside an input
   // that grows, a prefix left to shrink is crushed to its first letter (the person,
   // 2026-09-12). It takes its content's width, up to the ceiling the chip carries.
-  host: { class: "flex shrink-0 items-center" },
+  host: { class: "flex shrink-0 items-stretch" },
 })
 export class ToolPrefix {
   /** The word the use case names the relation with: `Adjusting scope` in the intake. */

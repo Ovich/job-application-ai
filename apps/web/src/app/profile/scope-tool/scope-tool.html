@@ -54,11 +54,12 @@
 } @else {
   <!--
     The tool the person opened themselves: one sentence, the same wherever it is opened,
-    and no option anywhere. What it is about is said here, in the clicked thing's own
-    text — the prefix says only that this is a scope (the person, 2026-09-12).
+    and no option anywhere. Above it, where the person is — the item and the row — and
+    never what that row says: the sheet has highlighted it already (the person,
+    2026-09-13).
   -->
-  <span data-part="about" uiText variant="caption" tone="muted" class="mb-1 block">{{
-    tool().kind === "clarification" ? $any(tool()).about : ""
+  <span data-part="where" uiText variant="caption" tone="muted" class="mb-1 block">{{
+    tool().kind === "clarification" ? $any(tool()).where : ""
   }}</span>
 
   <p data-part="lead" uiText variant="ui" class="mb-3">

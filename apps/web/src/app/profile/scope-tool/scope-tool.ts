@@ -50,14 +50,15 @@ export type OpenQuestion = {
 };
 
 /**
- * The tool the person opened themselves. It carries what it is about and nothing else:
+ * The tool the person opened themselves. It carries **where** they are and nothing else:
  * the sentence is fixed, and there is no field here for a proposal to arrive in.
  *
- * `about` is the clicked thing's own title, and it is the tool's rather than the
- * prefix's (the person, 2026-09-12): the chip names the relation, and data — a title a
- * document wrote — is shown where the person is answering.
+ * `where` is a path — `R&D Collaborator in Software Engineering · row 3` — and never
+ * the thing's own words (the person, 2026-09-13). The sheet has lifted what was
+ * clicked, so repeating a bullet's sentence here says it twice; what a person cannot
+ * see from the highlight alone is which row of which item they are about to write on.
  */
-export type Clarification = { kind: "clarification"; about: string };
+export type Clarification = { kind: "clarification"; where: string };
 
 /** What is open in the dock: a question that was asked, or one the person opened. */
 export type OpenTool = OpenQuestion | Clarification;
