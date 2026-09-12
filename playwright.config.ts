@@ -41,8 +41,12 @@ export default defineConfig({
     {
       name: "local",
       // `auth` and `entry-route` are the local project's alone until S5.5: they open
-      // the page, and the cloud has no client app to open before then.
-      testMatch: /(health-stream|auth|entry-route)\.spec\.ts$/,
+      // the page, and the cloud has no client app to open before then. `intake` joins
+      // them at SL2 and is the local project's alone until SL6: the deployed
+      // environment's storage has never been exercised and its AI values are that
+      // slice's, so a run there would be a run against a bucket nothing has written to
+      // and a mock the template does not yet point at.
+      testMatch: /(health-stream|auth|entry-route|intake)\.spec\.ts$/,
       use: { baseURL: "http://localhost:4200" },
     },
     {
