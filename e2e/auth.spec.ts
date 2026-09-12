@@ -177,7 +177,11 @@ test.describe("two people on two browsers", () => {
         [adaPage, ada, ben],
         [benPage, ben, ada],
       ] as const) {
-        await page.goto("/profile");
+        // `/documents`, not `/profile`: a person who has handed nothing over is taken
+        // to the drop zone (the person, 2026-09-12), and a page that redirects under a
+        // click loses the menu this step is about. The shell — and its account menu —
+        // is the same on both.
+        await page.goto("/documents");
         await page.getByRole("button", { name: "Your account" }).click();
         const menu = page.getByRole("menu");
         await expect(menu).toContainText(who.email);

@@ -50,11 +50,14 @@ export type OpenQuestion = {
 };
 
 /**
- * The tool the person opened themselves. It carries nothing: the sentence is fixed and
- * what is in scope is the prefix's, so there is no field here for a proposal to arrive
- * in.
+ * The tool the person opened themselves. It carries what it is about and nothing else:
+ * the sentence is fixed, and there is no field here for a proposal to arrive in.
+ *
+ * `about` is the clicked thing's own title, and it is the tool's rather than the
+ * prefix's (the person, 2026-09-12): the chip names the relation, and data — a title a
+ * document wrote — is shown where the person is answering.
  */
-export type Clarification = { kind: "clarification" };
+export type Clarification = { kind: "clarification"; about: string };
 
 /** What is open in the dock: a question that was asked, or one the person opened. */
 export type OpenTool = OpenQuestion | Clarification;

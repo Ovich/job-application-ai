@@ -152,7 +152,8 @@ describe("a click on a region with no question waiting (criteria 1 and 3)", () =
 
     await press("chip-k8s");
 
-    expect(textOf(at("[data-part=what]"))).toBe("Scope · Kubernetes");
+    // The relation alone; what it is about is the tool's to show.
+    expect(textOf(at("[data-part=what]"))).toBe("Scope");
     // Nothing else in the assistant's column names it: the prefix is the only place the
     // clicked thing is said, and no sentence is composed about it anywhere.
     const said = textOf(at("profile-assistant")).split("Kubernetes").length - 1;

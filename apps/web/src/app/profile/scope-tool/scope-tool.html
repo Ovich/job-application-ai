@@ -54,9 +54,13 @@
 } @else {
   <!--
     The tool the person opened themselves: one sentence, the same wherever it is opened,
-    and no option anywhere. What is in scope is said by the prefix alone, in the clicked
-    thing's own text.
+    and no option anywhere. What it is about is said here, in the clicked thing's own
+    text — the prefix says only that this is a scope (the person, 2026-09-12).
   -->
+  <span data-part="about" uiText variant="caption" tone="muted" class="mb-1 block">{{
+    tool().kind === "clarification" ? $any(tool()).about : ""
+  }}</span>
+
   <p data-part="lead" uiText variant="ui" class="mb-3">
     Tell me what I should know about it, in your own words.
   </p>

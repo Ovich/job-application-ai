@@ -174,17 +174,19 @@ export class ProfileAssistant {
   });
 
   /**
-   * What is open in the dock. A clarification carries nothing, which is what makes the
-   * shape that proposes nothing unable to propose.
+   * What is open in the dock. A clarification carries what it is about and no option,
+   * which is what makes the shape that proposes nothing unable to propose.
    */
-  protected readonly asked = computed<OpenTool | null>(() =>
-    this.clarifying() === null ? this.question() : { kind: "clarification" },
-  );
+  protected readonly asked = computed<OpenTool | null>(() => {
+    const pressed = this.clarifying();
+    return pressed === null ? this.question() : { kind: "clarification", about: pressed.title };
+  });
 
   /**
-   * What the prefix says: this use case's own word, and the clicked thing's own text or
-   * the open question's item. The word is supplied here and nowhere in core, which is
-   * what "concrete tool prefixes per use case" means.
+   * What the prefix says: this use case's own word, and nothing a document wrote. The
+   * word is supplied here and nowhere in core, which is what "concrete tool prefixes per
+   * use case" means; `what` stays in the contract as the thing the chip is about, for a
+   * use case whose relation needs saying, and the intake's chip renders the word alone.
    */
   protected readonly tool = computed(() => {
     const pressed = this.clarifying();
