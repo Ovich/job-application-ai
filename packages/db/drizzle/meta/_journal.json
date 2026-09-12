@@ -15,6 +15,13 @@
       "when": 1789223011909,
       "tag": "0001_documents_a_person_handed_over",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1789227244442,
+      "tag": "0002_the_profile_its_items_lines_and_provenance",
+      "breakpoints": true
     }
   ]
 }
