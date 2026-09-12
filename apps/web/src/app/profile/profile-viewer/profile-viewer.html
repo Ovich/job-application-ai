@@ -10,9 +10,13 @@
     @if (profile(); as loaded) {
       <profile-assistant
         [questions]="questions()"
+        [on]="pressed()"
+        [returning]="returning()"
         [reading]="reading()"
         (answered)="answered($event)"
         (skipped)="skipped($event)"
+        (clarified)="clarified($event)"
+        (cancelled)="cancelled()"
       />
     }
   </section>

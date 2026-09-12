@@ -1,29 +1,49 @@
 <progress-line [answered]="answeredCount()" [total]="total()" [deferred]="deferred()" />
 
 <div class="flex min-h-0 flex-1 flex-col gap-5 overflow-auto p-6">
-  <div data-msg="ai" class="grid grid-cols-[30px_1fr] gap-3">
-    <div
-      aria-hidden="true"
-      class="mt-0.5 grid size-[30px] place-items-center rounded-full bg-primary font-semibold text-label text-primary-foreground"
-    >
-      A
-    </div>
-    <div>
-      <p uiText variant="body" class="mb-2">
-        I read your {{ reading().documents }} documents. Every fact on the right carries the
-        document it came from, and I wrote nothing that is not in them.
-      </p>
-
-      <div class="mt-1.5 border-border border-l-[3px] py-1.5 ps-4">
-        <reading-card [documents]="reading().documents" [facts]="reading().facts" [left]="left()" />
+  @if (welcome(); as hello) {
+    <!--
+      A second visit: the run that produced this profile is behind the person, so its
+      opener is not replayed and nothing here says the profile is finished (US9).
+    -->
+    <div data-msg="ai" class="grid grid-cols-[30px_1fr] gap-3">
+      <div
+        aria-hidden="true"
+        class="mt-0.5 grid size-[30px] place-items-center rounded-full bg-primary font-semibold text-label text-primary-foreground"
+      >
+        A
       </div>
-
-      <p uiText variant="body" class="mt-3">
-        Some facts say what you did but not what your part was, or two documents disagree. I ask
-        only those. Everything else I could tell from your documents.
-      </p>
+      <p data-part="welcome" uiText variant="body">{{ hello }}</p>
     </div>
-  </div>
+  } @else {
+    <div data-msg="ai" class="grid grid-cols-[30px_1fr] gap-3">
+      <div
+        aria-hidden="true"
+        class="mt-0.5 grid size-[30px] place-items-center rounded-full bg-primary font-semibold text-label text-primary-foreground"
+      >
+        A
+      </div>
+      <div>
+        <p uiText variant="body" class="mb-2">
+          I read your {{ reading().documents }} documents. Every fact on the right carries the
+          document it came from, and I wrote nothing that is not in them.
+        </p>
+
+        <div class="mt-1.5 border-border border-l-[3px] py-1.5 ps-4">
+          <reading-card
+            [documents]="reading().documents"
+            [facts]="reading().facts"
+            [left]="left()"
+          />
+        </div>
+
+        <p uiText variant="body" class="mt-3">
+          Some facts say what you did but not what your part was, or two documents disagree. I ask
+          only those. Everything else I could tell from your documents.
+        </p>
+      </div>
+    </div>
+  }
 
   @if (opener(); as first) {
     <div data-msg="ai" class="grid grid-cols-[30px_1fr] gap-3">
@@ -51,7 +71,7 @@
 </div>
 
 <composer [tool]="tool()" [canSave]="picked() !== null" (save)="save()" (clear)="skip()">
-  @if (asked(); as question) {
-    <scope-tool [question]="question" (pick)="pick($event)" (skip)="skip()" />
+  @if (asked(); as open) {
+    <scope-tool [tool]="open" (pick)="pick($event)" (skip)="skip()" (cancel)="skip()" />
   }
 </composer>
