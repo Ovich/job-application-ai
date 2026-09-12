@@ -4,7 +4,15 @@ import { subjectAt } from "../support/providers";
 import { localStorageIn } from "../support/storage";
 
 /**
- * Seam A: `routes/intake`, the reading run's fourth step (criteria 1, 1b, 2, 3).
+ * Seam A: `routes/intake`, the questions a reading leaves open (criteria 1, 1b, 2, 3).
+ *
+ * **There is no fourth step any more** (`ID157`). The questions used to be a pass of
+ * their own over the profile a merge had just written; they are now the second half of
+ * the one answer the reading gives, and the run writes them the moment it has written
+ * the profile. Every claim in this file is unchanged by that — a question is one of
+ * three kinds, capped at five, hung on an item that exists, never asked about a fact the
+ * documents agree on and state plainly — because those are claims about what the run
+ * writes, not about when it was asked.
  *
  * Behind the seam: the same PGlite database as every other route case, and `lib/ai`
  * answering from recorded cases in this very process. The seam is the route, reached by
@@ -42,7 +50,8 @@ const { app } = await import("../../src/app");
 const { cookiesSetBy, signInThrough, signedInAs } = await import("../support/sign-in");
 const { documentsFor, theSet } = await import("../support/documents");
 const { forgetRequests, requestsSent, withCases } = await import("../support/ai");
-const { aProfileOf, casesForRun, itemNamed } = await import("../support/intake");
+const { aProfileOf, caseNameFor, casesForRun, everyItem, itemNamed } =
+  await import("../support/intake");
 
 let storage: ReturnType<typeof localStorageIn>;
 
@@ -81,27 +90,26 @@ const three = [
 /** A run over those three, against the cases the product actually ships. */
 const aShippedRun = async (email: string) => {
   const person = await signedIn(email);
-  await documentsFor(person.id, three);
+  await documentsFor(person.id, three, storage);
   await (await read(person.cookie)).text();
   return { ...person, profile: await profileOf(person.cookie) };
 };
 
-describe("the fourth step, over the cases the product ships (criteria 1, 1b)", () => {
-  it("asks the fourth step once, after the merge, naming the run's own case", async () => {
+describe("the questions a reading leaves open, over the cases the product ships (criteria 1, 1b)", () => {
+  /**
+   * This test used to assert eight calls ending in a questions pass of its own. Its
+   * claim was that the questions are asked once for the run, about the run's own
+   * documents, and never per document; that claim is now carried by there being one
+   * call at all, which asks for the profile and the questions together (`ID157`).
+   */
+  it("asks for the questions in the run's one call, naming the run's own documents", async () => {
     const person = await signedIn("questions-one-call@example.com");
-    await documentsFor(person.id, three);
+    await documentsFor(person.id, three, storage);
 
     await (await read(person.cookie)).text();
 
     expect(requestsSent().map((request) => request.headers["x-jobapp-case"])).toEqual([
-      "intake.classify:2026-08-30_cv_FR",
-      "intake.extract:2026-08-30_cv_FR",
-      "intake.classify:leCVWeb",
-      "intake.extract:leCVWeb",
-      "intake.classify:CV-2025",
-      "intake.extract:CV-2025",
-      "intake.merge:2026-08-30_cv_FR+leCVWeb+CV-2025",
-      "intake.questions:2026-08-30_cv_FR+leCVWeb+CV-2025",
+      "intake.read:2026-08-30_cv_FR+leCVWeb+CV-2025",
     ]);
   });
 
@@ -233,7 +241,7 @@ describe("what the run does with what the reader proposed (criteria 2, 3)", () =
     cases: Parameters<typeof casesForRun>[0],
   ): Promise<Support.ProfileAnswer> => {
     const person = await signedIn(email);
-    await documentsFor(person.id, cases.documents);
+    await documentsFor(person.id, cases.documents, storage);
     const inPlace = withCases(casesForRun(cases));
     try {
       await (await read(person.cookie)).text();
@@ -264,7 +272,7 @@ describe("what the run does with what the reader proposed (criteria 2, 3)", () =
   it("asks five and writes the rest as waiting against their items", async () => {
     const profile = await aRunWith("questions-capped-at-five@example.com", {
       documents: twoDocuments,
-      merge: aGroupOf(eleven.map((title) => ({ title, from: said(title) }))),
+      profile: aGroupOf(eleven.map((title) => ({ title, from: said(title) }))),
       questions: { candidates: eleven.map(candidateFor) },
     });
 
@@ -295,7 +303,7 @@ describe("what the run does with what the reader proposed (criteria 2, 3)", () =
 
     const profile = await aRunWith("questions-agreed-fact@example.com", {
       documents: four,
-      merge: aGroupOf([
+      profile: aGroupOf([
         { title: "Kubernetes", from: agreed },
         { title: "Terraform", from: said("Terraform") },
       ]),
@@ -309,7 +317,7 @@ describe("what the run does with what the reader proposed (criteria 2, 3)", () =
   it("writes no question whose item is not in the profile", async () => {
     const profile = await aRunWith("questions-no-such-item@example.com", {
       documents: twoDocuments,
-      merge: aGroupOf([{ title: "Kubernetes", from: said("Kubernetes") }]),
+      profile: aGroupOf([{ title: "Kubernetes", from: said("Kubernetes") }]),
       questions: {
         candidates: [candidateFor("Kubernetes"), candidateFor("A thing nobody wrote down")],
       },
@@ -318,73 +326,95 @@ describe("what the run does with what the reader proposed (criteria 2, 3)", () =
     expect(profile.questions.map((question) => question.itemTitle)).toEqual(["Kubernetes"]);
   });
 
-  it("writes no question at all when the answer is malformed, and keeps what was read", async () => {
+  /**
+   * This case used to read "writes no question at all when the answer is malformed, and
+   * keeps what was read": a questions pass that answered rubbish cost the questions and
+   * nothing else, because the merge had already written the profile in a call of its
+   * own. There are no longer two answers to be malformed apart (`ID157`). A candidate
+   * the boundary refuses is a reading the boundary refuses, so **nothing at all is
+   * written** — and that is not a loss: the documents stay unread, and the next run
+   * takes them again.
+   */
+  it("writes nothing at all when the questions half of the answer is malformed", async () => {
     const profile = await aRunWith("questions-malformed@example.com", {
       documents: twoDocuments,
-      merge: aGroupOf([{ title: "Kubernetes", from: said("Kubernetes") }]),
-      questionsRaw: JSON.stringify({ candidates: [{ kind: "scope", item: "Kubernetes" }] }),
+      raw: JSON.stringify({
+        items: aGroupOf([{ title: "Kubernetes", from: said("Kubernetes") }]).items,
+        // A candidate with no lead, no where and no options: refused at the boundary.
+        candidates: [{ kind: "scope", item: "Kubernetes" }],
+      }),
     });
 
     expect(profile.questions).toEqual([]);
-    // What was read is kept: the profile the merge wrote is still there.
-    expect(itemNamed(profile, "Kubernetes").title).toBe("Kubernetes");
-  });
-
-  it("stops the run when the fourth step has no case at all, and keeps what was read", async () => {
-    const profile = await aRunWith("questions-no-case@example.com", {
-      documents: twoDocuments,
-      merge: aGroupOf([{ title: "Kubernetes", from: said("Kubernetes") }]),
-    });
-
-    expect(profile.questions).toEqual([]);
-    expect(itemNamed(profile, "Kubernetes").title).toBe("Kubernetes");
+    expect(everyItem(profile).map((item) => item.title)).toEqual([]);
   });
 
   /**
-   * The step retries once (spec, *Failure modes*). The first call is made against a
-   * fixture root that holds no questions case and the second against one that does, so
-   * what is asserted is that a second call happens at all.
+   * The same restatement for a run whose answer nobody recorded at all. It used to stop
+   * after the merge and keep the profile; one call means it stops before anything is
+   * written, and every document of the run is left for the next press of the button.
    */
-  it("retries the fourth step once before giving up", async () => {
+  it("writes nothing at all when the run's reading has no case, and leaves the documents unread", async () => {
+    const person = await signedIn("questions-no-case@example.com");
+    await documentsFor(person.id, twoDocuments, storage);
+    const nothingRecorded = withCases(casesForRun({ documents: twoDocuments }));
+    try {
+      await (await read(person.cookie)).text();
+    } finally {
+      nothingRecorded.dispose();
+    }
+
+    const profile = await profileOf(person.cookie);
+    expect(profile.questions).toEqual([]);
+    expect(everyItem(profile).map((item) => item.title)).toEqual([]);
+
+    const listed = (await (
+      await app.request("/api/intake/documents", { headers: { cookie: person.cookie } })
+    ).json()) as { status: string; readAt: string | null }[];
+    expect(listed.map((row) => row.status)).toEqual(["failed", "failed"]);
+    expect(listed.every((row) => row.readAt === null)).toBe(true);
+  });
+
+  /**
+   * The reading retries once (spec, *Failure modes*). It used to be the fourth step that
+   * retried and this test that counted its calls; the step is gone and the claim is not,
+   * so it is counted on the one call the run makes. The first half runs against a
+   * fixture root that holds the run's case and the second against one that holds
+   * nothing, so what is asserted is that a failure is tried again — once, and no more.
+   */
+  it("retries the run's one call once before giving up", async () => {
+    const runsCase = caseNameFor(twoDocuments);
     const person = await signedIn("questions-retried-once@example.com");
-    await documentsFor(person.id, twoDocuments);
-    const cases = casesForRun({
-      documents: twoDocuments,
-      merge: aGroupOf([{ title: "Kubernetes", from: said("Kubernetes") }]),
-      questions: { candidates: [candidateFor("Kubernetes")] },
-    });
-    const inPlace = withCases(cases);
+    await documentsFor(person.id, twoDocuments, storage);
+    const inPlace = withCases(
+      casesForRun({
+        documents: twoDocuments,
+        profile: aGroupOf([{ title: "Kubernetes", from: said("Kubernetes") }]),
+        questions: { candidates: [candidateFor("Kubernetes")] },
+      }),
+    );
     try {
       await (await read(person.cookie)).text();
     } finally {
       inPlace.dispose();
     }
 
-    const fourth = requestsSent().filter(
-      (request) => request.headers["x-jobapp-case"] === "intake.questions:2026-08-30_cv_FR+CV-2025",
-    );
-    expect(fourth.length).toBe(1);
+    expect(
+      requestsSent().filter((request) => request.headers["x-jobapp-case"] === runsCase).length,
+    ).toBe(1);
 
     // And when it fails, it is asked twice and no more.
     forgetRequests();
     const other = await signedIn("questions-retried-twice@example.com");
-    await documentsFor(other.id, twoDocuments);
-    const withoutIt = withCases(
-      casesForRun({
-        documents: twoDocuments,
-        merge: aGroupOf([{ title: "Kubernetes", from: said("Kubernetes") }]),
-      }),
-    );
+    await documentsFor(other.id, twoDocuments, storage);
+    const withoutIt = withCases(casesForRun({ documents: twoDocuments }));
     try {
       await (await read(other.cookie)).text();
     } finally {
       withoutIt.dispose();
     }
     expect(
-      requestsSent().filter(
-        (request) =>
-          request.headers["x-jobapp-case"] === "intake.questions:2026-08-30_cv_FR+CV-2025",
-      ).length,
+      requestsSent().filter((request) => request.headers["x-jobapp-case"] === runsCase).length,
     ).toBe(2);
   });
 });

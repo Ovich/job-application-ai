@@ -13,9 +13,15 @@ import { localStorageIn } from "../support/storage";
  * (`tests/support/ai.ts`), which is also what records every request so the case header
  * can be asserted and the claim that nothing leaves the process can be held.
  *
- * Not past it: `lib/ai`'s own behaviour and the mock's envelopes, which are SL1's seams.
- * Also not past it, the facts a classification yields — this slice persists the kind and
- * the status, and the facts are SL3's.
+ * **The run is one call now** (`ID157`, `ID158`). Every document of a run is turned into
+ * text, the texts are joined into one composed document, and one reading answers with
+ * the whole profile and the questions it leaves open. So what this file asserts about
+ * the shape of the run is one case header naming every document, in the run's order, and
+ * not a sequence of calls per document; nothing here classifies, extracts or merges,
+ * because the product does none of the three.
+ *
+ * Not past it: `lib/ai`'s own behaviour and the mock's envelopes, which are SL1's seams,
+ * and `lib/text`'s reading of a PDF or a Word file, which has its own suite.
  */
 
 const objects = vi.hoisted(() => ({ storage: undefined as unknown }));
@@ -45,7 +51,7 @@ vi.mock("../../src/lib/ai", async (importOriginal) => {
 const { testDb } = await import("../support/database");
 const { app } = await import("../../src/app");
 const { cookiesSetBy, signInThrough, signedInAs } = await import("../support/sign-in");
-const { documentsFor, theSet } = await import("../support/documents");
+const { documentsFor, theSet, uploadOfFixture } = await import("../support/documents");
 const { forgetRequests, requestsSent, withCases } = await import("../support/ai");
 
 let storage: ReturnType<typeof localStorageIn>;
@@ -90,75 +96,92 @@ const leavesOf = (body: string): Leaf[] =>
 const read = (cookie: string) =>
   app.request("/api/intake/read", { method: "POST", headers: { cookie } });
 
-const statusesOf = async (userId: string) =>
-  (
-    await testDb
-      .select({ filename: document.filename, status: document.status })
-      .from(document)
-      .where(eq(document.userId, userId))
-      .orderBy(document.createdAt, document.id)
-  ).map((row) => [row.filename, row.status]);
+const rowsOf = (userId: string) =>
+  testDb
+    .select()
+    .from(document)
+    .where(eq(document.userId, userId))
+    .orderBy(document.createdAt, document.id);
 
-/** The three real documents a run is driven over, all of which the mock has cases for. */
+const statusesOf = async (userId: string) =>
+  (await rowsOf(userId)).map((row) => [row.filename, row.status]);
+
+/** The three real documents a run is driven over, which the mock has the run's case for. */
 const three = [theSet.cvFrench.filename, theSet.cvEnglish.filename, theSet.diploma.filename];
 
+/**
+ * A name the suite has no document for, given a media type that holds no characters at
+ * all. It stands for the one thing that still fails alone: a file nothing can turn into
+ * text, refused before the call rather than by it (`ID157`, `ID159`).
+ */
+const aPhotograph = "a-photograph-of-a-paper-cv.jpg";
+
 describe("the reading run (criterion 10, D8)", () => {
-  it("sends one frame per document, in order, and says it is done", async () => {
+  it("marks each document reading, in order, then read, and says it is done", async () => {
     const person = await signedIn("three-documents-read@example.com");
-    await documentsFor(person.id, three);
+    const rows = await documentsFor(person.id, three, storage);
 
     const leaves = leavesOf(await (await read(person.cookie)).text());
 
+    // Each document is marked as the run reaches it, in the order the person handed
+    // them over; the reading that follows is one call, and its success marks all three.
+    expect(leaves.filter((leaf) => leaf.status === "reading").map((leaf) => leaf.id)).toEqual(
+      rows.map((row) => row.id),
+    );
     expect(leaves.filter((leaf) => leaf.status === "read").length).toBe(3);
     expect(leaves.at(-1)?.kind).toBe("run");
   });
 
   /**
-   * One document at a time, classified then read for what it states, and the merge once
-   * at the end over all of them (SL3, criterion 3). Extraction is per document on
-   * purpose: what makes the merge provable is that separate readings were reconciled,
-   * and one call over concatenated documents would pass every count and lose the
-   * provenance.
+   * One call for the whole run, its case naming every document in order (`ID157`, the
+   * person 2026-09-12). This test used to assert a classification and an extraction per
+   * document, then a merge and a pass for the questions — 2n+2 calls. The claim it kept
+   * is the same one: what the run asks for is exactly what the run needs, and the header
+   * says which documents it is about. What changed is that there is one of them.
    */
-  it("classifies and extracts each document alone, then merges once, every call naming its case", async () => {
+  it("makes one call for the whole run, its case naming every document in order", async () => {
     const person = await signedIn("one-call-each@example.com");
-    await documentsFor(person.id, three);
+    await documentsFor(person.id, three, storage);
 
     await (await read(person.cookie)).text();
 
     expect(requestsSent().map((request) => request.headers["x-jobapp-case"])).toEqual([
-      "intake.classify:2026-08-30_cv_FR",
-      "intake.extract:2026-08-30_cv_FR",
-      "intake.classify:2026-08-30_cv_EN",
-      "intake.extract:2026-08-30_cv_EN",
-      "intake.classify:BS-HEIGVD-IL-Diplome",
-      "intake.extract:BS-HEIGVD-IL-Diplome",
-      "intake.merge:2026-08-30_cv_FR+2026-08-30_cv_EN+BS-HEIGVD-IL-Diplome",
-      // SL4's fourth step, once, over the profile the merge just wrote.
-      "intake.questions:2026-08-30_cv_FR+2026-08-30_cv_EN+BS-HEIGVD-IL-Diplome",
+      "intake.read:2026-08-30_cv_FR+2026-08-30_cv_EN+BS-HEIGVD-IL-Diplome",
     ]);
   });
 
-  it("writes what the reader detected into the row, kind and language", async () => {
+  /**
+   * What the row says a document is, and what it does not say (`ID158`).
+   *
+   * This test used to assert that the reading wrote back a kind and a language it had
+   * detected. Nothing detects either any more: the run does not care what kind of
+   * document it was handed — *"it can be a novel by Dostojevski if he wants it"* — so
+   * the kind on a row stays `kindOf`'s guess from the filename, made at the upload, and
+   * the language column is never written at all. The claim is the same claim, about the
+   * columns a person's row carries after a run; the answer is now "what the upload
+   * guessed, and no language".
+   */
+  it("leaves the row the kind the upload guessed, and detects no language of its own", async () => {
     const person = await signedIn("kind-and-language@example.com");
-    await documentsFor(person.id, [theSet.cvFrench.filename, theSet.cvEnglish.filename]);
+    for (const filename of [theSet.cvFrench.filename, theSet.cvEnglish.filename]) {
+      await app.request("/api/intake/documents", {
+        method: "POST",
+        headers: { cookie: person.cookie },
+        body: uploadOfFixture(filename),
+      });
+    }
 
     await (await read(person.cookie)).text();
 
-    const rows = await testDb
-      .select({
-        filename: document.filename,
-        kind: document.detectedKind,
-        language: document.detectedLanguage,
-        status: document.status,
-      })
-      .from(document)
-      .where(eq(document.userId, person.id))
-      .orderBy(document.createdAt, document.id);
-    expect(rows.map((row) => [row.filename, row.kind, row.language, row.status])).toEqual([
-      ["2026-08-30_cv_FR.pdf", "cv", "fr", "read"],
-      ["2026-08-30_cv_EN.pdf", "cv", "en", "read"],
-    ]);
+    const rows = await rowsOf(person.id);
+    expect(
+      Object.fromEntries(
+        rows.map((row) => [row.filename, [row.detectedKind, row.detectedLanguage, row.status]]),
+      ),
+    ).toEqual({
+      "2026-08-30_cv_FR.pdf": ["cv", null, "read"],
+      "2026-08-30_cv_EN.pdf": ["cv", null, "read"],
+    });
   });
 
   /**
@@ -169,7 +192,7 @@ describe("the reading run (criterion 10, D8)", () => {
    */
   it("persists a document's row before it sends that document's frame", async () => {
     const person = await signedIn("persisted-as-it-lands@example.com");
-    const [first] = await documentsFor(person.id, three);
+    const [first] = await documentsFor(person.id, three, storage);
     const response = await read(person.cookie);
     const reader = (response.body ?? new ReadableStream()).getReader();
     const decoder = new TextDecoder();
@@ -190,39 +213,89 @@ describe("the reading run (criterion 10, D8)", () => {
     await reader.cancel();
   });
 
-  it("marks the one document it cannot read and reads the others", async () => {
+  /**
+   * A document failing alone is now one thing and one thing only: a file that cannot
+   * become text (`ID157`). It is refused before the call, so the run goes on without it
+   * and the others are read. Everything past that point is one call over all of them,
+   * and that failure is the whole run's — the case below this one.
+   */
+  it("marks the one document it cannot turn into text and reads the others", async () => {
     const person = await signedIn("one-fails@example.com");
-    // A document the mock holds no case for: a miss is a failure, never a call, and
-    // never a guess (spec D20, SL1's seam B). That is what a document a reader cannot
-    // read looks like from here.
-    await documentsFor(person.id, [
-      theSet.cvFrench.filename,
-      "a-document-nobody-recorded.pdf",
-      theSet.cvEnglish.filename,
-    ]);
+    await documentsFor(
+      person.id,
+      [theSet.cvFrench.filename, aPhotograph, theSet.cvEnglish.filename],
+      storage,
+    );
 
     await (await read(person.cookie)).text();
 
     expect(await statusesOf(person.id)).toEqual([
       ["2026-08-30_cv_FR.pdf", "read"],
-      ["a-document-nobody-recorded.pdf", "failed"],
+      [aPhotograph, "failed"],
       ["2026-08-30_cv_EN.pdf", "read"],
+    ]);
+    // And the reading was asked about the two that became text, and only those.
+    expect(requestsSent().map((request) => request.headers["x-jobapp-case"])).toEqual([
+      "intake.read:2026-08-30_cv_FR+2026-08-30_cv_EN",
     ]);
   });
 
   it("says of the failed one what went wrong, naming it", async () => {
     const person = await signedIn("failure-named@example.com");
-    await documentsFor(person.id, ["a-document-nobody-recorded.pdf"]);
+    await documentsFor(person.id, [aPhotograph], storage);
 
     await (await read(person.cookie)).text();
 
     const [row] = await testDb.select().from(document).where(eq(document.userId, person.id));
-    expect(row?.failureReason).toMatch(/a-document-nobody-recorded\.pdf/);
+    expect(row?.failureReason).toMatch(/a-photograph-of-a-paper-cv\.jpg/);
+  });
+
+  /**
+   * The other half of the same decision, and the one this file did not have to make
+   * before: one call over every document is one failure over every document (`ID157`).
+   *
+   * A run whose reading fails leaves nothing half written — no profile, no questions —
+   * and leaves every document of that call unread, so the next run takes them again.
+   * That last part is what makes the failure safe to tell a person about in one
+   * sentence: nothing was lost.
+   */
+  it("fails every document of the run when the one call fails, and leaves them for the next run", async () => {
+    const person = await signedIn("the-call-fails@example.com");
+    const two = [theSet.cvFrench.filename, theSet.cvEnglish.filename];
+    await documentsFor(person.id, two, storage);
+
+    // A fixture root with nothing in it: the run's case misses, which is what a reading
+    // that cannot be had looks like from here (`ID113` — a miss is never a guess).
+    const nothingRecorded = withCases({});
+    try {
+      await (await read(person.cookie)).text();
+    } finally {
+      nothingRecorded.dispose();
+    }
+
+    const failed = await rowsOf(person.id);
+    expect(failed.map((row) => [row.filename, row.status])).toEqual([
+      ["2026-08-30_cv_FR.pdf", "failed"],
+      ["2026-08-30_cv_EN.pdf", "failed"],
+    ]);
+    expect(failed.map((row) => row.failureReason)).toEqual([
+      "Your documents could not be read this time. Nothing was lost: try again.",
+      "Your documents could not be read this time. Nothing was lost: try again.",
+    ]);
+    // Unread, not read-and-empty: nothing was written and nothing is skipped next time.
+    expect(failed.every((row) => row.readAt === null)).toBe(true);
+
+    // And the next run does take them again, with the answer the product ships.
+    await (await read(person.cookie)).text();
+    expect(await statusesOf(person.id)).toEqual([
+      ["2026-08-30_cv_FR.pdf", "read"],
+      ["2026-08-30_cv_EN.pdf", "read"],
+    ]);
   });
 
   it("reaches no provider from anywhere: every request went to this application", async () => {
     const person = await signedIn("no-provider-reached@example.com");
-    await documentsFor(person.id, three);
+    await documentsFor(person.id, three, storage);
 
     await (await read(person.cookie)).text();
 
@@ -241,7 +314,7 @@ describe("the reading run (criterion 10, D8)", () => {
 describe("resume is a read of the rows (criterion 11, US3)", () => {
   it("leaves the rows where the run got to when the reader walks away mid-stream", async () => {
     const person = await signedIn("walks-away@example.com");
-    const [first] = await documentsFor(person.id, three);
+    const [first] = await documentsFor(person.id, three, storage);
     const response = await read(person.cookie);
     const reader = (response.body ?? new ReadableStream()).getReader();
     const decoder = new TextDecoder();
@@ -265,7 +338,7 @@ describe("resume is a read of the rows (criterion 11, US3)", () => {
 
   it("says nothing new about a document it has already read, so a second run is not a second reading", async () => {
     const person = await signedIn("second-run@example.com");
-    await documentsFor(person.id, [theSet.cvFrench.filename]);
+    await documentsFor(person.id, [theSet.cvEnglish.filename], storage);
     await (await read(person.cookie)).text();
     forgetRequests();
 
@@ -276,14 +349,22 @@ describe("resume is a read of the rows (criterion 11, US3)", () => {
 });
 
 /**
- * Seam B's other half: the two steps this slice adds to the run (criteria 3, 4, 5, 9).
+ * Seam B's other half: what the reading writes (criteria 3, 4, 5).
  *
  * Behind it, the same PGlite and the same in-process mock. What is asserted is read
  * back through `GET /api/intake/profile`, because the route that writes a profile is
  * the route that reads it; nothing here selects from `profile_item`.
  *
+ * These four cases were written against a merge over separate per-document extractions,
+ * and every one of them still holds: the claims are about the profile a run leaves
+ * behind — one item for a fact two documents state, every document's own wording kept
+ * against it, no third wording invented, and a group's entries flat. What changed is who
+ * makes the profile that way. It used to be the shape of the pipeline; it is now the
+ * answer, which cites the part every fact came from and is refused if it cites a part
+ * this run did not read.
+ *
  * Not past it: the fixtures' contents. That a case says what a real reader would say is
- * the business of whoever records it, and these were hand-written from the person's own
+ * the business of whoever records it, and these were written from the person's own
  * documents (`D20`).
  */
 type Item = {
@@ -308,10 +389,10 @@ const profileOf = async (cookie: string): Promise<Profile> => {
   return (await answer.json()) as Profile;
 };
 
-describe("the extraction and the merge (criteria 3, 4, 5)", () => {
+describe("what one reading of the composed documents writes (criteria 3, 4, 5)", () => {
   it("turns the two CVs of one month into one experience with two sources", async () => {
     const person = await signedIn("one-month-two-languages@example.com");
-    await documentsFor(person.id, [theSet.cvFrench.filename, theSet.cvEnglish.filename]);
+    await documentsFor(person.id, [theSet.cvFrench.filename, theSet.cvEnglish.filename], storage);
 
     await (await read(person.cookie)).text();
     const profile = await profileOf(person.cookie);
@@ -319,7 +400,7 @@ describe("the extraction and the merge (criteria 3, 4, 5)", () => {
     expect(profile.experience).toHaveLength(1);
     expect(profile.experience[0]?.documents).toBe(2);
     // Each provenance row carries its own document's wording, in its own language: the
-    // merge translated nothing and summarised nothing (S3.2's done-when).
+    // reading translated nothing and summarised nothing (S3.2's done-when).
     expect(profile.experience[0]?.sources).toEqual([
       {
         document: "2026-08-30_cv_FR.pdf",
@@ -334,7 +415,7 @@ describe("the extraction and the merge (criteria 3, 4, 5)", () => {
 
   it("keeps what a document said against the line it produced, word for word", async () => {
     const person = await signedIn("verbatim-against-the-fact@example.com");
-    await documentsFor(person.id, [theSet.cvFrench.filename, theSet.cvEnglish.filename]);
+    await documentsFor(person.id, [theSet.cvFrench.filename, theSet.cvEnglish.filename], storage);
 
     await (await read(person.cookie)).text();
     const profile = await profileOf(person.cookie);
@@ -342,7 +423,7 @@ describe("the extraction and the merge (criteria 3, 4, 5)", () => {
 
     expect(line?.text).toBe("Responsible for practical lab support on the DevOps course.");
     expect(line?.sources.map((source) => source.said)).toEqual([
-      // The French document's own sentence, as `extract:2026-08-30_cv_FR` states it.
+      // The French part's own sentence, as the run's reading attributes it.
       "Responsable du suivi des laboratoires du cours DevOps.",
       "Responsible for practical lab support on the DevOps course.",
     ]);
@@ -350,14 +431,14 @@ describe("the extraction and the merge (criteria 3, 4, 5)", () => {
 
   it("records both wordings of one post against the one item and writes no third", async () => {
     const person = await signedIn("two-documents-disagree@example.com");
-    await documentsFor(person.id, [theSet.cvWord2022.filename, theSet.cv2025.filename]);
+    await documentsFor(person.id, [theSet.cvWord2022.filename, theSet.cv2025.filename], storage);
 
     await (await read(person.cookie)).text();
     const profile = await profileOf(person.cookie);
     const post = profile.experience[0];
 
     expect(profile.experience).toHaveLength(1);
-    // Both, in the documents' own words. The merge picked no winner and invented no
+    // Both, in the documents' own words. The reading picked no winner and invented no
     // sentence of its own: what it chose as the title is one of the two the documents
     // state, and everything either of them said is still there to be shown.
     expect(post?.sources.map((source) => source.said)).toEqual([
@@ -369,7 +450,7 @@ describe("the extraction and the merge (criteria 3, 4, 5)", () => {
 
   it("writes a group's entries flat, and no year on any of them", async () => {
     const person = await signedIn("flat-groups-no-years@example.com");
-    await documentsFor(person.id, [theSet.cvFrench.filename, theSet.cvEnglish.filename]);
+    await documentsFor(person.id, [theSet.cvFrench.filename, theSet.cvEnglish.filename], storage);
 
     await (await read(person.cookie)).text();
     const profile = await profileOf(person.cookie);
@@ -386,7 +467,7 @@ describe("the extraction and the merge (criteria 3, 4, 5)", () => {
       "Docker",
       "Kubernetes",
     ]);
-    // Flat by construction: an entry has nothing under it, whatever a merge answers.
+    // Flat by construction: an entry has nothing under it, whatever the reading answers.
     expect(entries.flatMap((entry) => entry.children)).toEqual([]);
     // And no duration anywhere: `item_entry` has no column for one, so a year on a chip
     // is a thing the database cannot hold rather than a thing the screen omits (D16).
@@ -398,87 +479,72 @@ describe("the extraction and the merge (criteria 3, 4, 5)", () => {
   });
 });
 
+/**
+ * An answer that cannot be used (spec, *Failure modes*).
+ *
+ * Both cases below were about half a run surviving the other half: a document whose
+ * extraction was malformed failed while the rest were read, and a merge that answered
+ * something unusable left the documents read with their facts intact. Neither half
+ * exists any more — there is one call — so the claim each of them was really making is
+ * restated against the one answer: **nothing is written unless the whole answer is
+ * usable**, and an unusable one costs the person nothing but a second press.
+ *
+ * They are two cases because there are two ways to be unusable, and they are refused in
+ * two different places: a shape the boundary rejects, and a citation the writer cannot
+ * resolve to a document of this run.
+ */
+const twoCvs = [theSet.cvFrench.filename, theSet.cvEnglish.filename];
+const theRunsCase = "intake.read:2026-08-30_cv_FR+2026-08-30_cv_EN";
+
 describe("an answer that cannot be used (spec, Failure modes)", () => {
-  it("marks the document whose extraction is malformed, and reads the others", async () => {
-    const person = await signedIn("malformed-extract@example.com");
-    await documentsFor(person.id, [theSet.cvFrench.filename, theSet.cvEnglish.filename]);
+  it("writes no part of a profile when the answer carries an item nothing stands behind", async () => {
+    const person = await signedIn("malformed-reading@example.com");
+    await documentsFor(person.id, twoCvs, storage);
     const cases = withCases({
-      "intake.classify:2026-08-30_cv_FR": {
-        stands_for: "the French CV, classified",
-        content: '{"kind":"cv","language":"fr","confidence":0.97,"why":"a CV in French"}',
-      },
-      "intake.classify:2026-08-30_cv_EN": {
-        stands_for: "the English CV, classified",
-        content: '{"kind":"cv","language":"en","confidence":0.97,"why":"a CV in English"}',
-      },
-      "intake.extract:2026-08-30_cv_FR": {
-        stands_for: "the French CV, read",
-        content:
-          '{"facts":[{"kind":"identity","title":"Stefan Teofanovic","said":"Stefan Teofanovic, Montreux, Suisse.","lines":[]}]}',
-      },
-      // A reader that answered with prose where facts were asked for. Validated at the
-      // boundary, so it is a failed step and never a half-written anything.
-      "intake.extract:2026-08-30_cv_EN": {
-        stands_for: "the English CV, answered with something that is not a reading",
-        content: '{"facts":[]}',
-      },
-      "intake.merge:2026-08-30_cv_FR": {
-        stands_for: "the one document that could be read, merged alone",
-        content:
-          '{"items":[{"kind":"identity","title":"Stefan Teofanovic","sources":[{"document":"2026-08-30_cv_FR","said":"Stefan Teofanovic, Montreux, Suisse."}]}]}',
+      // An item citing nothing: the one thing this product promises not to produce, and
+      // so the one thing the boundary refuses before a row is written.
+      [theRunsCase]: {
+        stands_for: "a reading that answered with an item no document stands behind",
+        content: '{"items":[{"kind":"identity","title":"Somebody","sources":[]}],"candidates":[]}',
       },
     });
 
     try {
       await (await read(person.cookie)).text();
 
+      // One call, so one failure: both documents, and both still unread.
       expect(await statusesOf(person.id)).toEqual([
-        ["2026-08-30_cv_FR.pdf", "read"],
+        ["2026-08-30_cv_FR.pdf", "failed"],
         ["2026-08-30_cv_EN.pdf", "failed"],
       ]);
+      const profile = await profileOf(person.cookie);
+      expect(profile.documents).toBe(0);
+      expect([...profile.experience, ...profile.groups, ...profile.education]).toEqual([]);
     } finally {
       cases.dispose();
     }
   });
 
-  it("writes no part of a profile when the merge answers something unusable", async () => {
-    const person = await signedIn("malformed-merge@example.com");
-    await documentsFor(person.id, [theSet.cvFrench.filename, theSet.cvEnglish.filename]);
+  it("writes no part of a profile when the answer cites a document this run did not read", async () => {
+    const person = await signedIn("cites-what-was-not-read@example.com");
+    await documentsFor(person.id, twoCvs, storage);
     const cases = withCases({
-      "intake.classify:2026-08-30_cv_FR": {
-        stands_for: "the French CV, classified",
-        content: '{"kind":"cv","language":"fr","confidence":0.97,"why":"a CV in French"}',
-      },
-      "intake.classify:2026-08-30_cv_EN": {
-        stands_for: "the English CV, classified",
-        content: '{"kind":"cv","language":"en","confidence":0.97,"why":"a CV in English"}',
-      },
-      "intake.extract:2026-08-30_cv_FR": {
-        stands_for: "the French CV, read",
+      // Attribution is a claim the answer makes now, not something the shape of the
+      // pipeline guaranteed (`ID157`), so it is checked: a fact whose source is a part
+      // this run never composed is refused, and the whole profile with it.
+      [theRunsCase]: {
+        stands_for: "a reading that attributed a fact to a document nobody handed over",
         content:
-          '{"facts":[{"kind":"identity","title":"Stefan Teofanovic","said":"Stefan Teofanovic, Montreux, Suisse.","lines":[]}]}',
-      },
-      "intake.extract:2026-08-30_cv_EN": {
-        stands_for: "the English CV, read",
-        content:
-          '{"facts":[{"kind":"identity","title":"Stefan Teofanovic","said":"Stefan Teofanovic, Montreux, Switzerland.","lines":[]}]}',
-      },
-      // An item citing nothing: the one thing this product promises not to produce, and
-      // so the one thing the boundary refuses before a row is written.
-      "intake.merge:2026-08-30_cv_FR+2026-08-30_cv_EN": {
-        stands_for: "a merge that answered with an item no document stands behind",
-        content: '{"items":[{"kind":"identity","title":"Somebody","sources":[]}]}',
+          '{"items":[{"kind":"identity","title":"Stefan Teofanovic","sources":[{"document":"a-cv-from-another-life","said":"Stefan Teofanovic, Montreux, Suisse."}]}],"candidates":[]}',
       },
     });
 
     try {
       await (await read(person.cookie)).text();
 
-      // The documents are read and their facts are not lost: a second run over them is
-      // what puts them back through the merge. What must not be there is half a profile.
       expect(await statusesOf(person.id)).toEqual([
-        ["2026-08-30_cv_FR.pdf", "read"],
-        ["2026-08-30_cv_EN.pdf", "read"],
+        ["2026-08-30_cv_FR.pdf", "failed"],
+        ["2026-08-30_cv_EN.pdf", "failed"],
       ]);
       const profile = await profileOf(person.cookie);
       expect(profile.documents).toBe(0);

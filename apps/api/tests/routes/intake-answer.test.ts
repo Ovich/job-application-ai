@@ -76,7 +76,10 @@ const profileOf = async (cookie: string): Promise<Support.ProfileAnswer> =>
 /** A person whose run has left them the four questions the shipped case proposes. */
 const asked = async (email: string) => {
   const person = await signedIn(email);
-  await documentsFor(person.id, three);
+  // The bytes go in with the rows: the reading turns each file into text itself before
+  // it asks anything, so a run over rows with no objects behind them reads nothing
+  // (`ID157`).
+  await documentsFor(person.id, three, storage);
   await (
     await app.request("/api/intake/read", { method: "POST", headers: { cookie: person.cookie } })
   ).text();

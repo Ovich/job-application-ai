@@ -15,8 +15,11 @@ import { anthropicWhole, openAiWhole } from "../../support/envelopes";
  * Anthropic's shape the recorded cases do not move.
  */
 
-const cvFr = "intake.classify:2026-08-30_cv_FR" as const;
-const content = '{"kind":"cv","language":"fr","confidence":0.97}';
+// A run over one of the person's own documents. The step is `read` and there is no
+// other, because a run is one call now (`ID157`); what the content says is the router's
+// business only in that it comes back byte for byte in either envelope.
+const cvFr = "intake.read:2026-08-30_cv_FR" as const;
+const content = '{"items":[],"candidates":[]}';
 const recorded = {
   [cvFr]: {
     stands_for: "the person's own French CV",
@@ -83,14 +86,14 @@ describe("a case nobody recorded", () => {
       const answer = await askFor(
         "/chat/completions",
         { model: "m", messages: [] },
-        { "X-Jobapp-Case": "intake.classify:no-such-document" },
+        { "X-Jobapp-Case": "intake.read:no-such-document" },
       );
 
       expect(answer.status).toBe(404);
       const body = (await answer.json()) as { error: string; case: string; held: string[] };
-      expect(body.case).toBe("intake.classify:no-such-document");
+      expect(body.case).toBe("intake.read:no-such-document");
       expect(body.held).toEqual([cvFr]);
-      expect(body.error).toMatch(/intake\.classify:no-such-document/);
+      expect(body.error).toMatch(/intake\.read:no-such-document/);
     } finally {
       cases.dispose();
     }
@@ -114,47 +117,31 @@ describe("a case nobody recorded", () => {
 });
 
 /**
- * The cases the product ships with. Each stands for a real document of the person's own
- * set and is named from that file, which is what makes SL3's merge provable against
- * something that exists (`D20`). SL1 shipped the two 2026 CVs; SL2 added the four the
- * reading run meets — the 2022 Word CV, the 2025 one, a diploma and a work certificate.
- * SL3 reads each of those six for what it states, and merges the combinations a run
- * makes: the two 2026 CVs, those two with the diploma, and the 2022 and 2025 pair that
- * state one post differently.
+ * The cases the product ships with. Each stands for real documents of the person's own
+ * set and is named from those files, which is what makes the reading provable against
+ * something that exists (`D20`).
+ *
+ * **One case per run, not per document** (`ID157`, `ID158`). The reading joins a run's
+ * documents into one composed document and answers with the whole profile and the
+ * questions it leaves open, in a single call, so what is shipped is one answer per
+ * combination a run actually makes — named by every document of that run, by slug, in
+ * the run's order. The `classify`, `extract`, `merge` and `questions` cases went with
+ * the steps that asked for them: a recorded answer for a call nobody makes any more is
+ * a fixture nothing proves.
  *
  * There is no LinkedIn export case and no photograph case, and that is not an omission:
  * the person's set holds neither document, and a canned answer standing for no real file
  * is exactly what `D20` forbids.
  */
 describe("the fixtures this slice ships", () => {
-  it("holds one case per real document of the person's set, named from the file", () => {
+  it("holds one case per run of the person's real documents, named from those files", () => {
     expect(casesHeld()).toEqual([
-      "intake.classify:2026-08-30_cv_EN",
-      "intake.classify:2026-08-30_cv_FR",
-      "intake.classify:BS-HEIGVD-IL-Diplome",
-      "intake.classify:CV-2025",
-      "intake.classify:certificat_travail",
-      "intake.classify:leCVWeb",
-      // SL3: one extraction per document of the same set, and a merge per combination
-      // of them a run actually makes. A merge's case names the set, by slug, in order.
-      "intake.extract:2026-08-30_cv_EN",
-      "intake.extract:2026-08-30_cv_FR",
-      "intake.extract:BS-HEIGVD-IL-Diplome",
-      "intake.extract:CV-2025",
-      "intake.extract:certificat_travail",
-      "intake.extract:leCVWeb",
-      "intake.merge:2026-08-30_cv_EN",
-      "intake.merge:2026-08-30_cv_FR+2026-08-30_cv_EN",
-      "intake.merge:2026-08-30_cv_FR+2026-08-30_cv_EN+BS-HEIGVD-IL-Diplome",
-      "intake.merge:2026-08-30_cv_FR+leCVWeb+CV-2025",
-      "intake.merge:leCVWeb+CV-2025",
-      // SL4: the fourth step, one case per combination a run makes, each naming only
-      // what the documents of that run leave unanswered.
-      "intake.questions:2026-08-30_cv_EN",
-      "intake.questions:2026-08-30_cv_FR+2026-08-30_cv_EN",
-      "intake.questions:2026-08-30_cv_FR+2026-08-30_cv_EN+BS-HEIGVD-IL-Diplome",
-      "intake.questions:2026-08-30_cv_FR+leCVWeb+CV-2025",
-      "intake.questions:leCVWeb+CV-2025",
+      // One document alone, and then the combinations the suite drives a run over.
+      "intake.read:2026-08-30_cv_EN",
+      "intake.read:2026-08-30_cv_FR+2026-08-30_cv_EN",
+      "intake.read:2026-08-30_cv_FR+2026-08-30_cv_EN+BS-HEIGVD-IL-Diplome",
+      "intake.read:2026-08-30_cv_FR+leCVWeb+CV-2025",
+      "intake.read:leCVWeb+CV-2025",
     ]);
   });
 

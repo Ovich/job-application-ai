@@ -15,7 +15,7 @@ import { anthropicEvent, framesOf, openAiChunk } from "../../support/envelopes";
  * or drops a character under one pace and not another is worse than no double.
  */
 
-const cvFr = "intake.classify:2026-08-30_cv_FR" as const;
+const cvFr = "intake.read:2026-08-30_cv_FR" as const;
 
 /**
  * Long enough, and uneven enough, that chunking has something to get wrong: several
