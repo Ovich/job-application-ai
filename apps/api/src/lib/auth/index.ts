@@ -30,13 +30,24 @@ import { db } from "../db";
  * Linking is the library's (D17): a second provider attaches to the existing user when
  * the email matches and the provider says it verified it. A provider in
  * `trustedProviders` attaches its email without that claim, which is a bypass of the
- * check, so the list holds exactly one name and for one reason (ID72, the person's
- * amendment of 2026-09-11): Entra never issues `email_verified` or
- * `verified_primary_email` for a personal Microsoft account, so under the bare default
- * every Hotmail or Outlook user arriving second was refused, as observed on localhost.
- * Microsoft verifies the address when the account is created, which is what the claim
- * would have said. Google and LinkedIn send the claim and stay at the default.
- * `tests/lib/auth/linking.test.ts` proves both halves on this database.
+ * check, so a name is added only on evidence that the provider refuses to link
+ * otherwise, and every name costs the same thing: whoever could hold an account there
+ * on that address could reach this user.
+ *
+ * Microsoft (ID72, the person's amendment of 2026-09-11): Entra never issues
+ * `email_verified` or `verified_primary_email` for a personal Microsoft account, so
+ * under the bare default every Hotmail or Outlook user arriving second was refused, as
+ * observed on localhost. Microsoft verifies the address when the account is created,
+ * which is what the claim would have said.
+ *
+ * LinkedIn (ID105, the person's amendment of 2026-09-12): the same refusal, seen a day
+ * later on the dev address rather than on a laptop. A real LinkedIn sign-in whose
+ * address already belonged to a Google user was answered `account_not_linked`, so its
+ * claim does not arrive truthy either. LinkedIn requires confirming an email at signup,
+ * which is what makes this the same trade.
+ *
+ * Google alone stays at the default. `tests/lib/auth/linking.test.ts` proves both
+ * halves on this database, and asks the refusal of Google, the one not trusted.
  *
  * Deletion is the library's too (D8, ID65): its `deleteUser` feature, switched on as it
  * documents, serves `delete-user` under the mount `app.ts` already has, and the web app
@@ -108,8 +119,8 @@ export const auth = betterAuth({
       clientSecret: env.LINKEDIN_CLIENT_SECRET,
     },
   },
-  // Off its default (D20), see the note above: ID72.
-  account: { accountLinking: { trustedProviders: ["microsoft"] } },
+  // Off its default (D20), see the note above: ID72, then ID105.
+  account: { accountLinking: { trustedProviders: ["microsoft", "linkedin"] } },
   user: { deleteUser: { enabled: true, beforeDelete } },
   // A stated departure from D20 (ID90): deletion needs only a signed-in session. At the
   // default, a session older than a day is not "fresh" and `delete-user` refuses it,

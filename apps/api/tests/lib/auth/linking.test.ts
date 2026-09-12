@@ -67,21 +67,27 @@ describe("linking, at the library's default (D17)", () => {
     },
   );
 
-  it("LinkedIn, with the same email unverified, does not attach", async () => {
-    const email = "unverified-through-linkedin@example.com";
+  /**
+   * The refusal is still the default and still has to be proved, so it is asked of the
+   * one provider that is not trusted by name. Google was the second provider here
+   * because ID105 made LinkedIn the first: a case that refuses through a trusted
+   * provider would prove nothing about the check, only about the bypass.
+   */
+  it("Google, with the same email and no verified claim, does not attach", async () => {
+    const email = "unverified-through-google@example.com";
     const who = { name: "Someone Seeking", email };
 
-    const first = await signInThrough("google", {
+    const first = await signInThrough("linkedin", {
       ...who,
-      subject: subjectAt("google", email),
+      subject: subjectAt("linkedin", email),
       emailVerified: true,
     });
     const created = await signedInAs(first);
     expect(created).not.toBeNull();
 
-    const second = await signInThrough("linkedin", {
+    const second = await signInThrough("google", {
       ...who,
-      subject: subjectAt("linkedin", email),
+      subject: subjectAt("google", email),
       emailVerified: false,
     });
 
@@ -90,37 +96,44 @@ describe("linking, at the library's default (D17)", () => {
     expect(landingOf(second).searchParams.get("error")).toBe("account_not_linked");
     expect(await signedInAs(second)).toBeNull();
     expect(await usersAt(email)).toHaveLength(1);
-    expect(await providersOf(created?.id ?? "")).toEqual(["google"]);
+    expect(await providersOf(created?.id ?? "")).toEqual(["linkedin"]);
   });
 
   /**
-   * D17 as amended (ID72): a personal Microsoft account never carries a verified-email
-   * claim, so Microsoft is trusted by name and its email attaches without one. This is
-   * the case that was refused on localhost on 2026-09-11, a hotmail address arriving
-   * after LinkedIn.
+   * D17 as amended twice. ID72: a personal Microsoft account never carries a
+   * verified-email claim, so Microsoft is trusted by name and its email attaches without
+   * one — the case refused on localhost on 2026-09-11, a hotmail address arriving after
+   * LinkedIn. ID105: LinkedIn joins it, on the same evidence seen a day later on the dev
+   * address, where a real LinkedIn sign-in was answered `account_not_linked` because its
+   * claim did not arrive truthy either. Google alone stays at the default.
    */
-  it("Microsoft, with the same email and no verified claim, attaches all the same", async () => {
-    const email = "unverified-through-microsoft@example.com";
-    const who = { name: "Someone Seeking", email };
+  const trustedByName: Provider[] = ["microsoft", "linkedin"];
 
-    const first = await signInThrough("google", {
-      ...who,
-      subject: subjectAt("google", email),
-      emailVerified: true,
-    });
-    const created = await signedInAs(first);
-    expect(created).not.toBeNull();
+  it.each(trustedByName)(
+    "%s, with the same email and no verified claim, attaches all the same",
+    async (provider) => {
+      const email = `unverified-through-${provider}@example.com`;
+      const who = { name: "Someone Seeking", email };
 
-    const second = await signInThrough("microsoft", {
-      ...who,
-      subject: subjectAt("microsoft", email),
-      emailVerified: false,
-    });
+      const first = await signInThrough("google", {
+        ...who,
+        subject: subjectAt("google", email),
+        emailVerified: true,
+      });
+      const created = await signedInAs(first);
+      expect(created).not.toBeNull();
 
-    expect(second.status).toBe(302);
-    expect(landingOf(second).pathname).toBe("/");
-    expect((await signedInAs(second))?.id).toBe(created?.id);
-    expect(await usersAt(email)).toHaveLength(1);
-    expect(await providersOf(created?.id ?? "")).toEqual(["google", "microsoft"]);
-  });
+      const second = await signInThrough(provider, {
+        ...who,
+        subject: subjectAt(provider, email),
+        emailVerified: false,
+      });
+
+      expect(second.status).toBe(302);
+      expect(landingOf(second).pathname).toBe("/");
+      expect((await signedInAs(second))?.id).toBe(created?.id);
+      expect(await usersAt(email)).toHaveLength(1);
+      expect(await providersOf(created?.id ?? "")).toEqual(["google", provider].sort());
+    },
+  );
 });
