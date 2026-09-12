@@ -14,9 +14,43 @@ import { z } from "zod";
  * typecheck rather than fails at runtime.
  */
 
+/** The port a laptop serves on, named because the AI's local default is built from it. */
+const defaultPort = 3000;
+
 /** Settings both runtimes share, spread into each branch so the union stays flat. */
 const shared = {
-  PORT: z.coerce.number().int().positive().default(3000),
+  PORT: z.coerce.number().int().positive().default(defaultPort),
+};
+
+/**
+ * The AI boundary's configuration (ID114, ID127). Four values, and the reason there is
+ * no key among the required ones is decision D14: every environment of this slot calls
+ * the mock, which is mounted in this same application, so a fresh clone runs the whole
+ * intake with nothing set and nobody's registration anywhere.
+ *
+ * `AI_BASE_URL` is the only switch there is. Point it at OpenAI, at Azure, at a
+ * self-hosted vLLM or at Anthropic's OpenAI-compatible endpoint and the integration is
+ * the same one: the product speaks one wire protocol and branches on no provider (D9).
+ * It ends at the `/v1`-equivalent, because the client appends `/chat/completions`
+ * itself. Its default is this process's own mock, which is why it is computed below
+ * rather than written here: it follows `PORT` locally and `APP_URL` in the cloud.
+ *
+ * `AI_API_KEY` has a committed throwaway, as the database password and the library's
+ * secret do (ID103): the mock does not read it, and the first real key is a Secrets
+ * Manager entry in the slot that switches a provider on (ID127).
+ *
+ * `AI_MODEL` is a name and nothing more while the mock answers, since the mock does not
+ * dispatch on it.
+ *
+ * `AI_MOCK_PACE` carries the four pacing settings the mock's answers are timed by,
+ * spelled the way the per-request header spells them, so the default and the exception
+ * read alike (D13). The suite sets every one to zero, and the dev server leaves them.
+ */
+const aiSettings = {
+  AI_BASE_URL: z.url(),
+  AI_API_KEY: z.string().min(1).default("local_dev_only_the_mock_ignores_it"),
+  AI_MODEL: z.string().min(1).default("mock-model"),
+  AI_MOCK_PACE: z.string().min(1).default("tps=40;ttft=400;chunk=3;jitter=0.15"),
 };
 
 /**
@@ -61,6 +95,7 @@ const localRuntime = z.object({
   LINKEDIN_CLIENT_ID: z.string().min(1),
   LINKEDIN_CLIENT_SECRET: z.string().min(1),
   BETTER_AUTH_SECRET: z.string().min(1),
+  ...aiSettings,
 });
 
 /**
@@ -101,6 +136,13 @@ const cloudRuntime = z.object({
   LINKEDIN_CLIENT_ID: z.string().min(1),
   LINKEDIN_CLIENT_SECRET: z.string().min(1),
   BETTER_AUTH_SECRET: z.string().min(1),
+  // The AI's four are the one exception to "every value is required", and only until
+  // SL6, which is the slice that puts them in the template. Every merge deploys, and a
+  // value required before the template sets it fails the cold start of a function that
+  // makes no AI call at all — the health route with it. This is the same exception the
+  // provider clients carried between SL2 and S5.2, written down the same way and with
+  // the same end: SL6 supplies them and takes the defaults away in one breath (ID114).
+  ...aiSettings,
 });
 
 /**
@@ -152,11 +194,28 @@ const {
   LINKEDIN_CLIENT_ID,
   LINKEDIN_CLIENT_SECRET,
   BETTER_AUTH_SECRET,
+  AI_BASE_URL,
+  AI_API_KEY,
+  AI_MODEL,
+  AI_MOCK_PACE,
 } = process.env;
 
 // The discriminator defaults to the local runtime so a clone runs with nothing set; the
 // deployed function is given `cloud` explicitly by the template.
 const runtime = APP_RUNTIME ?? "local";
+
+/**
+ * Where this application's own mock answers, which is what the AI's base URL defaults
+ * to. It is computed rather than written into the schema because it is the address of
+ * this very process: locally the port the server binds, in the cloud the name the
+ * browser reaches the app by. `/mock/v1` is a sibling of `/api`, so nothing about the
+ * distribution's `/api/*` behaviour applies to it (ID110).
+ */
+const ownMock = `${
+  runtime === "cloud"
+    ? (APP_URL ?? "").replace(/\/$/, "")
+    : `http://localhost:${PORT === undefined || PORT === "" ? defaultPort : PORT}`
+}/mock/v1`;
 
 /** The parsed, frozen configuration. The only export, and the only reader of the environment. */
 export const env = Object.freeze(
@@ -171,6 +230,10 @@ export const env = Object.freeze(
     LINKEDIN_CLIENT_ID,
     LINKEDIN_CLIENT_SECRET,
     BETTER_AUTH_SECRET,
+    AI_BASE_URL: AI_BASE_URL ?? ownMock,
+    AI_API_KEY,
+    AI_MODEL,
+    AI_MOCK_PACE,
     // Where the connection comes from, and the only line the two runtimes disagree on.
     ...(runtime === "cloud"
       ? partsOf(DATABASE_URL)

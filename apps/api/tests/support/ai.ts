@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { app } from "../../src/app";
 import { type CaseName, createAi } from "../../src/lib/ai";
-import { type RecordedCase, useFixtureRoot } from "../../src/lib/ai/mock";
+import { type RecordedCaseFile, useFixtureRoot } from "../../src/lib/ai/mock";
 
 /**
  * The suite's own AI support (ID129).
@@ -70,7 +70,9 @@ export type CasesInPlace = { dispose: () => void };
  * TypeScript library is `ES2023`, which has no `Symbol.dispose`. `dispose()` in a
  * `finally` or an `afterEach` is the same discipline written by hand.
  */
-export const withCases = (cases: Record<CaseName, Omit<RecordedCase, "case">>): CasesInPlace => {
+export const withCases = (
+  cases: Record<CaseName, Omit<RecordedCaseFile, "case">>,
+): CasesInPlace => {
   const root = mkdtempSync(join(tmpdir(), "jobapp-cases-"));
   for (const [name, recorded] of Object.entries(cases)) {
     const directory = join(root, name.slice(0, name.indexOf(".")));
