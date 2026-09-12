@@ -79,6 +79,12 @@ export class ProfileAssistant {
     facts: 0,
   });
 
+  /** `1 document` or `4 documents`: a count a person reads, not a count with an `s`. */
+  protected readonly readLine = computed(() => {
+    const documents = this.reading().documents;
+    return `${documents} document${documents === 1 ? "" : "s"}`;
+  });
+
   public readonly answered = output<{ questionId: string; optionId?: string; words?: string }>();
 
   public readonly skipped = output<{ questionId: string }>();

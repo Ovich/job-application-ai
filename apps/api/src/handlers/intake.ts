@@ -314,7 +314,12 @@ export const readDocuments = factory.createHandlers(async (c) => {
           // Why it failed is not carried out to the person in the reader's words: what
           // they are told is which of their documents could not be read, and that the
           // rest were.
-          const reason = `${row.filename} could not be read. The others were.`;
+          // A run of one has no others, and a sentence that says it has reads like a
+          // fault in the product rather than in the document (SL8's finding).
+          const reason =
+            waiting.length === 1
+              ? `${row.filename} could not be read.`
+              : `${row.filename} could not be read. The others were.`;
           await db
             .update(document)
             .set({ status: "failed", failureReason: reason })
