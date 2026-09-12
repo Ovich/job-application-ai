@@ -12,7 +12,7 @@
 
 <div class="flex items-center gap-2 rounded-lg border border-border bg-card py-2 pe-2 ps-3">
   @if (tool(); as open) {
-    <tool-prefix [label]="open.label" (clear)="clear.emit()" />
+    <tool-prefix [label]="open.label" [what]="open.what" (clear)="clear.emit()" />
   }
 
   <input

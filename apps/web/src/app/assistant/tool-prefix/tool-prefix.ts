@@ -1,4 +1,5 @@
 import { Component, input, output } from "@angular/core";
+import { UiTooltip } from "../../ui/tooltip/tooltip";
 import { UiText } from "../../ui/typography/text/text";
 
 /**
@@ -13,7 +14,7 @@ import { UiText } from "../../ui/typography/text/text";
  */
 @Component({
   selector: "tool-prefix",
-  imports: [UiText],
+  imports: [UiText, UiTooltip],
   templateUrl: "./tool-prefix.html",
   // A flex item of the composer's row, and one that keeps what it needs: beside an input
   // that grows, a prefix left to shrink is crushed to its first letter (the person,
@@ -21,8 +22,15 @@ import { UiText } from "../../ui/typography/text/text";
   host: { class: "flex shrink-0 items-center" },
 })
 export class ToolPrefix {
-  /** The word the use case names the relation with: `Scope` in the intake. */
+  /** The word the use case names the relation with: `Adjusting scope` in the intake. */
   public readonly label = input.required<string>();
+
+  /**
+   * What the tool is about, said on hover and nowhere else: a title a document wrote is
+   * data, and the chip shows none (the person, 2026-09-12) — but a person who has
+   * forgotten what they clicked should be able to ask without pressing anything.
+   */
+  public readonly what = input.required<string>();
 
   public readonly clear = output<void>();
 }

@@ -149,7 +149,7 @@ test("a chip clicked, a rule written on it, and somebody else's deletion beside 
   await expect(page.locator("[data-action=alt]")).toHaveCount(0);
   // The chip names the relation; the chip never carries the item, which is why a long
   // title cannot crowd the text bar beside it.
-  await expect(page.locator("[data-part=what]")).toHaveText("Scope");
+  await expect(page.locator("[data-part=what]")).toHaveText("Adjusting scope");
 
   const ownWords = "I only ever wrote the Dockerfiles, somebody else ran them";
   await page.locator("[data-part=composer]").fill(ownWords);

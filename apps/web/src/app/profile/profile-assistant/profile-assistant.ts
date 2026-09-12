@@ -53,7 +53,7 @@ export type Question = {
 export type Pressed = { itemId: string; title: string };
 
 /** The word the intake names the thing in the prefix with. The builder will have its own. */
-const scope = "Scope";
+const scope = "Adjusting scope";
 
 /** One thing the assistant has said, in the order it said it. */
 type Said = { kind: "ai"; text: string } | { kind: "ok"; text: string };
