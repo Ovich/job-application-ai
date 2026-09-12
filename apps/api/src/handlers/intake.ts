@@ -1,5 +1,6 @@
-import { createHash, randomUUID } from "node:crypto";
+import { randomUUID } from "node:crypto";
 import {
+  type Document,
   document,
   type ItemKind,
   itemEducation,
@@ -21,15 +22,16 @@ import {
   rule,
 } from "@app/db";
 import { and, asc, desc, eq, inArray, isNull, ne } from "drizzle-orm";
-import type { Context } from "hono";
 import { createFactory } from "hono/factory";
 import { stream } from "hono/streaming";
 import { validator } from "hono/validator";
 import { z } from "zod";
 import { env } from "../env";
 import { askFor, type CaseName, type Message } from "../lib/ai";
-import { auth } from "../lib/auth";
 import { db } from "../lib/db";
+import { isDuplicate } from "../lib/db/duplicate";
+import { hashOf, kindOf, slugOf } from "../lib/documents";
+import { asking, refused } from "../lib/session";
 import { keyFor, storage } from "../lib/storage";
 import { createEnvelope } from "../lib/stream";
 
@@ -48,41 +50,6 @@ import { createEnvelope } from "../lib/stream";
 
 const factory = createFactory();
 
-/** Who is asking, according to the library. `null` is every route's 401. */
-const asking = async (c: Context): Promise<{ id: string } | null> => {
-  const session = await auth.api.getSession({ headers: c.req.raw.headers });
-  return session === null ? null : { id: session.user.id };
-};
-
-/**
- * What a person is told a document is, before anything has read it.
- *
- * The reading is what decides for real (`POST /read`, through `lib/ai`), and this is
- * what the row says in the meantime, so the list a person sees the instant they drop
- * five files is not five rows saying nothing. It reads the name and the media type and
- * no bytes at all: a person who drops `BS-HEIGVD-IL-Diplome.pdf` should see "diploma"
- * before a model has been anywhere near it.
- *
- * Nothing branches on the answer. It is a column's value, and `linkedin_export` and
- * `photo_of_cv` are in it although the person's own set holds neither, because the
- * product accepts both and the screen draws both (`D20`, `D3`).
- */
-export type DetectedKind =
-  "cv" | "diploma" | "work_certificate" | "linkedin_export" | "photo_of_cv" | "unknown";
-
-export const kindOf = (filename: string, mediaType: string): DetectedKind => {
-  const name = filename.toLowerCase();
-  if (mediaType.startsWith("image/")) return "photo_of_cv";
-  if (name.includes("linkedin")) return "linkedin_export";
-  if (/dipl[oô]m|bachelor|master|cfc|licence/.test(name)) return "diploma";
-  if (/certificat|certificate|attestation|zeugnis/.test(name)) return "work_certificate";
-  if (/cv|resume|curriculum|lebenslauf/.test(name)) return "cv";
-  return "unknown";
-};
-
-/** The digest a duplicate is recognised by: SHA-256 over the bytes, lowercase hex. */
-const hashOf = (bytes: Uint8Array): string => createHash("sha256").update(bytes).digest("hex");
-
 /** The limit, said the way a person says it rather than in bytes. */
 const asMegabytes = (bytes: number): string => `${Math.round(bytes / (1024 * 1024))} MB`;
 
@@ -92,7 +59,7 @@ const asMegabytes = (bytes: number): string => `${Math.round(bytes / (1024 * 102
  * server's only handle on a person's bytes, and a browser that never sees one cannot
  * ask for another person's.
  */
-const asAnswer = (row: typeof document.$inferSelect) => ({
+const asAnswer = (row: Document) => ({
   id: row.id,
   filename: row.filename,
   mediaType: row.mediaType,
@@ -108,20 +75,8 @@ const asAnswer = (row: typeof document.$inferSelect) => ({
 /** What the web app is given for a document. Declared once, inferred everywhere above. */
 export type DocumentAnswer = ReturnType<typeof asAnswer>;
 
-/**
- * Whether a failed insert failed because this person already has these bytes.
- *
- * The whole chain is read, not the top message: Drizzle wraps the driver's error, and
- * what names the constraint is the driver's, two causes down. Reading only the top one
- * would turn the refusal criterion 5 asks for into a 500.
- */
-const isDuplicate = (thrown: unknown): boolean => {
-  const said: string[] = [];
-  for (let cause = thrown; cause instanceof Error; cause = cause.cause) {
-    said.push(cause.message, String((cause as { constraint_name?: string }).constraint_name ?? ""));
-  }
-  return /document_user_content_hash|duplicate key/i.test(said.join(" "));
-};
+/** The constraint that says this person already has these bytes (`S2`'s schema). */
+const sameBytesTwice = "document_user_content_hash";
 
 /**
  * One document, or one typed address, handed over.
@@ -137,7 +92,7 @@ const isDuplicate = (thrown: unknown): boolean => {
  */
 export const addDocument = factory.createHandlers(async (c) => {
   const person = await asking(c);
-  if (person === null) return c.json({ error: "sign in first" }, 401);
+  if (person === null) return refused(c);
 
   const body = await c.req.parseBody();
   const file = body["file"];
@@ -179,7 +134,7 @@ export const addDocument = factory.createHandlers(async (c) => {
   const contentHash = hashOf(bytes);
   const id = randomUUID();
 
-  let row: typeof document.$inferSelect | undefined;
+  let row: Document | undefined;
   try {
     [row] = await db
       .insert(document)
@@ -196,7 +151,7 @@ export const addDocument = factory.createHandlers(async (c) => {
       })
       .returning();
   } catch (cause) {
-    if (!isDuplicate(cause)) throw cause;
+    if (!isDuplicate(cause, sameBytesTwice)) throw cause;
     const [already] = await db
       .select()
       .from(document)
@@ -222,7 +177,7 @@ export const addDocument = factory.createHandlers(async (c) => {
  */
 export const listDocuments = factory.createHandlers(async (c) => {
   const person = await asking(c);
-  if (person === null) return c.json({ error: "sign in first" }, 401);
+  if (person === null) return refused(c);
 
   const rows = await db
     .select()
@@ -241,7 +196,7 @@ export const listDocuments = factory.createHandlers(async (c) => {
  */
 export const removeDocument = factory.createHandlers(async (c) => {
   const person = await asking(c);
-  if (person === null) return c.json({ error: "sign in first" }, 401);
+  if (person === null) return refused(c);
 
   const [row] = await db
     .delete(document)
@@ -316,7 +271,7 @@ const askingAbout = (filename: string, mediaType: string): Message[] => [
  */
 export const readDocuments = factory.createHandlers(async (c) => {
   const person = await asking(c);
-  if (person === null) return c.json({ error: "sign in first" }, 401);
+  if (person === null) return refused(c);
 
   const waiting = await db
     .select()
@@ -468,16 +423,6 @@ export const readDocuments = factory.createHandlers(async (c) => {
     }
   });
 });
-
-/**
- * What a document's own slug is: its filename without the extension (`F1`, settled here
- * for extraction as `caseFor` settled it for classification). Stable across runs, and
- * matchable to a real file by eye in the fixture directory.
- */
-const slugOf = (filename: string): string => {
-  const dot = filename.lastIndexOf(".");
-  return dot <= 0 ? filename : filename.slice(0, dot);
-};
 
 /**
  * One fact a single document states, with the sentence that document states it in.
@@ -1282,7 +1227,7 @@ export const answerQuestion = factory.createHandlers(
   }),
   async (c) => {
     const person = await asking(c);
-    if (person === null) return c.json({ error: "sign in first" }, 401);
+    if (person === null) return refused(c);
 
     const said = c.req.valid("json");
 
@@ -1362,7 +1307,7 @@ export const writeItemRule = factory.createHandlers(
   }),
   async (c) => {
     const person = await asking(c);
-    if (person === null) return c.json({ error: "sign in first" }, 401);
+    if (person === null) return refused(c);
 
     const said = c.req.valid("json");
 
@@ -1387,6 +1332,6 @@ export const writeItemRule = factory.createHandlers(
 /** This person's whole profile, or an empty one. Never anybody else's, and never a 404. */
 export const readProfile = factory.createHandlers(async (c) => {
   const person = await asking(c);
-  if (person === null) return c.json({ error: "sign in first" }, 401);
+  if (person === null) return refused(c);
   return c.json(await profileOf(person.id), 200);
 });

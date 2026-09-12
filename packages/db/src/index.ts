@@ -9,9 +9,13 @@
  * caller of this package sees both as one schema and cannot tell which file a table
  * came from, which is the point.
  *
- * There are no aliases yet because there are no tables of our own yet (SL10). When the
- * first one lands, its `typeof <table>.$inferSelect` and `.$inferInsert` are named here
- * rather than in each caller, so a row shape has one name in the repository.
+ * **The row aliases are the package's, not each caller's** (the person's own comment:
+ * *"For infered types, can we expose them from the db package, define alias there to be
+ * reused"*). Every table of our own names its `$inferSelect` and, where a caller writes
+ * rows, its `$inferInsert`, beside the table in `schema.ts` — `Document`, `NewDocument`,
+ * `ProfileItem`, `Question`, `Rule` and the rest. A row shape therefore has one name in
+ * the repository, and `typeof <table>.$inferSelect` written anywhere outside this
+ * package is a name that was not reused.
  */
 export * from "./auth-schema";
 export * from "./schema";
