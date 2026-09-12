@@ -102,11 +102,13 @@ describe("lib/auth", () => {
    * Microsoft is the one provider that never sends that claim for a personal account:
    * Entra issues `email_verified` and `verified_primary_email` for directory users only,
    * so under the bare default a Hotmail or Outlook account arriving second was refused
-   * every time, observed on localhost. Google and LinkedIn do send the claim and stay
-   * at the default; `tests/lib/auth/linking.test.ts` proves both halves.
+   * every time, observed on localhost. LinkedIn joined it at ID105, on the same evidence
+   * from the dev address: a real sign-in there was answered `account_not_linked`, so its
+   * claim does not arrive truthy either. Google alone sends it and stays at the default;
+   * `tests/lib/auth/linking.test.ts` proves both halves.
    */
-  it("trusts Microsoft's email by name, and no other provider's", async () => {
-    expect((await auth.$context).trustedProviders).toEqual(["microsoft"]);
+  it("trusts Microsoft's and LinkedIn's email by name, and Google's not at all", async () => {
+    expect((await auth.$context).trustedProviders).toEqual(["microsoft", "linkedin"]);
   });
 });
 
