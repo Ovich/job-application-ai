@@ -139,16 +139,22 @@
     }
     @if (state() !== "reading") {
       <span class="ms-auto max-sm:ms-0 max-sm:w-full">
-        <button
-          hlmBtn
-          size="lg"
-          type="button"
-          class="max-sm:w-full"
-          [disabled]="!ready()"
-          (click)="read()"
-        >
-          Read my documents
-        </button>
+        @if (allRead()) {
+          <button hlmBtn size="lg" type="button" class="max-sm:w-full" (click)="seeProfile()">
+            See my profile
+          </button>
+        } @else {
+          <button
+            hlmBtn
+            size="lg"
+            type="button"
+            class="max-sm:w-full"
+            [disabled]="!ready()"
+            (click)="read()"
+          >
+            Read my documents
+          </button>
+        }
       </span>
     }
   </div>

@@ -1,5 +1,5 @@
 import { TestBed } from "@angular/core/testing";
-import { provideRouter } from "@angular/router";
+import { provideRouter, Router } from "@angular/router";
 import { RouterTestingHarness } from "@angular/router/testing";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { routes } from "../../../src/app/app.routes";
@@ -7,6 +7,8 @@ import {
   documentsAre,
   droppingNext,
   intakeRequests,
+  itemOf,
+  profileIs,
   resetIntake,
   rowOf,
   runSays,
@@ -351,6 +353,14 @@ describe("a reload mid-run (criterion 11, US3)", () => {
       rowOf({ id: "three", filename: "BS-HEIGVD-IL-Diplome.pdf", status: "waiting" }),
     ]);
 
+    // The profile these two documents made: a viewer asked for one that is empty *and*
+    // made of no document sends a person back here, which is right for somebody who has
+    // never dropped anything and wrong for somebody who just read two.
+    profileIs({
+      documents: 2,
+      summary: itemOf({ id: "summary", kind: "summary", title: "Someone." }),
+    });
+
     const screen = await opened();
 
     await screen.eventually(() => {
@@ -372,5 +382,64 @@ describe("a reload mid-run (criterion 11, US3)", () => {
 
     expect(intakeRequests()).toEqual([{ method: "GET", address: "/api/intake/documents" }]);
     expect(Object.keys(globalThis.localStorage ?? {})).toEqual([]);
+  });
+});
+
+/**
+ * The upload page is a list a person keeps: a reading that has finished gives it back,
+ * with the way to what the reading made (the person, 2026-09-12).
+ */
+describe("documents already read", () => {
+  it("hands the list back, and offers the profile instead of a dead button", async () => {
+    documentsAre([
+      rowOf({
+        id: "one",
+        filename: "2026-08-30_cv_FR.pdf",
+        status: "read",
+        readAt: "2026-09-12T10:00:00.000Z",
+      }),
+      rowOf({
+        id: "two",
+        filename: "BS-HEIGVD-IL-Diplome.pdf",
+        status: "read",
+        readAt: "2026-09-12T10:00:00.000Z",
+      }),
+    ]);
+
+    const screen = await opened();
+
+    await screen.eventually(() => {
+      expect(screen.rows()).toEqual(["2026-08-30_cv_FR.pdf read", "BS-HEIGVD-IL-Diplome.pdf read"]);
+      expect(screen.buttonLabelled("Remove 2026-08-30_cv_FR.pdf")).not.toBeUndefined();
+      expect(screen.page()?.querySelector("ui-drop-zone")).not.toBeNull();
+      expect(screen.read()).toBeUndefined();
+      expect(screen.buttonSaying("See my profile")).not.toBeUndefined();
+    });
+
+    // Where it goes, rather than where the harness ends up: the assertion is about this
+    // screen's own doing, and a router that then loads the viewer is SL3's business.
+    const going = vi.spyOn(TestBed.inject(Router), "navigateByUrl");
+    screen.buttonSaying("See my profile")?.click();
+
+    expect(going).toHaveBeenCalledWith("/profile");
+  });
+
+  it("reads a failed document again, because a run takes everything not read", async () => {
+    documentsAre([
+      rowOf({
+        id: "one",
+        filename: "2026-08-30_cv_FR.pdf",
+        status: "read",
+        readAt: "2026-09-12T10:00:00.000Z",
+      }),
+      rowOf({ id: "two", filename: "a-document-nobody-recorded.pdf", status: "failed" }),
+    ]);
+
+    const screen = await opened();
+
+    await screen.eventually(() => {
+      expect(screen.buttonSaying("See my profile")).toBeUndefined();
+      expect(screen.read()?.disabled).toBe(false);
+    });
   });
 });

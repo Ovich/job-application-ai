@@ -1,4 +1,5 @@
-import { Component, computed, signal } from "@angular/core";
+import { Component, computed, inject, signal } from "@angular/core";
+import { Router } from "@angular/router";
 import type { InferResponseType } from "hono/client";
 import { api } from "../../lib/api";
 import { UiDropZone } from "../../ui/drop-zone/drop-zone";
@@ -31,8 +32,9 @@ import { UiText } from "../../ui/typography/text/text";
  * shown as the route's own sentence, never one invented here: the route knows the limit
  * and which document was already there, and this screen does not.
  *
- * The reading's end does not navigate anywhere. The viewer's route is SL3's, and the
- * screen rests on the finished reading until it exists.
+ * The reading's end does not navigate on its own: a person may have left the tab, and a
+ * page that jumps under them is a page that took the decision. What it does offer, once
+ * every document is read, is the way to the profile — the thing they came here to make.
  */
 
 /** A row, as the list route answers it. Inferred; nothing about it is declared here. */
@@ -85,7 +87,11 @@ export class AppDocuments {
 
   protected readonly address = signal("");
 
-  /** Whether a run was started here. A reload finds it in the rows instead. */
+  /**
+   * Whether a run started here is still going. A reload finds it in the rows instead,
+   * and the end of the stream puts it back down: a run that has finished leaves the
+   * screen editable, the same as one nobody started.
+   */
   protected readonly started = signal(false);
 
   /** The route's own sentence for the last refusal, or nothing. */
@@ -107,13 +113,28 @@ export class AppDocuments {
     return inFlight ? "reading" : "added";
   });
 
+  /** What a run would take: everything the reading has not finished with. */
+  protected readonly unread = computed(() =>
+    this.documents().filter((row) => row.status !== "read"),
+  );
+
   /**
-   * Something unread, or an address: the whole of the primary button's condition. A
-   * document already read is not read again (SL2), so a list of nothing but read rows
-   * leaves the button off until a new one is dropped.
+   * Something unread, or an address: the whole of the primary button's condition. The
+   * run reads every row that is not `read` — a failed one included, which is how a
+   * failure is tried again — so what leaves the button off is a list with nothing left
+   * to read.
    */
   protected readonly ready = computed(
-    () => this.documents().some((row) => row.status === "waiting") || this.address().trim() !== "",
+    () => this.unread().length > 0 || this.address().trim() !== "",
+  );
+
+  /**
+   * Every document read: there is nothing to press Read for, and the thing a person came
+   * here to make now exists. The button becomes the way to it rather than a disabled
+   * control on a page with nothing left to do (the person, 2026-09-12).
+   */
+  protected readonly allRead = computed(
+    () => this.documents().length > 0 && this.unread().length === 0,
   );
 
   protected readonly failures = computed(() =>
@@ -124,8 +145,15 @@ export class AppDocuments {
 
   protected readonly accept = accepted;
 
+  private readonly router = inject(Router);
+
   constructor() {
     void this.load();
+  }
+
+  /** The profile, once every document has been read. */
+  protected seeProfile(): Promise<boolean> {
+    return this.router.navigateByUrl("/profile");
   }
 
   /**
@@ -205,6 +233,11 @@ export class AppDocuments {
       held = blocks.pop() ?? "";
       for (const block of blocks) this.apply(block);
     }
+
+    // The stream is over, so nothing is in flight any more: the list goes back to being
+    // one a person keeps. `load` has the rows as the run left them, and `started` is the
+    // only thing that would still say otherwise.
+    this.started.set(false);
     await this.load();
   }
 

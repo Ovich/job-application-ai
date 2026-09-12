@@ -128,6 +128,13 @@ export class ProfileViewer {
     facts: 0,
   }));
 
+  /**
+   * How many documents this person handed over, once it has been asked for, and `null`
+   * until then. Asked only when the profile is empty, which is the one case where the
+   * answer decides anything.
+   */
+  private readonly handedOver = signal<number | null>(null);
+
   protected readonly state = computed<"loading" | "empty" | "loaded">(() => {
     const profile = this.profile();
     if (profile === null) return "loading";
@@ -174,14 +181,20 @@ export class ProfileViewer {
     void this.load();
 
     /**
-     * A person with nothing read has nothing to read here, and a page saying so is a
-     * page that makes them find the way out themselves. The drop zone is the way out,
-     * so they are taken to it (the person, 2026-09-12). An effect rather than a line in
-     * `load`, because a profile emptied by a deletion has to leave too, not only one
+     * No document and no profile: there is nothing to read here, and a page saying so is
+     * a page that makes a person find the way out themselves. The drop zone is the way
+     * out, so they are taken to it (the person, 2026-09-12). An effect rather than a line
+     * in `load`, because a profile emptied by a deletion has to leave too, not only one
      * that arrived empty.
+     *
+     * Documents that were read and yielded nothing keep a person here on purpose: the
+     * documents screen offers the profile once everything is read, and a profile that
+     * bounced back would be the two pages sending each other a person who wanted either.
      */
     effect(() => {
-      if (this.state() === "empty") void this.router.navigateByUrl("/documents");
+      if (this.state() === "empty" && this.handedOver() === 0) {
+        void this.router.navigateByUrl("/documents");
+      }
     });
 
     /**
@@ -212,6 +225,14 @@ export class ProfileViewer {
   private async load(): Promise<void> {
     const answer = await api.intake.profile.$get();
     if (answer.ok) this.profile.set(await answer.json());
+
+    // Only when there is nothing to show: a profile's own count is the documents it
+    // cites, which is zero for a person whose reading has not written anything yet —
+    // mid-run included. Whether they handed anything over is the documents route's to
+    // answer, and it is asked only in the one case that turns on it.
+    if (this.state() !== "empty") return;
+    const documents = await api.intake.documents.$get();
+    this.handedOver.set(documents.ok ? (await documents.json()).length : null);
   }
 
   /** `today`, or the day itself. Read from the answer; nothing is counted from it. */
