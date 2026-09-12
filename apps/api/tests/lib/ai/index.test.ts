@@ -82,6 +82,58 @@ describe("a call through lib/ai", () => {
 });
 
 /**
+ * Streaming, as a step meets it: an async iterable of pieces. That it is the protocol's
+ * own `stream: true` and not an endpoint of ours is what makes the same code work
+ * against the double and against a provider, so the only thing asserted here is what a
+ * caller sees — more than one piece, and the same answer as the whole one.
+ */
+describe("askStreaming", () => {
+  const long = "A CV in French, read once. Nothing was folded away and nothing was inferred.";
+
+  it("yields the recorded content in pieces that join to the whole answer", async () => {
+    const cases = withCases({ [cvFr]: { stands_for: "a CV", content: long } });
+    try {
+      const ai = aiThroughTheApp();
+      const pieces: string[] = [];
+      for await (const piece of ai.askStreaming(cvFr, [{ role: "user", content: "read this" }])) {
+        pieces.push(piece);
+      }
+
+      expect(pieces.join("")).toBe(long);
+      expect(pieces.join("")).toBe(await ai.ask(cvFr, [{ role: "user", content: "read this" }]));
+    } finally {
+      cases.dispose();
+    }
+  });
+
+  it("asks for the stream with the protocol's own field, and still nothing else", async () => {
+    const cases = withCases({ [cvFr]: { stands_for: "a CV", content: long } });
+    try {
+      for await (const _ of aiThroughTheApp().askStreaming(cvFr, [{ role: "user", content: "?" }]));
+    } finally {
+      cases.dispose();
+    }
+
+    const [sent] = requestsSent();
+    expect(Object.keys(sent?.body as object).sort()).toEqual(["messages", "model", "stream"]);
+    expect(sent?.headers["x-jobapp-case"]).toBe(cvFr);
+  });
+
+  it("throws on a case nobody recorded, before a single piece is yielded", async () => {
+    const cases = withCases({ [cvFr]: { stands_for: "a CV", content: long } });
+    try {
+      await expect(async () => {
+        for await (const _ of aiThroughTheApp().askStreaming("intake.classify:never-recorded", [
+          { role: "user", content: "?" },
+        ]));
+      }).rejects.toThrow(/intake\.classify:never-recorded/);
+    } finally {
+      cases.dispose();
+    }
+  });
+});
+
+/**
  * `askFor` exists because every later step wants a shape, not prose. It validates and
  * throws, which is what keeps a half-valid object out of the database: a caller either
  * gets the shape it asked for or an error, never something in between.
