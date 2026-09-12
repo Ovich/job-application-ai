@@ -118,6 +118,9 @@ describe("a case nobody recorded", () => {
  * set and is named from that file, which is what makes SL3's merge provable against
  * something that exists (`D20`). SL1 shipped the two 2026 CVs; SL2 added the four the
  * reading run meets — the 2022 Word CV, the 2025 one, a diploma and a work certificate.
+ * SL3 reads each of those six for what it states, and merges the combinations a run
+ * makes: the two 2026 CVs, those two with the diploma, and the 2022 and 2025 pair that
+ * state one post differently.
  *
  * There is no LinkedIn export case and no photograph case, and that is not an omission:
  * the person's set holds neither document, and a canned answer standing for no real file
@@ -132,6 +135,17 @@ describe("the fixtures this slice ships", () => {
       "intake.classify:CV-2025",
       "intake.classify:certificat_travail",
       "intake.classify:leCVWeb",
+      // SL3: one extraction per document of the same set, and a merge per combination
+      // of them a run actually makes. A merge's case names the set, by slug, in order.
+      "intake.extract:2026-08-30_cv_EN",
+      "intake.extract:2026-08-30_cv_FR",
+      "intake.extract:BS-HEIGVD-IL-Diplome",
+      "intake.extract:CV-2025",
+      "intake.extract:certificat_travail",
+      "intake.extract:leCVWeb",
+      "intake.merge:2026-08-30_cv_FR+2026-08-30_cv_EN",
+      "intake.merge:2026-08-30_cv_FR+2026-08-30_cv_EN+BS-HEIGVD-IL-Diplome",
+      "intake.merge:leCVWeb+CV-2025",
     ]);
   });
 

@@ -3,8 +3,8 @@ import { provideRouter } from "@angular/router";
 import { RouterTestingHarness } from "@angular/router/testing";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { routes } from "../../../src/app/app.routes";
-import { ProfileSheet } from "../../../src/app/profile/profile-sheet/profile-sheet";
 import type { RegionRef } from "../../../src/app/profile/profile-region/profile-region";
+import { ProfileSheet } from "../../../src/app/profile/profile-sheet/profile-sheet";
 import { emptyProfile, itemOf, type Profile, profileIs, resetIntake } from "../../support/intake";
 import { reset, signedInAs } from "../../support/session";
 
