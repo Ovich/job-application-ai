@@ -10,7 +10,12 @@
     in appearance. The radio glyph is the ::before circle, filled in the one blue when the
     row is the chosen one.
   -->
-  <fieldset class="-mx-2 flex flex-col border-0 p-0" aria-label="Your answer">
+  <!--
+    No bleed past the dock: a row that reached 8px further than its container put a
+    horizontal scrollbar under the composer, and there is never a horizontal overflow
+    there (the person, 2026-09-12). The rows meet the dock's edge instead.
+  -->
+  <fieldset class="flex min-w-0 flex-col border-0 p-0" aria-label="Your answer">
     @for (option of question.options; track option.id) {
       <button
         type="button"
