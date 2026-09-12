@@ -74,9 +74,36 @@ export type Item = {
   lines: { id: string; text: string; documents: number; sources: Quote[] }[];
   children: Item[];
   sources: Quote[];
+  /** What the person said about it, newest first, and the one nothing superseded. */
+  rules: Rule[];
+  rule: Rule | null;
+  /** The question this intake asked about it, whatever state it is now in. */
+  question: Question | null;
 };
 
 type Quote = { document: string; said: string };
+
+/** One rule on the wire, as `GET /profile` carries it (SL4, ID121). */
+export type Rule = {
+  id: string;
+  text: string;
+  kind: "scope" | "constraint";
+  source: "answer" | "own words";
+  createdAt: string;
+  supersededBy: string | null;
+};
+
+/** One question on the wire, with the item it is about and the rows it offers. */
+export type Question = {
+  id: string;
+  itemId: string;
+  itemTitle: string;
+  kind: "scope" | "conflict" | "provenance";
+  where: string;
+  lead: string;
+  state: "waiting" | "answered" | "skipped";
+  options: { id: string; label: string; hint: string; rule: string | null }[];
+};
 
 export type Profile = {
   name: string | null;
@@ -88,6 +115,8 @@ export type Profile = {
   projects: Item[];
   groups: Item[];
   education: Item[];
+  questions: Question[];
+  notAsked: number;
 };
 
 /** An item with everything but what a case cares about filled in. */
@@ -105,7 +134,42 @@ export const itemOf = (
   lines: [],
   children: [],
   sources: [],
+  rules: [],
+  rule: null,
+  question: null,
   ...item,
+});
+
+/** A question with everything but what a case cares about filled in. */
+export const questionOf = (
+  question: Partial<Question> & { id: string; itemId: string; lead: string },
+): Question => ({
+  itemTitle: "Kubernetes",
+  kind: "scope",
+  where: "What you work with · DevOps and cloud · in 2 documents",
+  state: "waiting",
+  options: [
+    {
+      id: `${question.id}-1`,
+      label: "Ran the cluster",
+      hint: "nodes, upgrades, access",
+      rule: "Kubernetes: cluster administration, and the services on it",
+    },
+    {
+      id: `${question.id}-2`,
+      label: "Ran services on it",
+      hint: "deployed and operated the workloads",
+      rule: "Kubernetes: deploying and running services, never cluster administration",
+    },
+    {
+      id: `${question.id}-3`,
+      label: "Used it as a developer",
+      hint: "shipped to a cluster someone else ran",
+      rule: "Kubernetes: shipping to a cluster run by others",
+    },
+    { id: `${question.id}-own`, label: "Something else", hint: "say it below", rule: null },
+  ],
+  ...question,
 });
 
 /** A profile with nothing in it: the answer a person who has read nothing gets. */
@@ -119,9 +183,53 @@ export const emptyProfile: Profile = {
   projects: [],
   groups: [],
   education: [],
+  questions: [],
+  notAsked: 0,
 };
 
 let profile: Profile = emptyProfile;
+
+/** That question is now in that state, in the profile the route answers from now on. */
+const questionBecomes = (id: string, state: Question["state"]): void => {
+  const move = (question: Question): Question =>
+    question.id === id ? { ...question, state } : question;
+  const inItem = (item: Item): Item => ({
+    ...item,
+    question: item.question === null ? null : move(item.question),
+    children: item.children.map(inItem),
+  });
+  profile = {
+    ...profile,
+    questions: profile.questions.map(move),
+    summary: profile.summary === null ? null : inItem(profile.summary),
+    identity: profile.identity === null ? null : inItem(profile.identity),
+    experience: profile.experience.map(inItem),
+    projects: profile.projects.map(inItem),
+    groups: profile.groups.map(inItem),
+    education: profile.education.map(inItem),
+  };
+};
+
+/** The rule the answer wrote, on its item, superseding the one before it. */
+const ruleLandsOn = (itemId: string, rule: Rule): void => {
+  const onItem = (item: Item): Item =>
+    item.id === itemId
+      ? {
+          ...item,
+          rule,
+          rules: [rule, ...item.rules.map((each) => ({ ...each, supersededBy: rule.id }))],
+        }
+      : { ...item, children: item.children.map(onItem) };
+  profile = {
+    ...profile,
+    summary: profile.summary === null ? null : onItem(profile.summary),
+    identity: profile.identity === null ? null : onItem(profile.identity),
+    experience: profile.experience.map(onItem),
+    projects: profile.projects.map(onItem),
+    groups: profile.groups.map(onItem),
+    education: profile.education.map(onItem),
+  };
+};
 
 /** What the profile route answers. */
 export const profileIs = (given: Partial<Profile>): Profile => {
@@ -243,6 +351,50 @@ alsoAnswering((address, init) => {
   requests.push({ method, address: path });
 
   if (path === "/api/intake/profile") return json(profile);
+
+  /**
+   * The answer and the skip, kept the way the API keeps them: the question moves state
+   * and the rule lands on its item, so a screen that re-reads the profile finds what it
+   * just said. A stand-in whose rows stood still would let a screen pass that threw the
+   * route's own answer away.
+   */
+  if (/^\/api\/intake\/questions\/[^/]+\/answer$/.test(path)) {
+    const id = path.split("/")[4] ?? "";
+    const question = profile.questions.find((each) => each.id === id);
+    if (question === undefined) return json({ error: "no such question" }, 404);
+    const said = (typeof init?.body === "string" ? JSON.parse(init.body) : {}) as {
+      optionId?: string;
+      words?: string;
+      skip?: boolean;
+    };
+    if (said.skip === true) {
+      questionBecomes(question.id, "skipped");
+      return json({ skipped: question.id });
+    }
+    const picked = question.options.find((option) => option.id === said.optionId)?.rule ?? null;
+    const words = (said.words ?? "").trim();
+    if (picked === null && words === "") return json({ error: "say something" }, 400);
+    const text =
+      picked === null
+        ? `${question.itemTitle}: ${words}`
+        : words === ""
+          ? picked
+          : `${picked} — ${words}`;
+    questionBecomes(question.id, "answered");
+    ruleLandsOn(question.itemId, {
+      id: `rule-${profile.questions.indexOf(question) + 1}`,
+      text,
+      kind: question.kind === "scope" ? "scope" : "constraint",
+      source: picked === null ? "own words" : "answer",
+      createdAt: "2026-09-12T10:14:00.000Z",
+      supersededBy: null,
+    });
+    return json({ rule: { text } });
+  }
+
+  if (/^\/api\/intake\/items\/[^/]+\/rule$/.test(path)) {
+    return json({ rule: { text: "kept" } });
+  }
 
   if (path === "/api/intake/read") return asStream(frames);
 
