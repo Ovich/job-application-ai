@@ -13,4 +13,4 @@ import { createMockRouter } from "./router";
 export const mock = createMockRouter(paceFrom(env.AI_MOCK_PACE, defaultPace));
 
 export { casesHeld, type RecordedCase, type RecordedCaseFile, useFixtureRoot } from "./fixtures";
-export { defaultPace, type Pace, paceFrom, paceHeader, paceOf } from "./pace";
+export { chunksOf, defaultPace, intervalMs, type Pace, paceFrom, paceHeader, paceOf } from "./pace";
