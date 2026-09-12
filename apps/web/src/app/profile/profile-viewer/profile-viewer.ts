@@ -14,7 +14,7 @@ import { api } from "../../lib/api";
 import { UiModal } from "../../ui/modal/modal";
 import { UiSpinner } from "../../ui/spinner/spinner";
 import { UiText } from "../../ui/typography/text/text";
-import { ProfileAssistant } from "../profile-assistant/profile-assistant";
+import { type Pressed, ProfileAssistant } from "../profile-assistant/profile-assistant";
 import { ProfileBar } from "../profile-bar/profile-bar";
 import type { RegionRef } from "../profile-region/profile-region";
 import { ProfileSheet } from "../profile-sheet/profile-sheet";
@@ -42,6 +42,7 @@ import { backToHead, revealInColumn, stopFollowing } from "../reveal";
  */
 
 type Answer = InferResponseType<typeof api.intake.profile.$get, 200>;
+type Item = Answer["experience"][number];
 
 @Component({
   selector: "profile-viewer",
@@ -84,33 +85,44 @@ export class ProfileViewer {
     this.questions().filter((question) => question.state === "waiting"),
   );
 
+  /** Waiting or skipped: a question whose item still says `your part?`. */
+  private readonly stillOpen = computed(() =>
+    this.questions().filter((question) => question.state !== "answered"),
+  );
+
   /**
-   * The question the assistant has open: the one waiting on the region the person
-   * pressed, or the first one still waiting. The assistant decides the same way from the
-   * same two inputs; this is what the sheet is placed by.
+   * The question the assistant has open: the one still open on the item the person
+   * pressed, skipped ones included, or the first one waiting when they pressed nothing.
+   * The assistant decides the same way from the same two inputs; this is what the sheet
+   * is placed by. A line has no question, so a press on one opens its item's never.
    */
   private readonly open = computed(() => {
     const region = this.selected();
     if (region === null) return this.waiting()[0] ?? null;
-    return this.waiting().find((question) => question.itemId === region.id) ?? null;
+    if (region.kind === "line") return null;
+    return this.stillOpen().find((question) => question.itemId === region.id) ?? null;
   });
 
   /**
-   * The region the person pressed, in its own text, for the tool's prefix. `null` when
-   * they pressed nothing, or pressed something that is not an item of their profile.
+   * The region the person pressed, in its own text, for the tool. An item is itself; a
+   * line is the item it belongs to, in the line's own words, with the line's id beside
+   * it. `null` when they pressed nothing, or nothing of their profile.
    */
-  protected readonly pressed = computed(() => {
+  protected readonly pressed = computed<Pressed | null>(() => {
     const region = this.selected();
     if (region === null) return null;
-    const title = this.titleOf(region.id);
-    return title === null ? null : { itemId: region.id, title };
+    return region.kind === "line" ? this.lineOf(region.id) : this.itemOf(region.id);
   });
 
   /**
-   * Which region the sheet lifts: the region the person pressed themselves, or the open
-   * question's item. Nothing is lifted when no tool is open.
+   * Which region the sheet lifts: the region the person pressed themselves, line or
+   * item, or the open question's item. Nothing is lifted when no tool is open.
    */
-  protected readonly lifted = computed(() => this.pressed()?.itemId ?? this.open()?.itemId ?? null);
+  protected readonly lifted = computed(() => {
+    const pressed = this.pressed();
+    if (pressed !== null) return pressed.lineId ?? pressed.itemId;
+    return this.open()?.itemId ?? null;
+  });
 
   /**
    * Whether this is a visit after the reading rather than the run that produced it
@@ -259,12 +271,13 @@ export class ProfileViewer {
   }
 
   /**
-   * A region pressed by hand. An item is what a rule can be written on and what a
-   * question hangs from, so a press on a line opens nothing: the tool that edits one is
-   * the builder's, and it is not this slice's (the slice's `F4`).
+   * A region pressed by hand, item or line. A line lights on hover, so it opens on a
+   * press as well (the person, 2026-09-13): the tool opens about the line's own words,
+   * and what is written is kept on the item the line belongs to, since a rule hangs from
+   * an item and never from a line.
    */
   protected chosen(region: RegionRef): void {
-    if (region.kind === "item") this.selected.set(region);
+    this.selected.set(region);
   }
 
   /** The overlay's press is the prefix's ×, which while a question waits is a skip. */
@@ -282,11 +295,15 @@ export class ProfileViewer {
    * (`US8`), and the profile read back so the check line shown is the one the database
    * agrees with. The sheet is left where they opened it: this ending is not the run's.
    */
-  protected async clarified(said: { itemId: string; words: string }): Promise<void> {
+  protected async clarified(said: {
+    itemId: string;
+    words: string;
+    lineId?: string;
+  }): Promise<void> {
     this.viaQuestion = false;
     await api.intake.items[":id"].rule.$post({
       param: { id: said.itemId },
-      json: { words: said.words },
+      json: { words: said.words, ...(said.lineId === undefined ? {} : { lineId: said.lineId }) },
     });
     this.selected.set(null);
     await this.load();
@@ -298,19 +315,18 @@ export class ProfileViewer {
     this.selected.set(null);
   }
 
-  /** An item's own text, by its id, wherever it hangs in the profile. */
-  private titleOf(id: string): string | null {
+  /** Every item of the profile, wherever it hangs, the ones under others included. */
+  private items(): Item[] {
     const profile = this.profile();
-    if (profile === null) return null;
-    const find = (items: { id: string; title: string; children: unknown[] }[]): string | null => {
+    if (profile === null) return [];
+    const every: Item[] = [];
+    const walk = (items: Item[]): void => {
       for (const item of items) {
-        if (item.id === id) return item.title;
-        const under = find(item.children as typeof items);
-        if (under !== null) return under;
+        every.push(item);
+        walk(item.children as Item[]);
       }
-      return null;
     };
-    return find([
+    walk([
       ...(profile.summary === null ? [] : [profile.summary]),
       ...(profile.identity === null ? [] : [profile.identity]),
       ...profile.experience,
@@ -318,6 +334,22 @@ export class ProfileViewer {
       ...profile.groups,
       ...profile.education,
     ]);
+    return every;
+  }
+
+  /** An item, in its own text, by its id. */
+  private itemOf(id: string): Pressed | null {
+    const item = this.items().find((each) => each.id === id);
+    return item === undefined ? null : { itemId: item.id, title: item.title, lineId: null };
+  }
+
+  /** A line, in its own text, with the item it belongs to. */
+  private lineOf(id: string): Pressed | null {
+    for (const item of this.items()) {
+      const line = item.lines.find((each) => each.id === id);
+      if (line !== undefined) return { itemId: item.id, title: line.text, lineId: line.id };
+    }
+    return null;
   }
 
   /** One answer written, and the profile read back, so the rule shown is the rule kept. */

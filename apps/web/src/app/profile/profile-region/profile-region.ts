@@ -13,6 +13,14 @@ import { hlm } from "../../ui/hlm";
  * `stopPropagation` looks equivalent and is not: it breaks on a pointer that enters two
  * regions in one move. Nothing in this directive listens for a pointer.
  *
+ * **The transition sits under the same variant as the highlight, never on the region
+ * itself.** A transition on the region eases the highlight out as well as in, so for
+ * 150 ms after the pointer moves from a post's own area onto one of its lines both are
+ * lit, and scanning down a list of lines flashes the post at every gap (the person,
+ * 2026-09-13; the prototype had the same fault). A transition that exists only while
+ * the highlight applies eases the innermost region in and lets the one it left drop at
+ * once, which is what "only the line" means.
+ *
  * What a region is identified by is what it is and which row it is, and that is the
  * whole of `RegionRef`: the tool `SL4` binds to one never learns what a tool is from
  * here, and this directive never learns what opens on a press.
@@ -23,9 +31,10 @@ export type RegionRef = { kind: "item" | "line"; id: string };
 
 const REGION = [
   "region cursor-pointer rounded-[var(--radius)]",
-  "transition-[box-shadow,background-color] duration-150",
   "not-data-[selected=true]:hover:not-has-[.region:hover]:bg-accent",
   "not-data-[selected=true]:hover:not-has-[.region:hover]:shadow-[0_0_0_2px_var(--primary),0_0_0_6px_#1d4ed81f]",
+  "not-data-[selected=true]:hover:not-has-[.region:hover]:transition-[box-shadow,background-color]",
+  "not-data-[selected=true]:hover:not-has-[.region:hover]:duration-150",
 ].join(" ");
 
 /**

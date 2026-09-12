@@ -1254,15 +1254,22 @@ export const answerQuestion = factory.createHandlers(
 );
 
 /**
- * What the person said about an item nobody asked them about.
+ * What the person said about an item nobody asked them about, or about one of its lines.
  *
  * It is the answer's own-words path with no question attached, which is why it is
  * mounted and proved here; **its screen is `SL5`'s** (the tool the person opens
  * themselves, which proposes nothing).
+ *
+ * A line carries no rule of its own (`rule.item_id`), so what is said about one is kept
+ * on the item it belongs to, about the line, in the line's own words (the person,
+ * 2026-09-13). The line's text is read here and never taken from the request: a client
+ * that could name what a rule is about could write a rule about anything.
  */
 export const writeItemRule = factory.createHandlers(
   validator("json", (value, c) => {
-    const said = z.object({ words: z.string().trim().min(1) }).safeParse(value);
+    const said = z
+      .object({ words: z.string().trim().min(1), lineId: z.string().min(1).optional() })
+      .safeParse(value);
     if (!said.success) return c.json({ error: "say it in your own words" }, 400);
     return said.data;
   }),
@@ -1278,11 +1285,24 @@ export const writeItemRule = factory.createHandlers(
       .where(and(eq(profileItem.id, c.req.param("id") ?? ""), eq(profileItem.userId, person.id)));
     if (item === undefined) return c.json({ error: "no such item" }, 404);
 
+    // The line, when one was named, and only one of this item's: a line under another
+    // item is a 404 as a question that is not yours is, and for the same reason.
+    const [line] =
+      said.lineId === undefined
+        ? []
+        : await db
+            .select()
+            .from(itemLine)
+            .where(and(eq(itemLine.id, said.lineId), eq(itemLine.itemId, item.id)));
+    if (said.lineId !== undefined && line === undefined) {
+      return c.json({ error: "no such line" }, 404);
+    }
+
     const kept = await keepAsRule({
       userId: person.id,
       itemId: item.id,
       kind: "scope",
-      text: ruleAbout(item.title, said.words.trim()),
+      text: ruleAbout(line?.text ?? item.title, said.words.trim()),
       source: "own words",
       questionId: null,
     });

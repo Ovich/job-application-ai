@@ -49,8 +49,12 @@ export type Question = {
   options: { id: string; label: string; hint: string; rule: string | null }[];
 };
 
-/** The region the person pressed, in its own words: the item, and its own text. */
-export type Pressed = { itemId: string; title: string };
+/**
+ * The region the person pressed, in its own words: the item, and its own text. A line
+ * carries the item it belongs to and its own id beside it, because what is written about
+ * a line is kept on that item (the person, 2026-09-13).
+ */
+export type Pressed = { itemId: string; title: string; lineId: string | null };
 
 /** The word the intake names the thing in the prefix with. The builder will have its own. */
 const scope = "Adjusting scope";
@@ -89,8 +93,8 @@ export class ProfileAssistant {
 
   public readonly skipped = output<{ questionId: string }>();
 
-  /** What the person said about an item nobody asked about (`US8`). */
-  public readonly clarified = output<{ itemId: string; words: string }>();
+  /** What the person said about an item nobody asked about (`US8`), or one of its lines. */
+  public readonly clarified = output<{ itemId: string; words: string; lineId?: string }>();
 
   /** The person-opened tool, closed with nothing written. */
   public readonly cancelled = output<void>();
@@ -118,13 +122,26 @@ export class ProfileAssistant {
   protected readonly left = computed(() => this.waiting().length);
 
   /**
-   * The question the assistant has open: the one waiting on the region the person
-   * pressed, or the first one still waiting when they pressed nothing (`S4.2`).
+   * The questions nobody has answered yet, skipped ones included. A skipped question
+   * still marks its item `your part?`, so the item still requires clarification and a
+   * press on it reopens the question with its rows rather than the tool that proposes
+   * nothing (the person, 2026-09-13). The assistant's own order is over `waiting` alone:
+   * a skipped question is put off until the builder, never asked again unprompted.
+   */
+  private readonly stillOpen = computed(() =>
+    this.questions().filter((question) => question.state !== "answered"),
+  );
+
+  /**
+   * The question the assistant has open: the one still open on the item the person
+   * pressed, or the first one waiting when they pressed nothing (`S4.2`). A line has no
+   * question of its own, so a press on one never opens its item's.
    */
   protected readonly open = computed(() => {
     const pressed = this.on();
     if (pressed === null) return this.waiting()[0] ?? null;
-    return this.waiting().find((question) => question.itemId === pressed.itemId) ?? null;
+    if (pressed.lineId !== null) return null;
+    return this.stillOpen().find((question) => question.itemId === pressed.itemId) ?? null;
   });
 
   /** The region the person pressed and no question is waiting on: their own tool. */
@@ -221,7 +238,11 @@ export class ProfileAssistant {
     const pressed = this.clarifying();
     if (pressed !== null) {
       if (words === "") return;
-      this.clarified.emit({ itemId: pressed.itemId, words });
+      this.clarified.emit({
+        itemId: pressed.itemId,
+        words,
+        ...(pressed.lineId === null ? {} : { lineId: pressed.lineId }),
+      });
       this.forget();
       return;
     }
