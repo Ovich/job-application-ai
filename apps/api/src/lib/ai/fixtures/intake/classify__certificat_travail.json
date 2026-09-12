@@ -1,0 +1,7 @@
+{
+  "case": "intake.classify:certificat_travail",
+  "stands_for": "work-certificates/certificat_travail.pdf, one of the person's own Swiss work certificates, June 2016. The third kind in the set: an employer's own account of a post, its dates and its duties, written about the person rather than by them, which is the evidence a CV's claim about that post can be checked against.",
+  "content": "{\"kind\":\"work_certificate\",\"language\":\"fr\",\"confidence\":0.97,\"why\":\"Un certificat de travail suisse: papier a en-tete d'un employeur, une phrase d'engagement avec les dates d'entree et de sortie, la description de la fonction et des taches, une appreciation, puis le lieu, la date et une signature. Ni rubriques ni parcours: ce n'est pas un CV. Le texte est en francais.\"}",
+  "tool_calls": [],
+  "usage": { "input_tokens": 520, "output_tokens": 78 }
+}

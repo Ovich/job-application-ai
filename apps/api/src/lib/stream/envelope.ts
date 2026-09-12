@@ -34,14 +34,36 @@ const textLeaf = z.object({
 });
 
 /**
- * Everything a stream may carry. A discriminated union, so an unknown kind is rejected
- * by the discriminator and a known kind with a missing field by its own shape. One leaf
- * today: the `progress` leaf that stood beside it reported a unit of a run, and went
- * with the run (D20). The union stays a union because the next leaf is D11's, and
- * because the discriminator is what makes an unknown kind a rejection rather than a
- * frame.
+ * One document of a reading run has moved (SL2, ID119). It carries the row's id and
+ * where that row now stands, and nothing else: the kind, the language and the count are
+ * columns, and the screen reads them back through the list route, which is also what
+ * makes a reload agree with the stream. A frame is sent after the row is written, never
+ * before, so a leaf a reader holds is a fact the database already carries.
  */
-export const leafSchema = z.discriminatedUnion("kind", [textLeaf]);
+const documentLeaf = z.object({
+  kind: z.literal("document"),
+  id: z.string(),
+  status: z.enum(["reading", "read", "failed"]),
+  reason: z.string().nullable(),
+});
+
+/** The run itself is over. What follows is a screen that reads its rows, not a frame. */
+const runLeaf = z.object({
+  kind: z.literal("run"),
+  status: z.literal("done"),
+});
+
+/**
+ * Everything a stream may carry. A discriminated union, so an unknown kind is rejected
+ * by the discriminator and a known kind with a missing field by its own shape.
+ *
+ * `text` was the only one until SL2, which is the slice that gave this module a second
+ * caller: the intake's reading run reports a unit at a time, which is what the `progress`
+ * leaf used to do before D20 removed it with the fake run it belonged to. These two are
+ * that shape written against a real pipeline. The catalogue version does not move for
+ * them: adding a leaf is backwards compatible and changing one is not.
+ */
+export const leafSchema = z.discriminatedUnion("kind", [textLeaf, documentLeaf, runLeaf]);
 
 /** One thing a stream can say. Inferred from the catalogue, never listed twice. */
 export type Leaf = z.infer<typeof leafSchema>;

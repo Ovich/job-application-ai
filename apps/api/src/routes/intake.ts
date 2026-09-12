@@ -1,5 +1,5 @@
 import { Hono } from "hono";
-import { addDocument, listDocuments, removeDocument } from "../handlers/intake";
+import { addDocument, listDocuments, readDocuments, removeDocument } from "../handlers/intake";
 
 /**
  * The intake routes: paths and handlers, nothing else. What each one proves is written
@@ -12,4 +12,5 @@ import { addDocument, listDocuments, removeDocument } from "../handlers/intake";
 export const intake = new Hono()
   .post("/documents", ...addDocument)
   .get("/documents", ...listDocuments)
-  .delete("/documents/:id", ...removeDocument);
+  .delete("/documents/:id", ...removeDocument)
+  .post("/read", ...readDocuments);

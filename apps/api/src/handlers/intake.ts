@@ -1,12 +1,16 @@
 import { createHash, randomUUID } from "node:crypto";
 import { document } from "@app/db";
-import { and, asc, eq } from "drizzle-orm";
+import { and, asc, eq, ne } from "drizzle-orm";
 import type { Context } from "hono";
 import { createFactory } from "hono/factory";
+import { stream } from "hono/streaming";
+import { z } from "zod";
 import { env } from "../env";
+import { askFor, type CaseName, type Message } from "../lib/ai";
 import { auth } from "../lib/auth";
 import { db } from "../lib/db";
 import { keyFor, storage } from "../lib/storage";
+import { createEnvelope } from "../lib/stream";
 
 /**
  * The intake's document handlers: what each route proves, written where it is done, as
@@ -231,4 +235,137 @@ export const removeDocument = factory.createHandlers(async (c) => {
     await storage.delete(keyFor(person.id, row.id));
   }
   return c.json({ removed: row.id }, 200);
+});
+
+/**
+ * What a reader is asked for, and what it must answer with. The kinds are the column's
+ * own; the language is what the document is written in, which is a separate question
+ * from what the person reads (`Q14`, still open).
+ */
+const classification = z.object({
+  kind: z.enum(["cv", "diploma", "work_certificate", "linkedin_export", "photo_of_cv", "unknown"]),
+  language: z.string().min(2),
+  confidence: z.number(),
+  why: z.string(),
+});
+
+/**
+ * The case a document's classification is recorded under: the file's own name, without
+ * its extension, under the step `intake.classify` (`F3`, `D20`). A case therefore stands
+ * for a real file and can be matched to it by eye in the fixture directory, which a
+ * content hash could not. The hash keeps its one job, which is the duplicate.
+ */
+const caseFor = (filename: string): CaseName => {
+  const dot = filename.lastIndexOf(".");
+  return `intake.classify:${dot <= 0 ? filename : filename.slice(0, dot)}`;
+};
+
+/** What the reader is told. The mock reads none of it; a provider would read all of it. */
+const askingAbout = (filename: string, mediaType: string): Message[] => [
+  {
+    role: "system",
+    content:
+      "You classify one document a job seeker has handed over. Answer with JSON alone: kind, one of cv, diploma, work_certificate, linkedin_export, photo_of_cv, unknown; language, as an ISO 639-1 code; confidence, between 0 and 1; why, one or two sentences naming what in the document decided it.",
+  },
+  { role: "user", content: `The document is named ${filename} and is a ${mediaType}.` },
+];
+
+/**
+ * The reading run (ID119, `D8`).
+ *
+ * Four things make this route what the slice asks for, and each of them is a decision:
+ *
+ * **A document is read alone.** One failing document does not fail the run — it is
+ * marked with a sentence naming it, and the others go on — because a person who handed
+ * over five CVs should not lose four to one file nobody can read.
+ *
+ * **The row is written before the frame is sent**, never after. A frame in a reader's
+ * hands that the database does not yet agree with is a run a reload contradicts, and
+ * that contradiction is exactly what criterion 11 is.
+ *
+ * **Resume is a read of the rows and nothing else.** There is no run id, nothing in the
+ * browser's storage, and no replay of frames from memory: a person who closed the tab
+ * asks `GET /documents` and is answered with where the run got to.
+ *
+ * **A document already read is not read again.** A second run costs nothing and asks
+ * nothing, which is what makes pressing the button twice harmless.
+ *
+ * It is plain functions inside the streaming route the foundation already built for long
+ * work, persisting per unit. Step Functions is not adopted (`D8`).
+ */
+export const readDocuments = factory.createHandlers(async (c) => {
+  const person = await asking(c);
+  if (person === null) return c.json({ error: "sign in first" }, 401);
+
+  const waiting = await db
+    .select()
+    .from(document)
+    .where(and(eq(document.userId, person.id), ne(document.status, "read")))
+    .orderBy(asc(document.createdAt), asc(document.id));
+
+  // The raw stream helper rather than the server-sent-event one, and the headers that
+  // helper would set, set here: the envelope already writes `id:` and `data:` lines.
+  c.header("content-type", "text/event-stream");
+  c.header("cache-control", "no-cache");
+  c.header("x-accel-buffering", "no");
+
+  return stream(c, async (response) => {
+    const envelope = createEnvelope(async (chunk) => {
+      await response.write(chunk);
+    });
+    response.onAbort(() => {
+      envelope.close();
+    });
+
+    try {
+      for (const row of waiting) {
+        await db.update(document).set({ status: "reading" }).where(eq(document.id, row.id));
+        await envelope.send({ kind: "document", id: row.id, status: "reading", reason: null });
+
+        // The typed address is the one source with nothing to read: nothing is fetched,
+        // which is what the spec's non-goals say and what the screen's lead promises
+        // (F5). So it is read the moment the run reaches it, with no call and no kind.
+        if (row.source !== "file") {
+          await db
+            .update(document)
+            .set({ status: "read", readAt: new Date() })
+            .where(eq(document.id, row.id));
+          await envelope.send({ kind: "document", id: row.id, status: "read", reason: null });
+          continue;
+        }
+
+        try {
+          const read = await askFor(
+            caseFor(row.filename),
+            askingAbout(row.filename, row.mediaType),
+            classification,
+          );
+          await db
+            .update(document)
+            .set({
+              status: "read",
+              detectedKind: read.kind,
+              detectedLanguage: read.language,
+              failureReason: null,
+              readAt: new Date(),
+            })
+            .where(eq(document.id, row.id));
+          await envelope.send({ kind: "document", id: row.id, status: "read", reason: null });
+        } catch {
+          // Why it failed is not carried out to the person: an AI failure names the case
+          // and the endpoint, which says nothing they can act on. What they are told is
+          // which of their documents could not be read, and that the rest were.
+          const reason = `${row.filename} could not be read. The others were.`;
+          await db
+            .update(document)
+            .set({ status: "failed", failureReason: reason })
+            .where(eq(document.id, row.id));
+          await envelope.send({ kind: "document", id: row.id, status: "failed", reason });
+        }
+      }
+      await envelope.send({ kind: "run", status: "done" });
+    } finally {
+      envelope.close();
+    }
+  });
 });

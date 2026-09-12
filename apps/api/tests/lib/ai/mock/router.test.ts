@@ -114,15 +114,28 @@ describe("a case nobody recorded", () => {
 });
 
 /**
- * The cases the product ships with. Two, and each stands for a real document of the
- * person's own set (`cv-generic/2026-08-30_cv_FR.pdf` and its English counterpart),
- * which is what makes SL3's merge provable against something that exists.
+ * The cases the product ships with. Each stands for a real document of the person's own
+ * set and is named from that file, which is what makes SL3's merge provable against
+ * something that exists (`D20`). SL1 shipped the two 2026 CVs; SL2 added the four the
+ * reading run meets — the 2022 Word CV, the 2025 one, a diploma and a work certificate.
+ *
+ * There is no LinkedIn export case and no photograph case, and that is not an omission:
+ * the person's set holds neither document, and a canned answer standing for no real file
+ * is exactly what `D20` forbids.
  */
 describe("the fixtures this slice ships", () => {
-  it("holds the two CVs, named from the files themselves", () => {
+  it("holds one case per real document of the person's set, named from the file", () => {
     expect(casesHeld()).toEqual([
       "intake.classify:2026-08-30_cv_EN",
       "intake.classify:2026-08-30_cv_FR",
+      "intake.classify:BS-HEIGVD-IL-Diplome",
+      "intake.classify:CV-2025",
+      "intake.classify:certificat_travail",
+      "intake.classify:leCVWeb",
     ]);
+  });
+
+  it("holds no LinkedIn export case, because there is no such document to stand for", () => {
+    expect(casesHeld().filter((name) => /linkedin|export|photo/i.test(name))).toEqual([]);
   });
 });
