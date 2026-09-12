@@ -68,18 +68,32 @@ export class AppSignIn {
   protected readonly nameOf = (provider: Provider): string => providerName[provider];
 
   public constructor() {
+    const heading = "Your job application in the era of AI";
+    // Under 155 characters, the length a result page shows whole; the h1 is not repeated.
+    const description =
+      "A tailored CV and cover letter for every job offer, built from one profile made of the CVs you already have. Let the silence stop.";
+    const address = "https://job-application.app/";
+
     inject(Title).setTitle("AI CV builder for every job offer | job-application.app");
-    inject(Meta).updateTag({
-      name: "description",
-      content:
-        "Your job application in the era of AI. A tailored CV and cover letter for every job offer. Let the silence stop. Built from one profile made of the CVs you already have.",
-    });
+    const meta = inject(Meta);
+    meta.updateTag({ name: "description", content: description });
+    // What a pasted link unfurls as, in LinkedIn, Slack or a chat: the Open Graph tags
+    // every unfurler reads, and the one Twitter card tag X does not take from them. No
+    // `og:image` until there is an image: a tag naming one that is not there is cached
+    // as a failure by some unfurlers.
+    meta.updateTag({ property: "og:type", content: "website" });
+    meta.updateTag({ property: "og:site_name", content: "job-application.app" });
+    meta.updateTag({ property: "og:title", content: heading });
+    meta.updateTag({ property: "og:description", content: description });
+    meta.updateTag({ property: "og:url", content: address });
+    meta.updateTag({ name: "twitter:card", content: "summary" });
+
     const document = inject(DOCUMENT);
     const canonical =
       document.head.querySelector<HTMLLinkElement>("link[rel=canonical]") ??
       document.head.appendChild(document.createElement("link"));
     canonical.rel = "canonical";
-    canonical.href = "https://job-application.app/";
+    canonical.href = address;
   }
 
   protected async continueWith(provider: Provider): Promise<void> {
