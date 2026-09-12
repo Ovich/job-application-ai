@@ -23,8 +23,8 @@ import {
 import { and, asc, desc, eq, inArray, isNull, ne } from "drizzle-orm";
 import type { Context } from "hono";
 import { createFactory } from "hono/factory";
-import { validator } from "hono/validator";
 import { stream } from "hono/streaming";
+import { validator } from "hono/validator";
 import { z } from "zod";
 import { env } from "../env";
 import { askFor, type CaseName, type Message } from "../lib/ai";
