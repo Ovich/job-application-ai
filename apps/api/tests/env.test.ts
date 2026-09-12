@@ -292,7 +292,7 @@ describe("the cloud runtime", () => {
       "postgresql://api:npg_secret@ep-example-pooler.eu-central-1.aws.neon.tech/neondb?sslmode=require&channel_binding=require",
   };
 
-  /** Everything the template sets on the function since S7.2: the seven, and the connection. */
+  /** Everything the template sets on the function since S7.2: the nine, and the connection. */
   const deployed = {
     ...nothingSet,
     ...connection,
