@@ -57,7 +57,18 @@ export async function fetchWithPayloadHash(
     return fetch(input, { ...init, headers });
   }
 
-  const bytes = new Uint8Array(await new Response(body).arrayBuffer());
+  // Reading the body into bytes is what lets the hash describe exactly what is sent, and
+  // it costs one thing that has to be paid back here: a `FormData` body carries its own
+  // content type, boundary and all, and the platform sets that header only for a body it
+  // is serialising itself. Bytes are not that body, so the header would be absent and the
+  // multipart an upload travels in would reach the API as an unreadable lump (SL2). What
+  // a caller set itself wins, as it does everywhere else.
+  const serialised = new Response(body);
+  const bytes = new Uint8Array(await serialised.arrayBuffer());
+  const contentType = serialised.headers.get("content-type");
+  if (contentType !== null && !headers.has("content-type")) {
+    headers.set("content-type", contentType);
+  }
   headers.set("x-amz-content-sha256", await sha256Hex(bytes));
   return fetch(input, { ...init, body: bytes, headers });
 }

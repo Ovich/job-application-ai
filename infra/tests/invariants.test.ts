@@ -155,6 +155,83 @@ describe("an API error reaches the browser as an error (S9.3)", () => {
   });
 });
 
+/**
+ * Where an uploaded document lives (ID116, criterion 3).
+ *
+ * One bucket per environment, added by the slice that needs it so that dev never has a
+ * function pointing at a bucket that does not exist. Everything here is a decision: the
+ * bucket is private and answers nobody but the function; the function may put, get and
+ * delete under `u/` and nowhere else, so a bug in a handler cannot reach an object that
+ * is not a person's own document; and the name reaches the function through the
+ * template rather than through a guess.
+ */
+describe("the documents bucket (ID116)", () => {
+  it("blocks every public route into it, as the web bucket already does", () => {
+    expect({
+      acls: at(
+        "App-dev",
+        "DocumentsBucket",
+        "Properties.PublicAccessBlockConfiguration.BlockPublicAcls",
+      ),
+      policy: at(
+        "App-dev",
+        "DocumentsBucket",
+        "Properties.PublicAccessBlockConfiguration.BlockPublicPolicy",
+      ),
+      ignoreAcls: at(
+        "App-dev",
+        "DocumentsBucket",
+        "Properties.PublicAccessBlockConfiguration.IgnorePublicAcls",
+      ),
+      restrict: at(
+        "App-dev",
+        "DocumentsBucket",
+        "Properties.PublicAccessBlockConfiguration.RestrictPublicBuckets",
+      ),
+    }).toEqual({ acls: true, policy: true, ignoreAcls: true, restrict: true });
+  });
+
+  it("is not an origin of the distribution, so nothing reaches a document but the function", () => {
+    const origins = [...leaves(resource("App-dev", "Distribution") as unknown as Json)]
+      .filter(([path]) => /Origins\[\d+\]\.DomainName/.test(path))
+      .map(([, value]) => JSON.stringify(value));
+    expect(origins.filter((origin) => origin.includes("DocumentsBucket"))).toEqual([]);
+  });
+
+  it("lets the function put, get and delete, and nothing else", () => {
+    const granted = [...leaves(resource("App-dev", "ApiRole") as unknown as Json)]
+      .filter(([path]) => path.startsWith("Properties.Policies"))
+      .filter(([path]) => /\.Action(\[\d+\])?$/.test(path))
+      .map(([, action]) => action);
+    expect(granted).toEqual(["s3:PutObject", "s3:GetObject", "s3:DeleteObject"]);
+  });
+
+  /**
+   * The prefix, and it is the whole of the key invariant seen from the cloud's side.
+   * `keyFor` is the only thing in the API that composes a key, and this is what makes a
+   * key composed any other way unable to reach an object at all.
+   */
+  it("grants those three on the u/ prefix only, never on the bucket whole", () => {
+    const statement = "Properties.Policies[0].PolicyDocument.Statement[0]";
+    expect({
+      bucket: [
+        at("App-dev", "ApiRole", `${statement}.Resource.Fn::Join[1][0].Fn::GetAtt[0]`),
+        at("App-dev", "ApiRole", `${statement}.Resource.Fn::Join[1][0].Fn::GetAtt[1]`),
+      ],
+      thenThePrefix: at("App-dev", "ApiRole", `${statement}.Resource.Fn::Join[1][1]`),
+    }).toEqual({ bucket: ["DocumentsBucket", "Arn"], thenThePrefix: "/u/*" });
+  });
+
+  it("hands the function the bucket's name and the implementation to use", () => {
+    expect(at("App-dev", "Api", "Properties.Environment.Variables.STORAGE_BUCKET.Ref")).toBe(
+      "DocumentsBucket",
+    );
+    expect(at("App-dev", "Api", "Properties.Environment.Variables.STORAGE_IMPLEMENTATION")).toBe(
+      "s3",
+    );
+  });
+});
+
 describe("the zone that cannot be recreated", () => {
   it("survives the deletion of the stack that declares it", () => {
     expect({

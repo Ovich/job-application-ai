@@ -54,6 +54,40 @@ const aiSettings = {
 };
 
 /**
+ * How big an upload may be (ID134). It is forced rather than chosen: a function URL
+ * accepts a request of about 6 MB, and a document travels inside a multipart body with
+ * its own overhead, so the document itself must fit under that. The person's own
+ * largest CV is 4.5 MB, which makes it the file the suite uploads.
+ *
+ * It is configuration rather than a constant so an environment can lower it without a
+ * code change, and it is a number of bytes because that is what a request's content
+ * length is measured in and what the refusal has to name.
+ */
+const uploadLimitBytes = 5 * 1024 * 1024;
+
+/**
+ * Where uploaded bytes go (ID115, ID128). `lib/storage` takes these as arguments and
+ * reads no environment of its own, so this is the one place the choice is made.
+ *
+ * `STORAGE_IMPLEMENTATION` is the switch, and the two values are both production: the
+ * directory is what a developer runs and S3 is what the deployed environment runs. Its
+ * default is the runtime's own, which is what lets a fresh clone upload a document with
+ * nothing set and no bucket anywhere — and what makes a deployed function that was
+ * given no value store into a bucket rather than into a container's disk.
+ *
+ * `STORAGE_DIRECTORY` is relative, resolved against the process's own directory, so it
+ * lands under the repository and `.gitignore` keeps it out. `STORAGE_BUCKET` has no
+ * default in the cloud: a function pointed at no bucket fails at the first upload
+ * instead of at the cold start, and the bucket and the code arrive in the same change
+ * (ID116), so there is no window in which requiring it would break a deploy.
+ */
+const storageSettings = (implementation: "directory" | "s3") => ({
+  STORAGE_IMPLEMENTATION: z.enum(["directory", "s3"]).default(implementation),
+  STORAGE_DIRECTORY: z.string().min(1).default(".objects"),
+  UPLOAD_LIMIT_BYTES: z.coerce.number().int().positive().default(uploadLimitBytes),
+});
+
+/**
  * The developer's Postgres container. The defaults are the throwaway credentials
  * committed in `docker-compose.yml`, the precedent `packages/db/drizzle.config.ts`
  * already sets, so a fresh clone answers on localhost with one command and no file to
@@ -96,6 +130,10 @@ const localRuntime = z.object({
   LINKEDIN_CLIENT_SECRET: z.string().min(1),
   BETTER_AUTH_SECRET: z.string().min(1),
   ...aiSettings,
+  ...storageSettings("directory"),
+  // No bucket on a laptop, and nothing to set: the empty string is what "there is no
+  // bucket here" reads as, and the directory implementation never looks at it.
+  STORAGE_BUCKET: z.string().default(""),
 });
 
 /**
@@ -143,6 +181,11 @@ const cloudRuntime = z.object({
   // provider clients carried between SL2 and S5.2, written down the same way and with
   // the same end: SL6 supplies them and takes the defaults away in one breath (ID114).
   ...aiSettings,
+  ...storageSettings("s3"),
+  // The bucket this slice's own template creates (ID116). Required, and the one storage
+  // value that is: the resource and the code that looks for it arrive together, so
+  // there is no deploy between them that this could fail.
+  STORAGE_BUCKET: z.string().min(1),
 });
 
 /**
@@ -198,6 +241,10 @@ const {
   AI_API_KEY,
   AI_MODEL,
   AI_MOCK_PACE,
+  STORAGE_IMPLEMENTATION,
+  STORAGE_DIRECTORY,
+  STORAGE_BUCKET,
+  UPLOAD_LIMIT_BYTES,
 } = process.env;
 
 // The discriminator defaults to the local runtime so a clone runs with nothing set; the
@@ -234,6 +281,10 @@ export const env = Object.freeze(
     AI_API_KEY,
     AI_MODEL,
     AI_MOCK_PACE,
+    STORAGE_IMPLEMENTATION,
+    STORAGE_DIRECTORY,
+    STORAGE_BUCKET,
+    UPLOAD_LIMIT_BYTES,
     // Where the connection comes from, and the only line the two runtimes disagree on.
     ...(runtime === "cloud"
       ? partsOf(DATABASE_URL)

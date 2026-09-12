@@ -53,6 +53,10 @@ const nothingSet = {
   AI_API_KEY: undefined,
   AI_MODEL: undefined,
   AI_MOCK_PACE: undefined,
+  STORAGE_IMPLEMENTATION: undefined,
+  STORAGE_DIRECTORY: undefined,
+  STORAGE_BUCKET: undefined,
+  UPLOAD_LIMIT_BYTES: undefined,
 };
 
 /** A registered Google client app, as the person's `.env` names it. Nobody's real one. */
@@ -237,6 +241,40 @@ describe("the local runtime", () => {
     });
   });
 
+  /**
+   * ID128: `lib/storage` is chosen by configuration (ID115) and takes its values as
+   * arguments, so they are read here and nowhere else. A fresh clone needs none of
+   * them: the implementation is the directory a developer runs, and the directory is
+   * under the repository, which is why no bucket has to exist for `pnpm dev` to work.
+   */
+  it("stores uploaded bytes in a directory under the repository, with nothing set", async () => {
+    const env = await load({ ...nothingSet, ...everyValue });
+
+    expect({
+      implementation: env.STORAGE_IMPLEMENTATION,
+      directory: env.STORAGE_DIRECTORY,
+      bucket: env.STORAGE_BUCKET,
+    }).toEqual({ implementation: "directory", directory: ".objects", bucket: "" });
+  });
+
+  /**
+   * ID134, and it is forced rather than chosen: a function URL accepts a 6 MB request,
+   * so the document and its multipart overhead must fit under that. The person's own
+   * largest CV is 4.5 MB, which is the file the suite uploads. It lives here so a later
+   * slice can lower it for one environment without a code change.
+   */
+  it("refuses an upload over five megabytes, the ceiling a function URL forces", async () => {
+    const env = await load({ ...nothingSet, ...everyValue });
+
+    expect(env.UPLOAD_LIMIT_BYTES).toBe(5_242_880);
+  });
+
+  it("takes a limit that is set, so an environment can lower it without a code change", async () => {
+    const env = await load({ ...nothingSet, ...everyValue, UPLOAD_LIMIT_BYTES: "1024" });
+
+    expect(env.UPLOAD_LIMIT_BYTES).toBe(1024);
+  });
+
   it("refuses an empty value as it refuses a missing one", async () => {
     await expect(load({ ...nothingSet, ...everyValue, GOOGLE_CLIENT_SECRET: "" })).rejects.toThrow(
       /GOOGLE_CLIENT_SECRET/,
@@ -261,6 +299,9 @@ describe("the cloud runtime", () => {
     ...connection,
     ...appUrl,
     ...everyValue,
+    // The bucket the template creates in this same change (ID116, ID128). Required in
+    // this branch, so every case below states it.
+    STORAGE_BUCKET: "jobapp-dev-documents-123456789012",
   };
 
   it("takes the pooled connection string Secrets Manager holds", async () => {
@@ -347,6 +388,28 @@ describe("the cloud runtime", () => {
     });
 
     expect(env.AI_BASE_URL).toBe("https://dev.job-application.app/mock/v1");
+  });
+
+  /**
+   * ID128 in the cloud: the bucket the template creates in this same change (ID116).
+   * It is required and has no default, because a function pointed at no bucket, or at a
+   * bucket named by a guess, fails at the first upload rather than at the cold start —
+   * and the resource and the code arrive together, so there is no window in which
+   * requiring it would fail a deploy.
+   */
+  it("stores uploaded bytes in the bucket the template names", async () => {
+    const env = await load({ ...deployed, STORAGE_BUCKET: "jobapp-dev-documents-123456789012" });
+
+    expect({
+      implementation: env.STORAGE_IMPLEMENTATION,
+      bucket: env.STORAGE_BUCKET,
+    }).toEqual({ implementation: "s3", bucket: "jobapp-dev-documents-123456789012" });
+  });
+
+  it("fails the cold start without the bucket, and names the field", async () => {
+    await expect(load({ ...deployed, STORAGE_BUCKET: undefined })).rejects.toThrow(
+      /STORAGE_BUCKET/,
+    );
   });
 
   it("reads the port when the string carries one", async () => {

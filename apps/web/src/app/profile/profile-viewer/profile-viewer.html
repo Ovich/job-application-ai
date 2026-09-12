@@ -1,0 +1,65 @@
+<!--
+  `-mt-6` undoes the shell's own opening step: the profile's bar sits directly under the
+  AppBar in the mockup, where every other signed-in page opens with air above it.
+-->
+<div
+  [attr.data-view]="view()"
+  class="-mt-6 grid min-h-0 flex-1 lg:grid-cols-[minmax(440px,42%)_minmax(0,1fr)]"
+>
+  <section aria-label="Assistant" [class]="assistantClass()">
+    @if (profile(); as loaded) {
+      <profile-assistant
+        [questions]="questions()"
+        [on]="pressed()"
+        [returning]="returning()"
+        [reading]="reading()"
+        (answered)="answered($event)"
+        (skipped)="skipped($event)"
+        (clarified)="clarified($event)"
+        (cancelled)="cancelled()"
+      />
+    }
+  </section>
+
+  <div class="flex min-h-0 flex-col overflow-hidden max-lg:order-1">
+    <profile-bar
+      [name]="name()"
+      [readLine]="readLine()"
+      [view]="view()"
+      (addDocuments)="addDocuments()"
+      (toggleView)="toggleView()"
+    />
+
+    <!--
+      The scrolling column. The reveal is computed against this element's own rect and
+      moves its own `scrollTop`: it scrolls inside the shell, and `scrollIntoView` would
+      also move whatever contains it.
+    -->
+    <div #scroller [class]="scrollClass()">
+      @switch (state()) {
+        @case ("loading") {
+          <div uiSpinner></div>
+        }
+        @case ("empty") {
+          <div data-empty class="w-full max-w-[794px] rounded-lg border border-border bg-card p-4">
+            <p uiText tone="muted">
+              Nothing could be read from your documents yet. Add documents above and I will read
+              them.
+            </p>
+          </div>
+        }
+        @default {
+          @if (profile(); as loaded) {
+            <profile-sheet
+              [profile]="loaded"
+              [focused]="focused()"
+              [selected]="lifted()"
+              (select)="chosen($event)"
+              (overlayPressed)="overlayPressed()"
+            />
+          }
+        }
+      }
+    </div>
+  </div>
+</div>

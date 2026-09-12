@@ -1,0 +1,17 @@
+<span
+  data-part="prefix"
+  class="inline-flex max-w-[46%] items-center gap-1.5 rounded-md bg-accent py-1 pe-1.5 ps-2.5 font-semibold text-primary"
+>
+  <span data-part="what" uiText variant="ui" class="overflow-hidden text-ellipsis whitespace-nowrap"
+    >Scope <small class="font-normal opacity-80">· {{ what() }}</small></span
+  >
+  <button
+    type="button"
+    data-action="clear"
+    aria-label="Cancel the tool"
+    (click)="clear.emit()"
+    class="grid size-6 place-items-center rounded-sm text-primary leading-none opacity-75 hover:bg-card hover:opacity-100"
+  >
+    ×
+  </button>
+</span>

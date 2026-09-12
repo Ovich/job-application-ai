@@ -1,0 +1,10 @@
+{
+  "case": "intake.extract:CV-2025",
+  "stands_for": "cv-archive/2025/CV-2025.pdf, the CV of 2025. It states the same HEIG-VD post as leCVWeb.docx does, under a later title and with a fuller line, which is the other half of criterion 5's pair.",
+  "content": "{\"facts\":[{\"kind\":\"experience\",\"title\":\"R&D Collaborator in Software Engineering\",\"said\":\"R&D Collaborator in Software Engineering at HEIG-VD, Yverdon-les-Bains, since 2022.\",\"lines\":[{\"text\":\"Teaching assistance on the programming and DevOps courses.\",\"said\":\"Teaching assistance on the programming and DevOps courses.\"}]},{\"kind\":\"group\",\"title\":\"Programming languages\",\"said\":\"Programming languages: JavaScript, Java.\",\"lines\":[]},{\"kind\":\"group\",\"title\":\"DevOps and cloud\",\"said\":\"DevOps and cloud: Docker, Kubernetes.\",\"lines\":[]}]}",
+  "tool_calls": [],
+  "usage": {
+    "input_tokens": 2360,
+    "output_tokens": 170
+  }
+}

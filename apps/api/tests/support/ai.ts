@@ -1,9 +1,14 @@
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { app } from "../../src/app";
-import { type CaseName, createAi } from "../../src/lib/ai";
+// The client and the case name from the modules that define them, never from
+// `lib/ai`'s index. A test of a route that calls `lib/ai` stands that index in through
+// `vi.mock`, whose factory reaches this file; importing the index here would put this
+// module inside the graph of the module it is standing in for, and the two would wait
+// on each other for ever.
+import { createAi } from "../../src/lib/ai/client";
 import { type RecordedCaseFile, useFixtureRoot } from "../../src/lib/ai/mock";
+import type { CaseName } from "../../src/lib/ai/types";
 
 /**
  * The suite's own AI support (ID129).
@@ -35,14 +40,21 @@ export const forgetRequests = (): void => {
  * `fetch`, recorded and then answered by the application itself. No socket is opened
  * and no port is listened on: the request goes straight into `app.fetch`, which is the
  * same entry point the Node server and the Lambda runtime call.
+ *
+ * The application is imported when a request is actually made, not at the top of this
+ * file, and that is load-bearing. A test of a route that calls `lib/ai` itself stands
+ * `lib/ai` in through `vi.mock`, whose factory reaches this module; a static import of
+ * `src/app` here would put the application inside that factory's own import graph and
+ * the two would wait on each other for ever.
  */
-const recordingFetch = async (input: string | URL | Request, init?: RequestInit) => {
+export const recordingFetch = async (input: string | URL | Request, init?: RequestInit) => {
   const request = new Request(input, init);
   const read = request.clone();
   sent.push({
     headers: Object.fromEntries(read.headers),
     body: await read.json().catch(() => undefined),
   });
+  const { app } = await import("../../src/app");
   return app.fetch(request);
 };
 

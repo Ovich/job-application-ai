@@ -2,10 +2,13 @@ import { Hono } from "hono";
 import { mock } from "./lib/ai/mock";
 import { auth } from "./lib/auth";
 import { health } from "./routes/health";
+import { intake } from "./routes/intake";
 
 /** The product's own API, everything under `/api`. */
 const api = new Hono()
   .route("/health", health)
+  // The intake: what a person hands over, and the reading of it (ID118).
+  .route("/intake", intake)
   // The authentication library's routes, every method, the raw request handed over
   // and its response returned as is. This is the one mount and there is no route of
   // ours beside it: sign-in, callback, session and sign-out are the library's own

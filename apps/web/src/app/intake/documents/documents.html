@@ -1,0 +1,155 @@
+<section uiContainer width="md" uiStack gap="xl" aria-label="Your documents">
+  <div uiStack gap="sm">
+    <h1 uiText variant="figure" weight="semibold">Start with what you already have</h1>
+    <p uiText tone="muted">
+      Every CV you ever wrote tells a different part of the story. Give me all of them, the old ones
+      too. No file? Your LinkedIn page alone works, and so does a photo of a paper CV.
+    </p>
+  </div>
+
+  @if (refusal(); as sentence) {
+    <app-notice tone="warn" lead="Not added.">{{ sentence }}</app-notice>
+  }
+
+  @if (state() === "empty") {
+    <ui-drop-zone [accept]="accept" (filesChosen)="onFilesChosen($event)" />
+  }
+
+  @if (state() === "added") {
+    <div uiBox surface="card" radius="lg" p="lg" uiStack gap="md">
+      <div uiStack gap="none">
+        @for (row of documents(); track row.id) {
+          <div
+            data-row="document"
+            uiRow
+            gap="md"
+            class="border-border border-t py-2 first:border-t-0"
+          >
+            <span uiText variant="ui" class="min-w-0 flex-1 truncate">{{ row.filename }}</span>
+            <span uiText variant="caption" tone="muted" class="whitespace-nowrap">{{
+              kindOf(row)
+            }}</span>
+            <button
+              hlmBtn
+              variant="ghost"
+              size="sm"
+              type="button"
+              class="size-8 px-0"
+              [attr.aria-label]="'Remove ' + row.filename"
+              (click)="remove(row)"
+            >
+              <span aria-hidden="true">&times;</span>
+            </button>
+          </div>
+        }
+      </div>
+      <ui-drop-zone [compact]="true" [accept]="accept" (filesChosen)="onFilesChosen($event)" />
+    </div>
+  }
+
+  @if (state() === "reading") {
+    <div uiBox surface="card" radius="lg" p="lg">
+      <div uiStack gap="none">
+        @for (row of documents(); track row.id) {
+          <div
+            data-row="document"
+            uiRow
+            gap="md"
+            class="border-border border-t py-2 first:border-t-0"
+            [class.text-muted-foreground]="row.status === 'waiting'"
+          >
+            @if (row.status === "reading") {
+              <div uiSpinner></div>
+            } @else if (row.status === "read") {
+              <svg
+                class="size-4 shrink-0 text-ok"
+                viewBox="0 0 16 16"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                aria-hidden="true"
+              >
+                <path d="M3 8.5 6.5 12 13 4" />
+              </svg>
+            } @else if (row.status === "failed") {
+              <div
+                class="size-4 shrink-0 rounded-full border-2 border-danger"
+                aria-hidden="true"
+              ></div>
+            } @else {
+              <div
+                class="size-4 shrink-0 rounded-full border-2 border-border"
+                aria-hidden="true"
+              ></div>
+            }
+            <span uiText variant="ui" class="min-w-0 flex-1 truncate">{{ row.filename }}</span>
+            <span uiText variant="caption" tone="muted" class="whitespace-nowrap">{{
+              row.status
+            }}</span>
+          </div>
+        }
+        <div data-row="together" uiRow gap="md" class="border-border border-t py-2">
+          <div class="size-4 shrink-0 rounded-full border-2 border-border" aria-hidden="true"></div>
+          <span uiText variant="ui" tone="muted" class="min-w-0 flex-1 truncate"
+            >Put it together</span
+          >
+          <span uiText variant="caption" tone="muted" class="whitespace-nowrap"
+            >one profile, every fact with its source</span
+          >
+        </div>
+      </div>
+    </div>
+
+    @for (reason of failures(); track reason) {
+      <app-notice tone="warn" lead="One document could not be read.">{{ reason }}</app-notice>
+    }
+  }
+
+  @if (state() !== "reading") {
+    <div uiStack gap="xs">
+      <label uiText variant="label" tone="muted" for="linkedin-address"
+        >Your LinkedIn address <span class="font-normal">· optional</span></label
+      >
+      <input
+        hlmInput
+        id="linkedin-address"
+        type="url"
+        placeholder="linkedin.com/in/…"
+        [value]="address()"
+        (input)="onAddress($event)"
+      />
+    </div>
+
+    <p uiText variant="caption" tone="muted">
+      Your documents are read once, into your profile. They stay only so you can see where each fact
+      came from, and they go when you delete your account.
+    </p>
+  }
+
+  <div uiRow gap="md" class="flex-wrap">
+    @if (state() === "added") {
+      <span uiText variant="caption" tone="muted"
+        >About two minutes. You can leave, the reading goes on.</span
+      >
+    }
+    @if (state() === "reading") {
+      <span uiText variant="caption" tone="muted"
+        >You can leave this page. Your profile opens on its own when the reading is done.</span
+      >
+    }
+    @if (state() !== "reading") {
+      <span class="ms-auto max-sm:ms-0 max-sm:w-full">
+        <button
+          hlmBtn
+          size="lg"
+          type="button"
+          class="max-sm:w-full"
+          [disabled]="!ready()"
+          (click)="read()"
+        >
+          Read my documents
+        </button>
+      </span>
+    }
+  </div>
+</section>

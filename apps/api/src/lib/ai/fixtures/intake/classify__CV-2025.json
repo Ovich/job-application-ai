@@ -1,0 +1,7 @@
+{
+  "case": "intake.classify:CV-2025",
+  "stands_for": "cv-archive/2025/CV-2025.pdf, the person's own CV of September 2025 and the largest document they have at 4.3 MB, which is why it is the file the upload limit is measured against (ID134). A third year between 2022 and 2026, so the merge has three readings of one career to reconcile rather than two.",
+  "content": "{\"kind\":\"cv\",\"language\":\"fr\",\"confidence\":0.95,\"why\":\"Un CV mis en page avec une colonne laterale et des elements graphiques, ce qui explique son poids: en-tete avec photo et coordonnees, resume, postes dates jusqu'en 2025, formation, competences et langues. Le texte est en francais.\"}",
+  "tool_calls": [],
+  "usage": { "input_tokens": 1320, "output_tokens": 66 }
+}
