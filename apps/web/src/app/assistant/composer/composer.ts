@@ -28,7 +28,7 @@ export class Composer {
    * What the open tool is about — the word its use case names the relation with, and the
    * thing itself — or `null` when no tool is open and the dock is closed.
    */
-  public readonly tool = input<{ label: string; what: string } | null>(null);
+  public readonly tool = input<{ label: string; describes: string } | null>(null);
 
   /** Whether what is already chosen would be enough to save. */
   public readonly canSave = input<boolean>(false);

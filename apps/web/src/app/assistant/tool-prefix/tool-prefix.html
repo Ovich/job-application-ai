@@ -11,8 +11,8 @@
 -->
 <span
   data-part="prefix"
-  [uiTooltip]="what()"
-  class="flex items-center gap-1.5 self-stretch bg-[linear-gradient(to_right,var(--primary)_0%,var(--cv-accent)_51%,var(--primary)_100%)] bg-[length:200%_auto] py-2 pe-2 ps-3 font-semibold text-primary-foreground transition-[background-position] duration-500 hover:bg-right"
+  [uiTooltip]="describes()"
+  class="flex items-stretch self-stretch bg-[linear-gradient(to_right,var(--primary)_0%,var(--cv-accent)_51%,var(--primary)_100%)] bg-[length:200%_auto] font-semibold text-primary-foreground transition-[background-position] duration-500 hover:bg-right"
 >
   <!--
     The relation and nothing else: the chip says what kind of thing is open — `Adjusting
@@ -20,13 +20,25 @@
     this chip's to whisper on hover, which is also why nothing here can grow long enough
     to crowd the text bar beside it.
   -->
-  <span data-part="what" uiText variant="ui" class="whitespace-nowrap">{{ label() }}</span>
+  <span
+    data-part="what"
+    uiText
+    variant="ui"
+    class="flex items-center whitespace-nowrap ps-3 pe-3 text-primary-foreground"
+    >{{ label() }}</span
+  >
+
+  <!--
+    Leaving is its own square, in cherry, to the very edge: a way out that shares the
+    chip's own colour reads as part of the label rather than as a thing to press (the
+    person, 2026-09-13). Its cross is white and large enough to aim at.
+  -->
   <button
     type="button"
     data-action="clear"
     aria-label="Cancel the tool"
     (click)="clear.emit()"
-    class="grid size-6 place-items-center rounded-sm text-primary-foreground leading-none opacity-75 hover:bg-white/20 hover:opacity-100"
+    class="flex aspect-square items-center justify-center self-stretch bg-cherry text-[1.15rem] text-white leading-none transition-colors hover:brightness-125"
   >
     ×
   </button>

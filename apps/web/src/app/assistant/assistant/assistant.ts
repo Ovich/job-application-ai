@@ -33,7 +33,7 @@ import { Composer } from "../composer/composer";
 })
 export class Assistant {
   /** What the open tool is about, or `null` when the dock is closed. */
-  public readonly tool = input<{ label: string; what: string } | null>(null);
+  public readonly tool = input<{ label: string; describes: string } | null>(null);
 
   /** Whether what is already chosen would be enough to save. */
   public readonly canSave = input<boolean>(false);

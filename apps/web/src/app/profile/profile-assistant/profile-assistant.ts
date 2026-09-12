@@ -63,6 +63,14 @@ export type Pressed = { itemId: string; where: string; lineId: string | null };
 /** The word the intake names the thing in the prefix with. The builder will have its own. */
 const scope = "Adjusting scope";
 
+/**
+ * What that word means, said on hover. The intake's own sentence: the chip is two words
+ * and a person meeting it for the first time deserves the rest of it somewhere (the
+ * person, 2026-09-13).
+ */
+const whatScopeMeans =
+  "What you say next is kept as your rule about this item. Nothing is sent to anyone, and every CV respects it.";
+
 /** One thing the assistant has said, in the order it said it. */
 type Said = { kind: "ai"; text: string } | { kind: "ok"; text: string };
 
@@ -204,16 +212,16 @@ export class ProfileAssistant {
   });
 
   /**
-   * What the prefix says: this use case's own word, and nothing a document wrote. The
-   * word is supplied here and nowhere in core, which is what "concrete tool prefixes per
-   * use case" means; `what` stays in the contract as the thing the chip is about, for a
-   * use case whose relation needs saying, and the intake's chip renders the word alone.
+   * What the prefix says, and what hovering it explains: this use case's own word and
+   * its own sentence, supplied here and nowhere in core — which is what "concrete tool
+   * prefixes per use case" means. Nothing a document wrote appears in either: where a
+   * person is, is the tool's to say.
    */
   protected readonly tool = computed(() => {
     const pressed = this.clarifying();
-    if (pressed !== null) return { label: scope, what: pressed.where };
+    if (pressed !== null) return { label: scope, describes: whatScopeMeans };
     const question = this.open();
-    return question === null ? null : { label: scope, what: question.itemTitle };
+    return question === null ? null : { label: scope, describes: whatScopeMeans };
   });
 
   /** The count under the reading card: what is left for the person to say. */

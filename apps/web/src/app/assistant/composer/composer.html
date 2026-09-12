@@ -19,7 +19,7 @@
 -->
 <div class="flex items-stretch overflow-hidden rounded-lg border border-border bg-card">
   @if (tool(); as open) {
-    <tool-prefix [label]="open.label" [what]="open.what" (clear)="clear.emit()" />
+    <tool-prefix [label]="open.label" [describes]="open.describes" (clear)="clear.emit()" />
   }
 
   <div class="flex min-w-0 flex-1 items-center px-3 py-2">

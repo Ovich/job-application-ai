@@ -26,11 +26,12 @@ export class ToolPrefix {
   public readonly label = input.required<string>();
 
   /**
-   * What the tool is about, said on hover and nowhere else: a title a document wrote is
-   * data, and the chip shows none (the person, 2026-09-12) — but a person who has
-   * forgotten what they clicked should be able to ask without pressing anything.
+   * What this tool does, said on hover: the chip's word is short by necessity, and a
+   * person meeting it for the first time should be able to ask what it means without
+   * pressing anything (the person, 2026-09-13). Not what the tool is *about* — where a
+   * person is, is the tool's own to say.
    */
-  public readonly what = input.required<string>();
+  public readonly describes = input.required<string>();
 
   public readonly clear = output<void>();
 }
