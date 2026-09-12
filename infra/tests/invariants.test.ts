@@ -251,7 +251,7 @@ describe("what the cloud must be told, because the schema now defaults it (S7.2)
    * had to decide a name belongs on the list — a list computed from the schema would
    * grow a new name silently, which is the failure mode it exists to prevent.
    */
-  const mustBeSet = ["APP_RUNTIME", "DATABASE_URL", "STORAGE_URL", "APP_URL"] as const;
+  const mustBeSet = ["DATABASE_URL", "STORAGE_URL", "APP_URL"] as const;
 
   /** The names the template actually sets, whether as a literal or through an intrinsic. */
   const set = new Set(

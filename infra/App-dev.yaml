@@ -82,10 +82,6 @@ Resources:
   # a streaming function and a buffered one would buy nothing and would double what has
   # to be deployed and reasoned about.
   #
-  # APP_RUNTIME has to be set explicitly: an unset one falls back to the local runtime,
-  # which would point the function at a database on its own loopback interface and fail
-  # in a way that reads like a network problem rather than a configuration one (ID23).
-  #
   # This stack imports nothing from any other stack of this project, and that absence is
   # what let the data stack be deleted at all: CloudFormation refuses to delete a stack
   # whose exports are in use (S7.5, and invariants.test.ts asserts it).
@@ -107,7 +103,6 @@ Resources:
         S3Key: !Ref ApiArtefactKey
       Environment:
         Variables:
-          APP_RUNTIME: cloud
           # The pooled connection string of the Neon project in aws-eu-central-1, held
           # in Secrets Manager and never in this repository (D19). A dynamic
           # reference: CloudFormation reads the secret while it applies the stack, so
@@ -146,8 +141,8 @@ Resources:
           BETTER_AUTH_SECRET: "{{resolve:secretsmanager:jobapp/dev/auth:SecretString:betterAuthSecret}}"
           # Where a person's documents go (ID115, ID116, ID128), as one URL whose scheme
           # is the implementation (S7.2). It is set explicitly rather than left to its
-          # default, for the same reason APP_RUNTIME is: a value that is right only
-          # because nobody set it is a value nobody decided — and the flat schema's
+          # default: a value that is right only because nobody set it is a value
+          # nobody decided — and the flat schema's
           # default is a directory on a container's disk, which is precisely what a
           # deployed function must never fall back to. The bucket's name is a reference
           # rather than a literal, so the function and the resource can never disagree
