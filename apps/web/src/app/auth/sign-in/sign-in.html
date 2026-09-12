@@ -18,7 +18,7 @@
 
     @if (failed(); as provider) {
       <app-notice tone="danger" [lead]="nameOf(provider) + ' did not finish signing you in.'">
-        Nothing was created and nothing was charged. Try again, or continue with another account.
+        Try again, or continue with another account.
       </app-notice>
     }
 
