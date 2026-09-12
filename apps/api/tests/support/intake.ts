@@ -77,7 +77,7 @@ export const everyItem = (profile: ProfileAnswer): ProfileItem[] => {
   return all;
 };
 
-/** The item a case names, by the title the merge gave it. */
+/** The item a case names, by the title the reading gave it. */
 export const itemNamed = (profile: ProfileAnswer, title: string): ProfileItem => {
   const found = everyItem(profile).find((item) => item.title === title);
   if (found === undefined) {
@@ -93,20 +93,25 @@ export const itemNamed = (profile: ProfileAnswer, title: string): ProfileItem =>
 };
 
 /**
- * What a run's cases are, stated as a test states them: what each document's reading
- * said, what the merge produced, and what the reader found it could not tell.
+ * What a run's case is, stated as a test states them: the profile the reading answers
+ * with, and the questions it says those documents leave open.
  *
- * The classification and the extraction of each document are filled in here, because no
- * case in this slice is about either: what they are is the merge's own input, and a test
- * that spelled six of them out would bury the one answer it is actually about.
+ * **One run is one case now** (`ID157`, `ID158`). There is no classification, no
+ * extraction per document and no merge to fill in, so nothing is filled in: what a test
+ * states here is the whole of what the reader answered, and the two halves are written
+ * apart only because a test is about one of them at a time.
  */
 export type RunCases = {
   documents: readonly string[];
-  merge: unknown;
-  /** Left out when the case is about a run whose fourth step is never reached. */
-  questions?: unknown;
-  /** Written in place of the questions case, for a case about a malformed answer. */
-  questionsRaw?: string;
+  /**
+   * What the reading says the profile is. Left out when the case is about a run for
+   * which nothing was recorded at all — then no case is written, and the reading misses.
+   */
+  profile?: { items: unknown[] };
+  /** What the reading says those documents leave open. Left out means: nothing. */
+  questions?: { candidates: unknown[] };
+  /** Written in place of both halves, for a case about an answer the run cannot use. */
+  raw?: string;
 };
 
 /** A document's slug: its filename without the extension, as the handlers compose one. */
@@ -120,50 +125,42 @@ const recorded = (stands_for: string, content: string): Omit<RecordedCaseFile, "
   content,
 });
 
+/** The one case a run asks for, named by every document of the run, in the run's order. */
+export const caseNameFor = (documents: readonly string[]): string =>
+  `intake.read:${documents.map(slugOf).join("+")}`;
+
 /**
- * The cases one run needs, in the shape `withCases` takes.
+ * The one case a run needs, in the shape `withCases` takes.
  *
- * A case recorded here still stands for a real file: the documents are named by the
- * person's own, and what the merge and the fourth step say is what a reader should get
- * out of them (`D20`). What this function invents is nothing — it fills in the two
- * steps whose content no case here asserts.
+ * A case recorded here still stands for real files: the documents are named by the
+ * person's own, and what the reading says is what a reader should get out of them
+ * (`D20`). What this function invents is nothing — it joins the two halves a test wrote
+ * apart into the single answer the one call gives.
  */
 export const casesForRun = (run: RunCases): Record<string, Omit<RecordedCaseFile, "case">> => {
-  const slugs = run.documents.map(slugOf);
-  const cases: Record<string, Omit<RecordedCaseFile, "case">> = {};
-  for (const [at, slug] of slugs.entries()) {
-    cases[`intake.classify:${slug}`] = recorded(
-      `${run.documents[at]}, classified. No case in this slice is about the classification.`,
-      JSON.stringify({ kind: "cv", language: "en", confidence: 1, why: `${slug} is a CV.` }),
-    );
-    cases[`intake.extract:${slug}`] = recorded(
-      `${run.documents[at]}, read for what it states. Its facts are the merge's input and nothing here asserts them.`,
-      JSON.stringify({
-        facts: [{ kind: "experience", title: slug, said: `${slug} states a post.`, lines: [] }],
-      }),
-    );
+  const name = caseNameFor(run.documents);
+  if (run.raw !== undefined) {
+    return {
+      [name]: recorded(
+        "an answer this run cannot use: the reading fails, and with it every document of the run.",
+        run.raw,
+      ),
+    };
   }
-  cases[`intake.merge:${slugs.join("+")}`] = recorded(
-    "the readings of this run, reconciled into the profile the fourth step is then asked about.",
-    JSON.stringify(run.merge),
-  );
-  if (run.questionsRaw !== undefined) {
-    cases[`intake.questions:${slugs.join("+")}`] = recorded(
-      "an answer the fourth step cannot use: the step fails and no question is written.",
-      run.questionsRaw,
-    );
-  } else if (run.questions !== undefined) {
-    cases[`intake.questions:${slugs.join("+")}`] = recorded(
-      "what the reader found it could not tell from this run's documents.",
-      JSON.stringify(run.questions),
-    );
-  }
-  return cases as Record<string, Omit<RecordedCaseFile, "case">>;
+  // No profile stated is no case at all: the reading misses, which is what a run whose
+  // answer nobody recorded looks like from here (`ID113`).
+  if (run.profile === undefined) return {};
+  return {
+    [name]: recorded(
+      `${run.documents.join(", ")} read whole, in one call: the profile and the questions those documents leave open.`,
+      JSON.stringify({ items: run.profile.items, candidates: run.questions?.candidates ?? [] }),
+    ),
+  };
 };
 
 /**
- * One item as a merge states it, so a case says what a profile is in one line rather
- * than in the merge's whole shape. `from` is the documents that stated it, by slug.
+ * One item as the reading states it, so a case says what a profile is in one line
+ * rather than in the answer's whole shape. `from` is the parts that stated it, by slug.
  */
 export type MergedItem = {
   kind: string;
@@ -173,8 +170,8 @@ export type MergedItem = {
   entry?: { label: string };
 };
 
-/** A merged profile from items stated the short way above. */
-export const aProfileOf = (items: MergedItem[]): unknown => {
+/** The profile half of a reading's answer, from items stated the short way above. */
+export const aProfileOf = (items: MergedItem[]): { items: unknown[] } => {
   const asMerged = (item: MergedItem): unknown => ({
     kind: item.kind,
     title: item.title,
