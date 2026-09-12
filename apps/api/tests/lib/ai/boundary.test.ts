@@ -47,6 +47,50 @@ describe("the one client", () => {
 });
 
 /**
+ * The third edge, and the one the review added (`S7.1`, criterion 2; the person's own
+ * comment: *"If this module is our ai client, it should not hold any mocking handling in
+ * it. It needs to be pure client ignoring the fact its being called for mock or for
+ * real"*).
+ *
+ * A client that names the double is a client that can be written to suit it. The rule is
+ * therefore not "no branch on the double" — a branch is the symptom — but no *word* of
+ * it: no type the double needs, no loader, no comment explaining what the double will do
+ * with a value. The client attaches what any product attaches to a model call, which is
+ * what the call is about, and has no opinion about who reads it.
+ *
+ * **The one word that stays, and why it is not an exemption.** `X-Jobapp-Case` is a
+ * string on the wire, not a name in this module's vocabulary: the header's spelling is
+ * part of the request a caller sends and a provider ignores, so changing it would change
+ * the wire — and this slice changes no behaviour of any kind (criterion 29). It is
+ * matched below as the literal it is, and anything else spelling the double is a failure.
+ */
+describe("the client's own vocabulary", () => {
+  /** The words that exist in a source file only because a test double exists. */
+  const theDouble = [/\bmock/i, /\bfixture/i, /\bdouble\b/i, /CaseName/, /\brecorded\b/i];
+
+  const inLibAi = async (): Promise<string[]> =>
+    (await everySourceFile()).filter((file) =>
+      file.replaceAll("\\", "/").includes("/src/lib/ai/"),
+    );
+
+  it("has sources to grep at all, so the claim below cannot pass on an empty list", async () => {
+    expect((await inLibAi()).length).toBeGreaterThan(0);
+  });
+
+  it("holds no word that exists because a test double exists", async () => {
+    const found = (await inLibAi()).flatMap((file) => {
+      // The header's own spelling is the wire's, not this module's vocabulary.
+      const source = sourceOf(file).replaceAll("X-Jobapp-Case", "");
+      return theDouble
+        .filter((word) => word.test(source))
+        .map((word) => `${file.slice(api.length + 1).replaceAll("\\", "/")}: ${word.source}`);
+    });
+
+    expect(found).toEqual([]);
+  });
+});
+
+/**
  * The mock's import graph, walked from its entry point through its own relative
  * imports. Nothing it reaches may name a client, a transport or a socket: if the
  * closure holds none of them, no line of the mock can call out, whatever it is asked
