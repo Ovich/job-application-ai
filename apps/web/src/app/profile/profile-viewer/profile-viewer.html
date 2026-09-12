@@ -6,12 +6,16 @@
   [attr.data-view]="view()"
   class="-mt-6 grid min-h-0 flex-1 lg:grid-cols-[minmax(440px,42%)_minmax(0,1fr)]"
 >
-  <!--
-    The assistant's column (SL4): ProgressLine, ReadingCard, Composer, ToolDock,
-    ScopeTool and ToolPrefix all live here. Nothing is drawn in it in this slice, and
-    what this element does is hold open the space it will take.
-  -->
-  <section aria-label="Assistant" [class]="assistantClass()"></section>
+  <section aria-label="Assistant" [class]="assistantClass()">
+    @if (profile(); as loaded) {
+      <profile-assistant
+        [questions]="questions()"
+        [reading]="reading()"
+        (answered)="answered($event)"
+        (skipped)="skipped($event)"
+      />
+    }
+  </section>
 
   <div class="flex min-h-0 flex-col overflow-hidden max-lg:order-1">
     <profile-bar
@@ -22,7 +26,12 @@
       (toggleView)="toggleView()"
     />
 
-    <div [class]="scrollClass()">
+    <!--
+      The scrolling column. The reveal is computed against this element's own rect and
+      moves its own `scrollTop`: it scrolls inside the shell, and `scrollIntoView` would
+      also move whatever contains it.
+    -->
+    <div #scroller [class]="scrollClass()">
       @switch (state()) {
         @case ("loading") {
           <div uiSpinner></div>
@@ -37,7 +46,13 @@
         }
         @default {
           @if (profile(); as loaded) {
-            <profile-sheet [profile]="loaded" (select)="chosen($event)" />
+            <profile-sheet
+              [profile]="loaded"
+              [focused]="focused()"
+              [selected]="lifted()"
+              (select)="chosen($event)"
+              (overlayPressed)="overlayPressed()"
+            />
           }
         }
       }

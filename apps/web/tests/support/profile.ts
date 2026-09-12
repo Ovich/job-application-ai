@@ -81,7 +81,7 @@ export const aColumnOf = (height: number, regions: RegionSpec[]): RenderedColumn
   const before = observers.length;
 
   globalThis.ResizeObserver = class {
-    constructor(private readonly told: () => void) {
+    constructor(told: () => void) {
       observers.push(told);
     }
     observe(): void {}

@@ -1,0 +1,36 @@
+@if (tool(); as open) {
+  <tool-dock data-part="dock">
+    <ng-content />
+  </tool-dock>
+}
+
+<div class="flex items-center gap-2 rounded-lg border border-border bg-card py-2 pe-2 ps-3">
+  @if (tool(); as open) {
+    <tool-prefix [what]="open.what" (clear)="clear.emit()" />
+  }
+
+  <input
+    type="text"
+    data-part="composer"
+    aria-label="Message"
+    placeholder="Say it in your own words, or click anything in your profile"
+    [value]="draft()"
+    (input)="typed($event)"
+    class="min-w-0 flex-1 border-0 bg-transparent px-1 py-1.5 text-body outline-none"
+  />
+
+  <button
+    type="button"
+    data-part="send"
+    hlmBtn
+    size="sm"
+    [disabled]="!ready()"
+    (click)="save.emit()"
+  >
+    {{ verb() }}
+  </button>
+</div>
+
+<div uiText variant="caption" tone="muted" class="mt-2">
+  Nothing is sent to anyone. Your answers are kept as your rules, and every CV respects them.
+</div>

@@ -24,8 +24,19 @@ export type RegionRef = { kind: "item" | "line"; id: string };
 const REGION = [
   "region cursor-pointer rounded-[var(--radius)]",
   "transition-[box-shadow,background-color] duration-150",
-  "hover:not-has-[.region:hover]:bg-accent",
-  "hover:not-has-[.region:hover]:shadow-[0_0_0_2px_var(--primary),0_0_0_6px_#1d4ed81f]",
+  "not-data-[selected=true]:hover:not-has-[.region:hover]:bg-accent",
+  "not-data-[selected=true]:hover:not-has-[.region:hover]:shadow-[0_0_0_2px_var(--primary),0_0_0_6px_#1d4ed81f]",
+].join(" ");
+
+/**
+ * The selected region, and only it: `relative` and a stacking context above the sheet's
+ * overlay, which sits at `z-3`. Selecting a project must not light the post it hangs
+ * under, which is `ID125`'s second rule, and a class on the one selected element is what
+ * makes that true rather than a rule about ancestors.
+ */
+const SELECTED = [
+  "relative z-[4] bg-card",
+  "shadow-[0_0_0_2px_var(--primary),0_0_0_6px_#1d4ed81f]",
 ].join(" ");
 
 @Directive({
@@ -34,11 +45,15 @@ const REGION = [
     "[class]": "classes()",
     "[attr.data-region]": "region().kind",
     "[attr.data-id]": "region().id",
+    "[attr.data-selected]": "selected() ? 'true' : null",
     "(click)": "choose($event)",
   },
 })
 export class ProfileRegion {
   public readonly region = input.required<RegionRef>({ alias: "profileRegion" });
+
+  /** Whether this is the one region a tool is open on (`ID125`, rule 2). */
+  public readonly selected = input<boolean>(false);
 
   /** The region a person pressed. What opens on it is `SL4`'s. */
   public readonly select = output<RegionRef>();
@@ -50,7 +65,9 @@ export class ProfileRegion {
    */
   public readonly userClass = input<ClassValue>("", { alias: "class" });
 
-  protected readonly classes = computed(() => hlm(REGION, this.userClass()));
+  protected readonly classes = computed(() =>
+    hlm(REGION, this.selected() ? SELECTED : "", this.userClass()),
+  );
 
   /**
    * The press, stopped here. Regions nest, so a click on a chip would otherwise reach

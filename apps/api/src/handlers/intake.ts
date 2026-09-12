@@ -23,6 +23,7 @@ import {
 import { and, asc, desc, eq, inArray, isNull, ne } from "drizzle-orm";
 import type { Context } from "hono";
 import { createFactory } from "hono/factory";
+import { validator } from "hono/validator";
 import { stream } from "hono/streaming";
 import { z } from "zod";
 import { env } from "../env";
@@ -1271,68 +1272,80 @@ const keepAsRule = async (kept: {
  * through the item's `on delete cascade`, so it is the same `404` — a question never
  * points at nothing.
  */
-export const answerQuestion = factory.createHandlers(async (c) => {
-  const person = await asking(c);
-  if (person === null) return c.json({ error: "sign in first" }, 401);
+export const answerQuestion = factory.createHandlers(
+  // The body is validated at the boundary, and the shape travels out to the browser
+  // through `AppType` as every answer does: the screen is typed by the route.
+  validator("json", (value, c) => {
+    const said = answering.safeParse(value);
+    if (!said.success) return c.json({ error: "say which row, or say it in your own words" }, 400);
+    return said.data;
+  }),
+  async (c) => {
+    const person = await asking(c);
+    if (person === null) return c.json({ error: "sign in first" }, 401);
 
-  const said = answering.safeParse(await c.req.json().catch(() => ({})));
-  if (!said.success) return c.json({ error: "say which row, or say it in your own words" }, 400);
+    const said = c.req.valid("json");
 
-  const [row] = await db
-    .select()
-    .from(question)
-    .where(and(eq(question.id, c.req.param("id") ?? ""), eq(question.userId, person.id)));
-  if (row === undefined) return c.json({ error: "no such question" }, 404);
+    const [row] = await db
+      .select()
+      .from(question)
+      .where(and(eq(question.id, c.req.param("id") ?? ""), eq(question.userId, person.id)));
+    if (row === undefined) return c.json({ error: "no such question" }, 404);
 
-  if (said.data.skip === true) {
-    await db.update(question).set({ state: "skipped" }).where(eq(question.id, row.id));
-    return c.json({ skipped: row.id }, 200);
-  }
+    if (said.skip === true) {
+      await db.update(question).set({ state: "skipped" }).where(eq(question.id, row.id));
+      return c.json({ skipped: row.id }, 200);
+    }
 
-  const words = (said.data.words ?? "").trim();
-  const [option] =
-    said.data.optionId === undefined
-      ? []
-      : await db
-          .select()
-          .from(questionOption)
-          .where(
-            and(eq(questionOption.id, said.data.optionId), eq(questionOption.questionId, row.id)),
-          );
-  if (said.data.optionId !== undefined && option === undefined) {
-    return c.json({ error: "no such answer" }, 404);
-  }
+    const words = (said.words ?? "").trim();
+    const [option] =
+      said.optionId === undefined
+        ? []
+        : await db
+            .select()
+            .from(questionOption)
+            .where(
+              and(eq(questionOption.id, said.optionId), eq(questionOption.questionId, row.id)),
+            );
+    if (said.optionId !== undefined && option === undefined) {
+      return c.json({ error: "no such answer" }, 404);
+    }
 
-  const [item] = await db.select().from(profileItem).where(eq(profileItem.id, row.itemId));
-  if (item === undefined) return c.json({ error: "no such question" }, 404);
+    const [item] = await db.select().from(profileItem).where(eq(profileItem.id, row.itemId));
+    if (item === undefined) return c.json({ error: "no such question" }, 404);
 
-  // The picked row's own rule, and the person's words beside it when they typed as well.
-  // The last row carries no rule, so picking it is the same thing as saying it yourself.
-  const picked = option?.rule ?? null;
-  if (picked === null && words === "") {
-    return c.json({ error: "pick a row, or say it in your own words" }, 400);
-  }
-  const text =
-    picked === null ? ruleAbout(item.title, words) : words === "" ? picked : `${picked} — ${words}`;
+    // The picked row's own rule, and the person's words beside it when they typed as well.
+    // The last row carries no rule, so picking it is the same thing as saying it yourself.
+    const picked = option?.rule ?? null;
+    if (picked === null && words === "") {
+      return c.json({ error: "pick a row, or say it in your own words" }, 400);
+    }
+    const text =
+      picked === null
+        ? ruleAbout(item.title, words)
+        : words === ""
+          ? picked
+          : `${picked} — ${words}`;
 
-  const kept = await keepAsRule({
-    userId: person.id,
-    itemId: row.itemId,
-    // A scope question asks what the person's part was; a conflict and a provenance
-    // question both settle what may never be claimed (the spec's *The rules*).
-    kind: row.kind === "scope" ? "scope" : "constraint",
-    text,
-    source: picked === null ? "own words" : "answer",
-    questionId: row.id,
-  });
+    const kept = await keepAsRule({
+      userId: person.id,
+      itemId: row.itemId,
+      // A scope question asks what the person's part was; a conflict and a provenance
+      // question both settle what may never be claimed (the spec's *The rules*).
+      kind: row.kind === "scope" ? "scope" : "constraint",
+      text,
+      source: picked === null ? "own words" : "answer",
+      questionId: row.id,
+    });
 
-  await db
-    .update(question)
-    .set({ state: "answered", answeredAt: new Date() })
-    .where(eq(question.id, row.id));
+    await db
+      .update(question)
+      .set({ state: "answered", answeredAt: new Date() })
+      .where(eq(question.id, row.id));
 
-  return c.json({ rule: kept }, 200);
-});
+    return c.json({ rule: kept }, 200);
+  },
+);
 
 /**
  * What the person said about an item nobody asked them about.
@@ -1341,31 +1354,35 @@ export const answerQuestion = factory.createHandlers(async (c) => {
  * mounted and proved here; **its screen is `SL5`'s** (the tool the person opens
  * themselves, which proposes nothing).
  */
-export const writeItemRule = factory.createHandlers(async (c) => {
-  const person = await asking(c);
-  if (person === null) return c.json({ error: "sign in first" }, 401);
+export const writeItemRule = factory.createHandlers(
+  validator("json", (value, c) => {
+    const said = z.object({ words: z.string().trim().min(1) }).safeParse(value);
+    if (!said.success) return c.json({ error: "say it in your own words" }, 400);
+    return said.data;
+  }),
+  async (c) => {
+    const person = await asking(c);
+    if (person === null) return c.json({ error: "sign in first" }, 401);
 
-  const said = z
-    .object({ words: z.string().min(1) })
-    .safeParse(await c.req.json().catch(() => ({})));
-  if (!said.success) return c.json({ error: "say it in your own words" }, 400);
+    const said = c.req.valid("json");
 
-  const [item] = await db
-    .select()
-    .from(profileItem)
-    .where(and(eq(profileItem.id, c.req.param("id") ?? ""), eq(profileItem.userId, person.id)));
-  if (item === undefined) return c.json({ error: "no such item" }, 404);
+    const [item] = await db
+      .select()
+      .from(profileItem)
+      .where(and(eq(profileItem.id, c.req.param("id") ?? ""), eq(profileItem.userId, person.id)));
+    if (item === undefined) return c.json({ error: "no such item" }, 404);
 
-  const kept = await keepAsRule({
-    userId: person.id,
-    itemId: item.id,
-    kind: "scope",
-    text: ruleAbout(item.title, said.data.words.trim()),
-    source: "own words",
-    questionId: null,
-  });
-  return c.json({ rule: kept }, 200);
-});
+    const kept = await keepAsRule({
+      userId: person.id,
+      itemId: item.id,
+      kind: "scope",
+      text: ruleAbout(item.title, said.words.trim()),
+      source: "own words",
+      questionId: null,
+    });
+    return c.json({ rule: kept }, 200);
+  },
+);
 
 /** This person's whole profile, or an empty one. Never anybody else's, and never a 404. */
 export const readProfile = factory.createHandlers(async (c) => {

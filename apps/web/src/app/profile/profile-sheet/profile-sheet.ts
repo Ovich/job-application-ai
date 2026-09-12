@@ -2,6 +2,7 @@ import { Component, computed, input, output } from "@angular/core";
 import type { InferResponseType } from "hono/client";
 import type { api } from "../../lib/api";
 import { UiText } from "../../ui/typography/text/text";
+import { ProfileMark } from "../profile-mark/profile-mark";
 import { ProfileRegion, type RegionRef } from "../profile-region/profile-region";
 
 /**
@@ -38,14 +39,31 @@ const yearsIn = (items: Item[]): number[] =>
 
 @Component({
   selector: "profile-sheet",
-  imports: [ProfileRegion, UiText],
+  imports: [ProfileMark, ProfileRegion, UiText],
   templateUrl: "./profile-sheet.html",
 })
 export class ProfileSheet {
   public readonly profile = input.required<Answer>();
 
-  /** The region a person pressed. Nothing consumes it yet; the tool is `SL4`'s. */
+  /**
+   * A tool is open: the sheet dims under the overlay and the selected region rises
+   * above it (`ID125`, rules 1 and 2).
+   */
+  public readonly focused = input<boolean>(false);
+
+  /** The one region that rises and is revealed, by its own id. */
+  public readonly selected = input<string | null>(null);
+
+  /** The region a person pressed. What opens on it is the viewer's. */
   public readonly select = output<RegionRef>();
+
+  /**
+   * A press on the overlay, which is a press on the sheet itself and never one that
+   * landed on a region: the overlay is a pseudo-element and captures no pointer, so the
+   * event's own target is what tells the two apart. It is the prefix's ×, and the
+   * parent treats it as a skip (the mockup's handoff note).
+   */
+  public readonly overlayPressed = output<void>();
 
   /** Every project under a post, which is what the Experience panel's count is of. */
   protected readonly projectsUnderPosts = computed(() =>
@@ -158,5 +176,11 @@ export class ProfileSheet {
 
   protected chosen(region: RegionRef): void {
     this.select.emit(region);
+  }
+
+  /** Only a press on the sheet's own background is the overlay's; a region's is not. */
+  protected pressed(event: Event): void {
+    if (event.target !== event.currentTarget) return;
+    this.overlayPressed.emit();
   }
 }

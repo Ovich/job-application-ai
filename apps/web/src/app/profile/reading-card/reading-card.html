@@ -1,0 +1,18 @@
+<div class="mt-1.5 grid grid-cols-[repeat(auto-fit,minmax(100px,1fr))] gap-2.5">
+  <div data-figure="documents" class="rounded-md border border-border px-3.5 py-3">
+    <b uiText variant="figure" weight="semibold" class="block leading-tight">{{ documents() }}</b>
+    <span uiText variant="ui" tone="muted">documents</span>
+  </div>
+
+  @if (facts() > 0) {
+    <div data-figure="facts" class="rounded-md border border-border px-3.5 py-3">
+      <b uiText variant="figure" weight="semibold" class="block leading-tight">{{ facts() }}</b>
+      <span uiText variant="ui" tone="muted">facts, each with its source</span>
+    </div>
+  }
+
+  <div data-figure="left" class="rounded-md border border-border px-3.5 py-3">
+    <b uiText variant="figure" weight="semibold" class="block leading-tight">{{ left() }}</b>
+    <span uiText variant="ui" tone="muted">things only you know</span>
+  </div>
+</div>

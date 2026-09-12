@@ -87,7 +87,7 @@ describe("the answers, as rows (criterion 5)", () => {
 
     expect(rows().length).toBe(2);
     expect(textOf(rows().at(-1)?.querySelector("[data-part=label]"))).toBe("Something else");
-    expect(rows().at(-1)?.dataset["own"]).toBe("1");
+    expect(rows().at(-1)?.getAttribute("data-own")).toBe("1");
   });
 
   it("marks the picked row alone, and says so once", async () => {
@@ -116,15 +116,15 @@ describe("the answers, as rows (criterion 5)", () => {
     await fixture.whenStable();
 
     expect(picked).toEqual([{ optionId: "own" }]);
-    expect(rows()[3]?.dataset["rule"]).toBeUndefined();
+    expect(rows()[3]?.getAttribute("data-rule")).toBeNull();
   });
 });
 
 describe("the foot (criterion 8)", () => {
   it("offers the skip in the builder's own words", async () => {
     const { fixture, element } = await rendered(aQuestion);
-    const skipped: void[] = [];
-    fixture.componentInstance.skip.subscribe(() => skipped.push(undefined));
+    const skipped: true[] = [];
+    fixture.componentInstance.skip.subscribe(() => skipped.push(true));
 
     const skip = element.querySelector<HTMLButtonElement>("[data-action=skip]");
     expect(textOf(skip)).toBe("Skip, ask me in the builder");

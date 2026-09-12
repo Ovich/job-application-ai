@@ -88,7 +88,7 @@ describe("the overlay (criterion 10, rule 1)", () => {
   it("dims the sheet and captures nothing", async () => {
     const { sheet } = await rendered(true, "k8s");
 
-    expect(sheet?.dataset["focused"]).toBe("true");
+    expect(sheet?.getAttribute("data-focused")).toBe("true");
     // The overlay is a pseudo-element with `pointer-events: none`, never a sibling with
     // a handler: a `stopPropagation` is precisely what the handoff note forbids.
     expect(sheet?.querySelector("[data-overlay]")).toBeNull();
@@ -97,14 +97,14 @@ describe("the overlay (criterion 10, rule 1)", () => {
   it("is not there at all while no tool is open", async () => {
     const { sheet } = await rendered(false, null);
 
-    expect(sheet?.dataset["focused"]).toBeUndefined();
+    expect(sheet?.getAttribute("data-focused")).toBeNull();
   });
 
   /** A press on the sheet itself, and never one that landed on a region. */
   it("says the overlay was pressed when the press landed on the sheet and not a region", async () => {
     const { fixture, sheet, regionOf } = await rendered(true, "k8s");
-    const pressed: void[] = [];
-    fixture.componentInstance.overlayPressed.subscribe(() => pressed.push(undefined));
+    const pressed: true[] = [];
+    fixture.componentInstance.overlayPressed.subscribe(() => pressed.push(true));
 
     sheet?.click();
     expect(pressed.length).toBe(1);
@@ -118,9 +118,9 @@ describe("what rises above it (criterion 10, rule 2)", () => {
   it("raises the selected region alone, and not what it hangs under", async () => {
     const { regionOf } = await rendered(true, "chip");
 
-    expect(regionOf("chip")?.dataset["selected"]).toBe("true");
-    expect(regionOf("project")?.dataset["selected"]).toBeUndefined();
-    expect(regionOf("post")?.dataset["selected"]).toBeUndefined();
+    expect(regionOf("chip")?.getAttribute("data-selected")).toBe("true");
+    expect(regionOf("project")?.getAttribute("data-selected")).toBeNull();
+    expect(regionOf("post")?.getAttribute("data-selected")).toBeNull();
   });
 });
 

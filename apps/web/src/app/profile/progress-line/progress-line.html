@@ -1,0 +1,13 @@
+<span uiText variant="ui">Your profile</span>
+
+<!--
+  Decoration beside the count, and nothing a reader is asked to interpret: it carries no
+  `role`, no `aria-valuenow` and no figure of its own.
+-->
+<div aria-hidden="true" class="h-1.5 flex-1 overflow-hidden rounded-full bg-muted">
+  <i data-part="bar" [style.width]="filled()" class="block h-full rounded-full bg-ok"></i>
+</div>
+
+<b data-part="count" uiText variant="ui" weight="semibold" class="whitespace-nowrap">{{
+  count()
+}}</b>

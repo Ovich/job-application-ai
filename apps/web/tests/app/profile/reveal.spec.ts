@@ -55,7 +55,9 @@ describe("the reveal (criterion 10, rule 4)", () => {
     column.regionAt(1).scrollIntoView = intoView;
 
     revealInColumn(column.column, column.regionAt(1));
-    vi.advanceTimersByTime(200);
+    // The animation settles on the first frame at or after its 200 ms, which is what a
+    // browser does too, so the case waits one frame past the end for the exact landing.
+    vi.advanceTimersByTime(220);
 
     expect(column.column.scrollTop).toBe(theMiddle);
     expect(above.scrollTop).toBe(0);
@@ -71,7 +73,11 @@ describe("the reveal (criterion 10, rule 4)", () => {
     expect(halfway).toBeGreaterThan(0);
     expect(halfway).toBeLessThan(theMiddle);
 
+    // At its 200 ms it is there, to within the fraction of a pixel the last frame before
+    // the end leaves; the exact landing is that frame's successor.
     vi.advanceTimersByTime(100);
+    expect(column.column.scrollTop).toBeCloseTo(theMiddle, 0);
+    vi.advanceTimersByTime(20);
     expect(column.column.scrollTop).toBe(theMiddle);
   });
 
@@ -85,7 +91,7 @@ describe("the reveal (criterion 10, rule 4)", () => {
 
   it("redoes the placement, without animation, when the column resizes", async () => {
     revealInColumn(column.column, column.regionAt(1));
-    vi.advanceTimersByTime(200);
+    vi.advanceTimersByTime(220);
     column.column.scrollTop = 0;
 
     column.resizes();
@@ -95,7 +101,7 @@ describe("the reveal (criterion 10, rule 4)", () => {
 
   it("stops following once the person has scrolled it themselves", async () => {
     revealInColumn(column.column, column.regionAt(1));
-    vi.advanceTimersByTime(200);
+    vi.advanceTimersByTime(220);
     column.scrolledByHand();
     column.column.scrollTop = 42;
 
@@ -108,10 +114,10 @@ describe("the reveal (criterion 10, rule 4)", () => {
 describe("back to the head (criterion 10, rule 5)", () => {
   it("returns the column to its head and keeps nothing in view", async () => {
     revealInColumn(column.column, column.regionAt(1));
-    vi.advanceTimersByTime(200);
+    vi.advanceTimersByTime(220);
 
     backToHead(column.column);
-    vi.advanceTimersByTime(200);
+    vi.advanceTimersByTime(220);
 
     expect(column.column.scrollTop).toBe(0);
 

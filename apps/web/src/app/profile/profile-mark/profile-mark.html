@@ -1,0 +1,18 @@
+@if (of().question !== null && of().rule === null) {
+  <!--
+    The adjust glyph, drawn as a triangle rather than typed as a character, so it keeps
+    the warn token and no font decides its shape.
+  -->
+  <span
+    data-part="ask"
+    aria-hidden="true"
+    class="me-1.5 inline-block size-0 border-r-[5px] border-r-transparent border-b-[9px] border-b-warn border-l-[5px] border-l-transparent align-[1px]"
+  ></span>
+  <span data-part="askword" uiText variant="caption" tone="warn" weight="semibold">your part?</span>
+}
+
+@if (of().rule; as kept) {
+  <span data-part="rule" uiText variant="caption" tone="ok" weight="semibold" class="basis-full"
+    >✓ {{ kept.text }}</span
+  >
+}

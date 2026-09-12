@@ -1,12 +1,22 @@
-import { Component, computed, inject, signal } from "@angular/core";
+import {
+  Component,
+  computed,
+  type ElementRef,
+  effect,
+  inject,
+  signal,
+  viewChild,
+} from "@angular/core";
 import { Router } from "@angular/router";
 import type { InferResponseType } from "hono/client";
 import { api } from "../../lib/api";
 import { UiSpinner } from "../../ui/spinner/spinner";
 import { UiText } from "../../ui/typography/text/text";
+import { ProfileAssistant } from "../profile-assistant/profile-assistant";
 import { ProfileBar } from "../profile-bar/profile-bar";
 import type { RegionRef } from "../profile-region/profile-region";
 import { ProfileSheet } from "../profile-sheet/profile-sheet";
+import { backToHead, revealInColumn, stopFollowing } from "../reveal";
 
 /**
  * The profile viewer (`D5`, `D6`, `ID123`): a route of its own, openable at any time,
@@ -14,24 +24,26 @@ import { ProfileSheet } from "../profile-sheet/profile-sheet";
  *
  * It is the CV builder's layout, deliberately — the assistant on the left, the document
  * on the right — so the person learns one workbench and the builder inherits a shell
- * already used against real content. **The left column is `SL4`'s** and is not drawn,
- * not stubbed and not styled here: what this slice draws is the right column and the
- * bar above it.
+ * already used against real content.
  *
- * The class reads the RPC client and hands the sheet a signal; the template reaches no
- * service (`AGENTS.md` 3). Types travel Drizzle to `AppType` to `InferResponseType` and
- * arrive here inferred — nothing about the answer is declared in this application, and
- * `@app/db` is never reached from the browser.
+ * **This is the one place that talks to the interface.** The assistant says which
+ * question was answered and with what; this class writes it and reads the profile back,
+ * so a rule shown under an item is a rule the database agrees with and not one the
+ * browser remembered. The class reads the RPC client and the templates bind signals
+ * (`AGENTS.md` 3). Types travel Drizzle to `AppType` to `InferResponseType` and arrive
+ * inferred; `@app/db` is never reached from the browser.
  *
- * The selection goes out of the sheet and stops here. What opens on a region is the
- * tool, and the tool is `SL4`'s.
+ * **While a tool is open the profile behaves as the prototype behaves** (`ID125`): the
+ * sheet dims, the question's region rises above the overlay and is brought to the middle
+ * of the scrolling column, and when the assistant's own run ends the column returns to
+ * its head. The arithmetic of that is `profile/reveal`'s and none of it is here.
  */
 
 type Answer = InferResponseType<typeof api.intake.profile.$get, 200>;
 
 @Component({
   selector: "profile-viewer",
-  imports: [ProfileBar, ProfileSheet, UiSpinner, UiText],
+  imports: [ProfileAssistant, ProfileBar, ProfileSheet, UiSpinner, UiText],
   templateUrl: "./profile-viewer.html",
 })
 export class ProfileViewer {
@@ -42,8 +54,37 @@ export class ProfileViewer {
   /** Which column is showing below 1024 px. The profile is what a person came for. */
   protected readonly view = signal<"sheet" | "chat">("sheet");
 
-  /** The last region pressed. Nothing consumes it yet; the tool that will is `SL4`'s. */
+  /** The last region pressed by hand. The tool it opens is `SL5`'s. */
   protected readonly selected = signal<RegionRef | null>(null);
+
+  private readonly scroller = viewChild<ElementRef<HTMLElement>>("scroller");
+
+  protected readonly questions = computed(() => this.profile()?.questions ?? []);
+
+  /** The question the assistant has open, which is the first one still waiting. */
+  private readonly open = computed(
+    () => this.questions().find((question) => question.state === "waiting") ?? null,
+  );
+
+  /**
+   * Which region the sheet lifts: the open question's item, or the region the person
+   * pressed themselves. Nothing is lifted when no tool is open.
+   */
+  protected readonly lifted = computed(() => this.open()?.itemId ?? null);
+
+  protected readonly focused = computed(() => this.lifted() !== null);
+
+  /**
+   * What the reading produced, for the card's three figures.
+   *
+   * **`facts` is 0 because the profile cannot honestly count them yet** (`F4`): whether
+   * a count of facts can be shown honestly is the spec's own open question, and the card
+   * leaves the figure out rather than invent one.
+   */
+  protected readonly reading = computed(() => ({
+    documents: this.profile()?.documents ?? 0,
+    facts: 0,
+  }));
 
   protected readonly state = computed<"loading" | "empty" | "loaded">(() => {
     const profile = this.profile();
@@ -89,6 +130,27 @@ export class ProfileViewer {
 
   constructor() {
     void this.load();
+
+    /**
+     * The reveal, redone whenever the lifted region changes. It is an effect and not a
+     * handler because the region is a computed over the profile the interface answered:
+     * a run that ends, a question that is skipped and a reload all move it, and each of
+     * them should place the column the same way.
+     */
+    effect((onCleanup) => {
+      const column = this.scroller()?.nativeElement;
+      const lifted = this.lifted();
+      if (column === undefined) return;
+      if (lifted === null) {
+        // The assistant's own run has ended: the reading is what the person came to see
+        // and the last question left them deep inside a list (`ID125`, rule 5).
+        if (this.profile() !== null && this.questions().length > 0) backToHead(column);
+        return;
+      }
+      const region = column.querySelector<HTMLElement>(`[data-id="${lifted}"]`);
+      if (region !== null) revealInColumn(column, region);
+      onCleanup(() => {});
+    });
   }
 
   private async load(): Promise<void> {
@@ -114,8 +176,44 @@ export class ProfileViewer {
     this.selected.set(region);
   }
 
+  /** The overlay's press is the prefix's ×, which while a question waits is a skip. */
+  protected overlayPressed(): void {
+    const question = this.open();
+    if (question !== null) void this.skipped({ questionId: question.id });
+  }
+
+  /** One answer written, and the profile read back, so the rule shown is the rule kept. */
+  protected async answered(said: {
+    questionId: string;
+    optionId?: string;
+    words?: string;
+  }): Promise<void> {
+    await api.intake.questions[":id"].answer.$post({
+      param: { id: said.questionId },
+      json: {
+        ...(said.optionId === undefined ? {} : { optionId: said.optionId }),
+        ...(said.words === undefined ? {} : { words: said.words }),
+      },
+    });
+    await this.load();
+  }
+
+  protected async skipped(said: { questionId: string }): Promise<void> {
+    await api.intake.questions[":id"].answer.$post({
+      param: { id: said.questionId },
+      json: { skip: true },
+    });
+    await this.load();
+  }
+
   /** The way back to the drop zone, which is what an empty profile needs most. */
   protected addDocuments(): Promise<boolean> {
     return this.router.navigateByUrl("/documents");
+  }
+
+  /** The observer and the two listeners the reveal set up go with the column. */
+  protected stopWatching(): void {
+    const column = this.scroller()?.nativeElement;
+    if (column !== undefined) stopFollowing(column);
   }
 }
