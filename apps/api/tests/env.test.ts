@@ -1,13 +1,27 @@
+import { resolve } from "node:path";
+import { pathToFileURL } from "node:url";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 /**
  * The configuration, read once at boot.
  *
- * Both runtimes are asked for the same five connection fields, because `lib/db` builds
- * one options object out of them and no branch below it (D16). What differs is where
- * they come from: the laptop's are the throwaway defaults of `docker-compose.yml`, and
- * the deployed function's arrive as the single pooled connection string Neon issues and
- * Secrets Manager holds (D19).
+ * **One flat object and one schema since `S7.2`**, which is the one seam of that slice
+ * whose cases are rewritten, because its interface is what the person asked to change.
+ * Both runtimes are asked for the same `DATABASE_URL`, because `lib/db` hands the
+ * driver that string and has no branch below it (D16). What differs is where the string
+ * comes from: the laptop's is the throwaway `docker-compose.yml` committed, and the
+ * deployed function's is the pooled string Neon issues and Secrets Manager holds (D19).
+ *
+ * **Nine cases of this file went with the union, and each for the same reason**: it had
+ * no subject left. `partsOf` is gone, so the five that asserted a host, a port, a
+ * decoded password, a missing string and a local runtime ignoring a connection string
+ * assert nothing a person can now get wrong — the driver reads the string, and `lib/db`
+ * hands it over whole. And `APP_URL`, `STORAGE_URL` and `DATABASE_URL` have defaults a
+ * laptop runs on, so the three cases that proved a half-configured cloud fails its cold
+ * start are no longer this module's to make: that guarantee moved to
+ * `infra/tests/invariants.test.ts`, which asserts the template sets every one of them
+ * (criterion 11). What is left of the pair is the case below that a malformed URL
+ * throws at load naming the variable, in either runtime.
  *
  * The provider clients are the other thing both runtimes are asked for, and since SL5
  * the two answer the same way (ID60): every one of the six values, `APP_URL` and
@@ -36,11 +50,6 @@ const nothingSet = {
   AWS_REGION: undefined,
   PORT: undefined,
   DATABASE_URL: undefined,
-  DATABASE_HOST: undefined,
-  DATABASE_PORT: undefined,
-  DATABASE_NAME: undefined,
-  DATABASE_USER: undefined,
-  DATABASE_PASSWORD: undefined,
   APP_URL: undefined,
   GOOGLE_CLIENT_ID: undefined,
   GOOGLE_CLIENT_SECRET: undefined,
@@ -53,9 +62,7 @@ const nothingSet = {
   AI_API_KEY: undefined,
   AI_MODEL: undefined,
   AI_MOCK_PACE: undefined,
-  STORAGE_IMPLEMENTATION: undefined,
-  STORAGE_DIRECTORY: undefined,
-  STORAGE_BUCKET: undefined,
+  STORAGE_URL: undefined,
   UPLOAD_LIMIT_BYTES: undefined,
 };
 
@@ -98,34 +105,20 @@ describe("the local runtime", () => {
   it("answers on the Docker container with nothing set but the provider clients", async () => {
     const env = await load({ ...nothingSet, ...everyValue });
 
-    expect({
-      runtime: env.APP_RUNTIME,
-      host: env.DATABASE_HOST,
-      port: env.DATABASE_PORT,
-      database: env.DATABASE_NAME,
-      user: env.DATABASE_USER,
-      password: env.DATABASE_PASSWORD,
-    }).toEqual({
-      runtime: "local",
-      host: "localhost",
-      port: 5432,
-      database: "jobapp",
-      user: "jobapp",
-      password: "local_dev_only",
-    });
+    expect(env.DATABASE_URL).toBe("postgresql://jobapp:local_dev_only@localhost:5432/jobapp");
   });
 
-  it("ignores a connection string, so a shell that has one does not reach the container", async () => {
-    const env = await load({
-      ...nothingSet,
-      ...everyValue,
-      DATABASE_URL: "postgresql://api:elsewhere@somewhere.neon.tech/neondb",
-    });
+  /**
+   * S7.2: the same variable in both runtimes, which is the whole of the person's
+   * request. Where the union made a laptop ignore a connection string it happened to
+   * have, there is one now and it is taken; the driver reads the host, the credentials
+   * and the TLS mode out of it, and `lib/db` has no branch left.
+   */
+  it("takes a connection string that is set, in this runtime as in the other", async () => {
+    const elsewhere = "postgresql://api:elsewhere@somewhere.neon.tech/neondb?sslmode=require";
+    const env = await load({ ...nothingSet, ...everyValue, DATABASE_URL: elsewhere });
 
-    expect({ host: env.DATABASE_HOST, password: env.DATABASE_PASSWORD }).toEqual({
-      host: "localhost",
-      password: "local_dev_only",
-    });
+    expect(env.DATABASE_URL).toBe(elsewhere);
   });
 
   it("reads the Google client, and where the browser reaches the app", async () => {
@@ -250,11 +243,18 @@ describe("the local runtime", () => {
   it("stores uploaded bytes in a directory under the repository, with nothing set", async () => {
     const env = await load({ ...nothingSet, ...everyValue });
 
-    expect({
-      implementation: env.STORAGE_IMPLEMENTATION,
-      directory: env.STORAGE_DIRECTORY,
-      bucket: env.STORAGE_BUCKET,
-    }).toEqual({ implementation: "directory", directory: ".objects", bucket: "" });
+    expect(env.STORAGE_URL).toBe(pathToFileURL(resolve(".objects")).href);
+  });
+
+  /**
+   * S7.2: one URL, and its scheme is which implementation `lib/storage` builds. A
+   * scheme neither implementation answers to is a configuration nobody can serve, so it
+   * fails at load naming the variable rather than at the first upload.
+   */
+  it("refuses a storage URL of a scheme no implementation answers to", async () => {
+    await expect(
+      load({ ...nothingSet, ...everyValue, STORAGE_URL: "https://example.com/objects" }),
+    ).rejects.toThrow(/STORAGE_URL/);
   });
 
   /**
@@ -299,29 +299,19 @@ describe("the cloud runtime", () => {
     ...connection,
     ...appUrl,
     ...everyValue,
-    // The bucket the template creates in this same change (ID116, ID128). Required in
-    // this branch, so every case below states it.
-    STORAGE_BUCKET: "jobapp-dev-documents-123456789012",
+    // The bucket the template creates, as the one URL whose scheme is the
+    // implementation (ID116, ID128, S7.2).
+    STORAGE_URL: "s3://jobapp-dev-documents-123456789012",
   };
 
-  it("takes the pooled connection string Secrets Manager holds", async () => {
+  /**
+   * S7.2: carried whole, rather than split into five fields and rebuilt. `sslmode` is
+   * in it and stays in it, which is what makes `lib/db`'s last branch unnecessary.
+   */
+  it("carries the pooled connection string Secrets Manager holds, whole", async () => {
     const env = await load(deployed);
 
-    expect({
-      runtime: env.APP_RUNTIME,
-      host: env.DATABASE_HOST,
-      port: env.DATABASE_PORT,
-      database: env.DATABASE_NAME,
-      user: env.DATABASE_USER,
-      password: env.DATABASE_PASSWORD,
-    }).toEqual({
-      runtime: "cloud",
-      host: "ep-example-pooler.eu-central-1.aws.neon.tech",
-      port: 5432,
-      database: "neondb",
-      user: "api",
-      password: "npg_secret",
-    });
+    expect(env.DATABASE_URL).toBe(connection.DATABASE_URL);
   });
 
   /**
@@ -333,8 +323,12 @@ describe("the cloud runtime", () => {
    * button (ID23). Eight fields, one rule, and `BETTER_AUTH_SECRET` among them: without
    * it the library signs every session cookie with its own public default and does not
    * even throw, because the deployed function sets no `NODE_ENV` (ID71, F7).
+   *
+   * `APP_URL` left this list at S7.2 and did not stop being required of the cloud: the
+   * flat schema gives it a laptop's default, so what refuses a half-configured function
+   * is `infra/tests/invariants.test.ts` asserting the template sets it (criterion 11).
    */
-  it.each(Object.keys({ ...everyValue, ...appUrl }))(
+  it.each(Object.keys(everyValue))(
     "fails the cold start without %s, and names the field",
     async (field) => {
       await expect(load({ ...deployed, [field]: undefined })).rejects.toThrow(new RegExp(field));
@@ -398,43 +392,14 @@ describe("the cloud runtime", () => {
    * requiring it would fail a deploy.
    */
   it("stores uploaded bytes in the bucket the template names", async () => {
-    const env = await load({ ...deployed, STORAGE_BUCKET: "jobapp-dev-documents-123456789012" });
+    const env = await load(deployed);
 
-    expect({
-      implementation: env.STORAGE_IMPLEMENTATION,
-      bucket: env.STORAGE_BUCKET,
-    }).toEqual({ implementation: "s3", bucket: "jobapp-dev-documents-123456789012" });
+    expect(env.STORAGE_URL).toBe("s3://jobapp-dev-documents-123456789012");
   });
 
-  it("fails the cold start without the bucket, and names the field", async () => {
-    await expect(load({ ...deployed, STORAGE_BUCKET: undefined })).rejects.toThrow(
-      /STORAGE_BUCKET/,
+  it("fails the cold start when the connection string is not a URL, naming the variable", async () => {
+    await expect(load({ ...deployed, DATABASE_URL: "the-secret-was-not-set" })).rejects.toThrow(
+      /DATABASE_URL/,
     );
-  });
-
-  it("reads the port when the string carries one", async () => {
-    const env = await load({
-      ...deployed,
-      DATABASE_URL: "postgresql://api:npg_secret@ep-example-pooler.neon.tech:6543/neondb",
-    });
-
-    expect(env.DATABASE_PORT).toBe(6543);
-  });
-
-  it("decodes the escapes a password puts in a URL, which a driver must not receive raw", async () => {
-    const env = await load({
-      ...deployed,
-      DATABASE_URL: "postgresql://api:np%40g%2Fsecret@ep-example-pooler.neon.tech/neondb",
-    });
-
-    expect(env.DATABASE_PASSWORD).toBe("np@g/secret");
-  });
-
-  it("fails the cold start when the connection string is missing, rather than a request", async () => {
-    await expect(load({ ...deployed, DATABASE_URL: undefined })).rejects.toThrow();
-  });
-
-  it("fails the cold start when the connection string is not a URL", async () => {
-    await expect(load({ ...deployed, DATABASE_URL: "the-secret-was-not-set" })).rejects.toThrow();
   });
 });

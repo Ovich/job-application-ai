@@ -144,13 +144,15 @@ Resources:
           LINKEDIN_CLIENT_ID: "{{resolve:secretsmanager:jobapp/dev/auth:SecretString:linkedinClientId}}"
           LINKEDIN_CLIENT_SECRET: "{{resolve:secretsmanager:jobapp/dev/auth:SecretString:linkedinClientSecret}}"
           BETTER_AUTH_SECRET: "{{resolve:secretsmanager:jobapp/dev/auth:SecretString:betterAuthSecret}}"
-          # Where a person's documents go (ID115, ID116, ID128). The implementation is
-          # named explicitly rather than left to its default, for the same reason
-          # APP_RUNTIME is: a value that is right only because nobody set it is a value
-          # nobody decided. The bucket's name is a reference rather than a literal, so
-          # the function and the resource can never disagree about it.
-          STORAGE_IMPLEMENTATION: s3
-          STORAGE_BUCKET: !Ref DocumentsBucket
+          # Where a person's documents go (ID115, ID116, ID128), as one URL whose scheme
+          # is the implementation (S7.2). It is set explicitly rather than left to its
+          # default, for the same reason APP_RUNTIME is: a value that is right only
+          # because nobody set it is a value nobody decided — and the flat schema's
+          # default is a directory on a container's disk, which is precisely what a
+          # deployed function must never fall back to. The bucket's name is a reference
+          # rather than a literal, so the function and the resource can never disagree
+          # about it.
+          STORAGE_URL: !Sub "s3://${DocumentsBucket}"
 
   # The URL is unreachable except through the distribution, which signs every request it
   # forwards. An unauthenticated function URL would be a second, public front door to the

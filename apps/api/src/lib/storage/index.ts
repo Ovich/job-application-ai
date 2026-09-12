@@ -1,3 +1,4 @@
+import { fileURLToPath } from "node:url";
 import { env } from "../../env";
 import { createDirectoryStorage } from "./directory";
 import { createS3Storage } from "./s3";
@@ -23,11 +24,20 @@ import type { Storage } from "./types";
  * nothing above here stores a byte anywhere else.
  */
 
-/** The implementation configuration chose, built once, at module load. */
+/**
+ * The implementation configuration chose, built once, at module load.
+ *
+ * The choice is the URL's scheme and nothing beside it (S7.2): `s3://<bucket>` is the
+ * bucket the deployed function writes into, `file:///…` the directory a developer runs.
+ * One value carries both which implementation and where, so there is no configuration
+ * in which the two disagree.
+ */
+const where = new URL(env.STORAGE_URL);
+
 export const storage: Storage =
-  env.STORAGE_IMPLEMENTATION === "s3"
-    ? createS3Storage({ bucket: env.STORAGE_BUCKET })
-    : createDirectoryStorage({ directory: env.STORAGE_DIRECTORY });
+  where.protocol === "s3:"
+    ? createS3Storage({ bucket: where.hostname })
+    : createDirectoryStorage({ directory: fileURLToPath(where) });
 
 export { createDirectoryStorage, type DirectoryStorageConfig } from "./directory";
 export { keyFor, type ObjectKey } from "./key";
