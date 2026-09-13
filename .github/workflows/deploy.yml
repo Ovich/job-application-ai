@@ -149,15 +149,26 @@ jobs:
       # `import.meta` is empty, that line throws `Invalid URL` while the module is still
       # loading, and every route is dead behind a distribution that falls back to the
       # page. Lambda reads `index.mjs` for the handler `index.handler` as it reads
-      # `index.js`, so nothing else moves. `tests/deploy/api-bundle.test.ts` builds this
-      # same command on every push and fails on a warning, because this shipped with the
-      # warning printed and nobody reading it.
+      # `index.js`, so nothing else moves.
+      #
+      # The banner is what ESM costs. Dependencies bundled in here are CommonJS and call
+      # `require` at load; in an ESM output esbuild routes those through a shim that
+      # throws `Dynamic require of "fs" is not supported` unless a `require` exists, and
+      # module scope in ESM has none. `createRequire` builds the one those packages
+      # expect. It is written without a space so that the flag survives being read back
+      # out of this file by the test below.
+      #
+      # `tests/deploy/api-bundle.test.ts` builds this same command on every push, fails
+      # on a warning, and — because a warning is not the only way a bundle can be dead —
+      # loads the result and asks it for its handler. Both of this file's ways of
+      # shipping a broken function got past a green pipeline before that test existed.
       - name: Bundle the API
         id: api
         run: |
           set -euo pipefail
           pnpm exec esbuild apps/api/src/lambda.ts \
             --bundle --platform=node --target=node24 --format=esm --minify --sourcemap \
+            --banner:js='import{createRequire}from"node:module";globalThis.require=createRequire(import.meta.url);' \
             --outfile=dist/lambda/index.mjs
           # The answers the function serves itself. `App-dev.yaml` gives it no
           # `AI_BASE_URL`, so it is its own double and reads these from beside the
