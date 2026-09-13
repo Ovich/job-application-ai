@@ -16,7 +16,7 @@ import { aiThroughTheApp, forgetRequests, requestsSent, withCases } from "../../
  * name in the message rather than returning something invented.
  */
 
-const cvFr = "intake.classify:2026-08-30_cv_FR" as const;
+const cvFr = "intake.read:2026-08-30_cv_FR" as const;
 
 /**
  * What the call is about, in the three strings `lib/ai` now takes (`ID145`), and the
@@ -25,8 +25,8 @@ const cvFr = "intake.classify:2026-08-30_cv_FR" as const;
  * test says the case out loud so that what the header carries is asserted against a
  * literal rather than against the client's own arithmetic.
  */
-const aboutCvFr = { feature: "intake", step: "classify", input: "2026-08-30_cv_FR" };
-const aboutNothingRecorded = { feature: "intake", step: "classify", input: "never-recorded" };
+const aboutCvFr = { feature: "intake", step: "read", input: "2026-08-30_cv_FR" };
+const aboutNothingRecorded = { feature: "intake", step: "read", input: "never-recorded" };
 
 const content = '{"kind":"cv","language":"fr","confidence":0.97}';
 
@@ -88,7 +88,7 @@ describe("a call through lib/ai", () => {
     try {
       await expect(
         aiThroughTheApp().ask([{ role: "user", content: "?" }], aboutNothingRecorded),
-      ).rejects.toThrow(/intake\.classify:never-recorded/);
+      ).rejects.toThrow(/intake\.read:never-recorded/);
     } finally {
       cases.dispose();
     }
@@ -149,7 +149,7 @@ describe("askStreaming", () => {
           [{ role: "user", content: "?" }],
           aboutNothingRecorded,
         ));
-      }).rejects.toThrow(/intake\.classify:never-recorded/);
+      }).rejects.toThrow(/intake\.read:never-recorded/);
     } finally {
       cases.dispose();
     }

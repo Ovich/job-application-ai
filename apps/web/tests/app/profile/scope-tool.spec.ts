@@ -47,7 +47,7 @@ const rendered = async (
   tool:
     | typeof aQuestion
     | { kind: "asked"; where: string; lead: string; options: readonly unknown[] }
-    | { kind: "clarification" },
+    | { kind: "clarification"; where?: string },
 ) => {
   const fixture = TestBed.createComponent(ScopeTool);
   fixture.componentRef.setInput("tool", tool);
@@ -132,7 +132,7 @@ describe("the answers, as rows (criterion 5)", () => {
  */
 describe("the tool the person opened themselves (SL5, criteria 1 and 3)", () => {
   it("renders one fixed sentence, the foot line and nothing else: no option anywhere", async () => {
-    const { element, rows } = await rendered({ kind: "clarification" });
+    const { element, rows } = await rendered({ kind: "clarification", where: "" });
 
     expect(textOf(element.querySelector("[data-part=lead]"))).toBe(
       "Tell me what I should know about it, in your own words.",
@@ -146,7 +146,7 @@ describe("the tool the person opened themselves (SL5, criteria 1 and 3)", () => 
   });
 
   it("names nothing: the clicked thing's own text is the prefix's, and the tool says where it is not", async () => {
-    const { element } = await rendered({ kind: "clarification" });
+    const { element } = await rendered({ kind: "clarification", where: "" });
 
     // The one fixed sentence says "it", never what "it" is. A tool that composed
     // "Your part in Kubernetes at Nestlé" would be inferring, in a smaller place.
@@ -154,16 +154,16 @@ describe("the tool the person opened themselves (SL5, criteria 1 and 3)", () => 
     expect(textOf(element)).not.toContain("Kubernetes");
   });
 
-  it("offers Cancel, and says so when it is pressed", async () => {
-    const { fixture, element } = await rendered({ kind: "clarification" });
-    const cancelled: true[] = [];
-    fixture.componentInstance.cancel.subscribe(() => cancelled.push(true));
+  /**
+   * One way out, and the tool is not it (the person, 2026-09-13): the prefix's × closes
+   * whatever is open. A tool carrying its own Cancel beside a chip that also closes it
+   * asks a person to learn two gestures for one thing and to wonder whether they differ.
+   */
+  it("offers no way out of its own: closing is the prefix's", async () => {
+    const { element } = await rendered({ kind: "clarification", where: "Kubernetes · row 1" });
 
-    const cancel = element.querySelector<HTMLButtonElement>("[data-action=cancel]");
-    expect(textOf(cancel)).toBe("Cancel");
-
-    cancel?.click();
-    expect(cancelled.length).toBe(1);
+    expect(element.querySelector("[data-action=cancel]")).toBeNull();
+    expect(textOf(element)).not.toContain("Cancel");
   });
 });
 

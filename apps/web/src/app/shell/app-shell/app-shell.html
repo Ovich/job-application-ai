@@ -1,4 +1,4 @@
-<div uiStack gap="none" class="min-h-screen">
+<div uiStack gap="none" class="h-dvh overflow-hidden">
   @if (user(); as user) {
     <div class="relative">
       <app-bar [user]="user" (signOut)="signOut()" (deleteAccount)="openDeletion()" />

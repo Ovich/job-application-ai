@@ -1,5 +1,18 @@
-import { Component, computed, input, output, signal, viewChild } from "@angular/core";
+import {
+  afterNextRender,
+  Component,
+  computed,
+  ElementRef,
+  inject,
+  input,
+  output,
+  signal,
+  viewChild,
+} from "@angular/core";
 import { Assistant } from "../../assistant/assistant/assistant";
+import { guide } from "../../guide/guide";
+import { atOnce, GUIDE_PACE } from "../../guide/pace";
+import { doThis, say, show, shownOf } from "../../guide/say";
 import { UiText } from "../../ui/typography/text/text";
 import { ProgressLine } from "../progress-line/progress-line";
 import { ReadingCard } from "../reading-card/reading-card";
@@ -49,11 +62,27 @@ export type Question = {
   options: { id: string; label: string; hint: string; rule: string | null }[];
 };
 
-/** The region the person pressed, in its own words: the item, and its own text. */
-export type Pressed = { itemId: string; title: string };
+/**
+ * The region the person pressed: which item it is, and **where** it is — a name for an
+ * item, and `the post · row 3` for a line. Never the line's own sentence: the sheet has
+ * already lifted it, and saying it again in the tool is the same thing twice (the
+ * person, 2026-09-13).
+ *
+ * A line carries the item it belongs to and its own id beside it, because what is
+ * written about a line is kept on that item.
+ */
+export type Pressed = { itemId: string; where: string; lineId: string | null };
 
 /** The word the intake names the thing in the prefix with. The builder will have its own. */
-const scope = "Scope";
+const scope = "Adjusting scope";
+
+/**
+ * What that word means, said on hover. The intake's own sentence: the chip is two words
+ * and a person meeting it for the first time deserves the rest of it somewhere (the
+ * person, 2026-09-13).
+ */
+const whatScopeMeans =
+  "What you say next is kept as your rule about this item. Nothing is sent to anyone, and every CV respects it.";
 
 /** One thing the assistant has said, in the order it said it. */
 type Said = { kind: "ai"; text: string } | { kind: "ok"; text: string };
@@ -62,13 +91,20 @@ type Said = { kind: "ai"; text: string } | { kind: "ok"; text: string };
   selector: "profile-assistant",
   imports: [Assistant, ProgressLine, ReadingCard, ScopeTool, UiText],
   templateUrl: "./profile-assistant.html",
-  host: { class: "flex min-h-0 min-w-0 flex-col" },
+  host: { class: "flex min-h-0 min-w-0 flex-1 flex-col" },
 })
 export class ProfileAssistant {
   public readonly questions = input<Question[]>([]);
 
   /** The region the person pressed themselves, if any. Nothing is pressed to begin with. */
   public readonly on = input<Pressed | null>(null);
+
+  /**
+   * Whether the person put the tool down by pressing the dimmed profile (the person,
+   * 2026-09-13). Nothing is written and nothing is decided; the question is still
+   * waiting and opens again the moment they press a region.
+   */
+  public readonly dismissed = input<boolean>(false);
 
   /** Whether this is a visit after the reading rather than the run that produced it. */
   public readonly returning = input<boolean>(false);
@@ -79,17 +115,66 @@ export class ProfileAssistant {
     facts: 0,
   });
 
+  /** The opening's first sentence, and how much of it has landed. */
+  protected readonly opening = computed(
+    () =>
+      `I read your ${this.readLine()}. Every fact on the right carries the document it came from, and I wrote nothing that is not in them.`,
+  );
+
+  protected readonly openingShown = computed(() => shownOf(this.opening(), this.told()));
+
+  /** The sentence after the card, and how much of it has landed. */
+  protected readonly tail =
+    "Some facts say what you did but not what your part was, or two documents disagree. I ask only those. Everything else I could tell from your documents.";
+
+  protected readonly tailShown = computed(() => shownOf(this.tail, this.toldTail()));
+
+  /** The opener — `First, Java.` — and how much of it has landed. */
+  protected readonly openerShown = computed(() => shownOf(this.opener(), this.spoken()));
+
+  /** `1 document` or `4 documents`: a count a person reads, not a count with an `s`. */
+  protected readonly readLine = computed(() => {
+    const documents = this.reading().documents;
+    return `${documents} document${documents === 1 ? "" : "s"}`;
+  });
+
   public readonly answered = output<{ questionId: string; optionId?: string; words?: string }>();
 
   public readonly skipped = output<{ questionId: string }>();
 
-  /** What the person said about an item nobody asked about (`US8`). */
-  public readonly clarified = output<{ itemId: string; words: string }>();
+  /** What the person said about an item nobody asked about (`US8`), or one of its lines. */
+  public readonly clarified = output<{ itemId: string; words: string; lineId?: string }>();
 
   /** The person-opened tool, closed with nothing written. */
   public readonly cancelled = output<void>();
 
   private readonly assistant = viewChild(Assistant);
+
+  private readonly host = inject(ElementRef<HTMLElement>);
+
+  private readonly pace = inject(GUIDE_PACE);
+
+  /**
+   * How much of the opening has landed (`2026-09-13-guided-effects.spec.md`).
+   *
+   * The column starts empty and fills the way an answer does: the first sentence a word
+   * at a time, the reading card as one beat (`G5`), the second sentence, and only then
+   * the tool. A person arriving learns that this column is a conversation by watching it
+   * be one — which no sentence explaining it would achieve.
+   *
+   * `told` counts the words of whichever message is landing; the template shows that
+   * many. `card` and `spoken` are the beats that are not prose.
+   */
+  protected readonly told = signal(0);
+
+  protected readonly toldTail = signal(0);
+
+  protected readonly card = signal(false);
+
+  protected readonly spoken = signal(0);
+
+  /** Whether the sequence has let the tool open yet (`G3`: it is a step, not state). */
+  protected readonly toolLetOpen = signal(false);
 
   /** Which row of the open question the person has picked, if any. */
   protected readonly picked = signal<string | null>(null);
@@ -112,13 +197,26 @@ export class ProfileAssistant {
   protected readonly left = computed(() => this.waiting().length);
 
   /**
-   * The question the assistant has open: the one waiting on the region the person
-   * pressed, or the first one still waiting when they pressed nothing (`S4.2`).
+   * The questions nobody has answered yet, skipped ones included. A skipped question
+   * still marks its item `scope to clarify`, so the item still requires clarification and a
+   * press on it reopens the question with its rows rather than the tool that proposes
+   * nothing (the person, 2026-09-13). The assistant's own order is over `waiting` alone:
+   * a skipped question is put off until the builder, never asked again unprompted.
+   */
+  private readonly stillOpen = computed(() =>
+    this.questions().filter((question) => question.state !== "answered"),
+  );
+
+  /**
+   * The question the assistant has open: the one still open on the item the person
+   * pressed, or the first one waiting when they pressed nothing (`S4.2`). A line has no
+   * question of its own, so a press on one never opens its item's.
    */
   protected readonly open = computed(() => {
     const pressed = this.on();
     if (pressed === null) return this.waiting()[0] ?? null;
-    return this.waiting().find((question) => question.itemId === pressed.itemId) ?? null;
+    if (pressed.lineId !== null) return null;
+    return this.stillOpen().find((question) => question.itemId === pressed.itemId) ?? null;
   });
 
   /** The region the person pressed and no question is waiting on: their own tool. */
@@ -168,23 +266,31 @@ export class ProfileAssistant {
   });
 
   /**
-   * What is open in the dock. A clarification carries nothing, which is what makes the
-   * shape that proposes nothing unable to propose.
+   * What is open in the dock. A clarification carries where the person is and no option,
+   * which is what makes the shape that proposes nothing unable to propose.
    */
-  protected readonly asked = computed<OpenTool | null>(() =>
-    this.clarifying() === null ? this.question() : { kind: "clarification" },
-  );
+  protected readonly asked = computed<OpenTool | null>(() => {
+    const pressed = this.clarifying();
+    if (pressed !== null) return { kind: "clarification", where: pressed.where };
+    // Put down by a press on the dimmed profile, and staying down until a region is
+    // pressed again.
+    if (this.dismissed()) return null;
+    // The sequence opens the first question as a step of its own (`G3`). A tool the
+    // person asked for by pressing a region never waits for anybody.
+    return this.toolLetOpen() ? this.question() : null;
+  });
 
   /**
-   * What the prefix says: this use case's own word, and the clicked thing's own text or
-   * the open question's item. The word is supplied here and nowhere in core, which is
-   * what "concrete tool prefixes per use case" means.
+   * What the prefix says, and what hovering it explains: this use case's own word and
+   * its own sentence, supplied here and nowhere in core — which is what "concrete tool
+   * prefixes per use case" means. Nothing a document wrote appears in either: where a
+   * person is, is the tool's to say.
    */
   protected readonly tool = computed(() => {
     const pressed = this.clarifying();
-    if (pressed !== null) return { label: scope, what: pressed.title };
+    if (pressed !== null) return { label: scope, describes: whatScopeMeans };
     const question = this.open();
-    return question === null ? null : { label: scope, what: question.itemTitle };
+    return question === null ? null : { label: scope, describes: whatScopeMeans };
   });
 
   /** The count under the reading card: what is left for the person to say. */
@@ -198,6 +304,63 @@ export class ProfileAssistant {
       },
     ];
   });
+
+  constructor() {
+    /**
+     * The intake's own guided sequence, run on the screen's **first render** (`G3`).
+     *
+     * Every visit, not once per person, and not again while they stay: answering a
+     * question does not replay the opener; leaving and coming back does. The steps are
+     * this use case's words and this use case's tool — `app/guide/` holds none of them.
+     *
+     * A person who types, clicks or scrolls abandons the performance and keeps
+     * everything: the words whole, the card shown, the tool open (`G2`).
+     */
+    afterNextRender(() => {
+      /**
+       * **Only a brand new chat is performed** (the person, 2026-09-13).
+       *
+       * The opening is written for somebody seeing this column for the first time in
+       * this visit. A conversation that already has something in it — a person coming
+       * back, a question already answered or put off — is a conversation being resumed,
+       * and typing its first line out again would be the interface pretending to think
+       * about something it has already said. Everything lands at once instead, and the
+       * tool still opens.
+       */
+      const pace = this.reduced() || !this.brandNew() ? atOnce : this.pace;
+      guide(
+        [
+          say("opening", this.opening(), this.told, pace),
+          show("card", this.card, pace),
+          say("tail", this.tail, this.toldTail, pace),
+          doThis("tool", () => this.toolLetOpen.set(true), pace),
+          say("opener", this.opener(), this.spoken, pace),
+        ],
+        this.host.nativeElement as HTMLElement,
+      );
+    });
+  }
+
+  /**
+   * Whether this column has nothing in it yet: nothing said after the opening, nobody
+   * returning, no question answered or put off. Only then is the opening performed.
+   */
+  private brandNew(): boolean {
+    return (
+      !this.returning() &&
+      this.stream().length === 0 &&
+      this.answeredCount() + this.deferred() === 0
+    );
+  }
+
+  /** What a person asked for when they asked for less motion (`G6`). */
+  private reduced(): boolean {
+    return (
+      typeof window !== "undefined" &&
+      typeof window.matchMedia === "function" &&
+      window.matchMedia("(prefers-reduced-motion: reduce)").matches
+    );
+  }
 
   protected pick(chosen: { optionId: string }): void {
     this.picked.set(chosen.optionId);
@@ -213,7 +376,11 @@ export class ProfileAssistant {
     const pressed = this.clarifying();
     if (pressed !== null) {
       if (words === "") return;
-      this.clarified.emit({ itemId: pressed.itemId, words });
+      this.clarified.emit({
+        itemId: pressed.itemId,
+        words,
+        ...(pressed.lineId === null ? {} : { lineId: pressed.lineId }),
+      });
       this.forget();
       return;
     }

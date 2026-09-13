@@ -21,14 +21,20 @@ import { ToolPrefix } from "../tool-prefix/tool-prefix";
   selector: "composer",
   imports: [HlmBtn, ToolDock, ToolPrefix, UiText],
   templateUrl: "./composer.html",
-  host: { class: "block border-border border-t bg-card px-6 pt-4 pb-5" },
+  // The working end of the column, and it says so (the person, 2026-09-13): a surface of
+  // its own, a firmer line above it and a shadow that lifts it off the conversation, so
+  // what has been said and what is being answered are told apart at a glance.
+  host: {
+    class:
+      "flex min-h-0 flex-col border-border border-t-2 bg-muted px-6 pt-4 pb-5 shadow-[0_-6px_16px_-12px_rgb(0_0_0/0.35)]",
+  },
 })
 export class Composer {
   /**
    * What the open tool is about — the word its use case names the relation with, and the
    * thing itself — or `null` when no tool is open and the dock is closed.
    */
-  public readonly tool = input<{ label: string; what: string } | null>(null);
+  public readonly tool = input<{ label: string; describes: string } | null>(null);
 
   /** Whether what is already chosen would be enough to save. */
   public readonly canSave = input<boolean>(false);

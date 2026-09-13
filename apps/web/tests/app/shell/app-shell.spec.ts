@@ -4,7 +4,7 @@ import { RouterTestingHarness } from "@angular/router/testing";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { routes } from "../../../src/app/app.routes";
 import type { Provider } from "../../../src/app/auth/session";
-import { resetIntake } from "../../support/intake";
+import { itemOf, profileIs, resetIntake } from "../../support/intake";
 import { failing, reset, sentTo, signedInAs, signedOut, unreachable } from "../../support/session";
 
 /**
@@ -32,8 +32,13 @@ describe("the shell", () => {
   beforeEach(() => {
     reset();
     // SL3 filled the outlet: `/profile` now loads the viewer, which asks the intake
-    // for the profile the moment it is created. The stand-in answers an empty one.
+    // for the profile the moment it is created. It is given one that is not empty,
+    // because an empty profile now leaves for `/documents` (the person, 2026-09-12) and
+    // these cases are about the deletion gate, not about having nothing read.
     resetIntake();
+    profileIs({
+      summary: itemOf({ id: "summary", kind: "summary", title: "Someone with a profile." }),
+    });
     TestBed.configureTestingModule({ providers: [provideRouter(routes)] });
   });
 

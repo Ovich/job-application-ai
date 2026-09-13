@@ -1,16 +1,50 @@
+<!--
+  The chip is meant to be seen: it is the one thing saying that what a person types now
+  goes somewhere particular, and a soft tint said it too quietly (the person,
+  2026-09-12). So it carries a gradient twice its own width and slides it on hover — the
+  mechanic from the snippet they sent — in this product's own blue rather than the
+  snippet's purple, because the palette belongs to `styles.css` and not to a paste.
+
+  It has no rounding and no margin of its own: the composer's box has no padding, so the
+  prefix meets the border on three sides and the box's own corners clip it (the person,
+  2026-09-13).
+-->
 <span
   data-part="prefix"
-  class="inline-flex max-w-[46%] items-center gap-1.5 rounded-md bg-accent py-1 pe-1.5 ps-2.5 font-semibold text-primary"
+  [uiTooltip]="describes()"
+  class="flex items-stretch self-stretch bg-[linear-gradient(to_right,var(--primary)_0%,var(--cv-accent)_51%,var(--primary)_100%)] bg-[length:200%_auto] font-semibold transition-[background-position] duration-500 hover:bg-right"
 >
-  <span data-part="what" uiText variant="ui" class="overflow-hidden text-ellipsis whitespace-nowrap"
-    >{{ label() }} <small class="font-normal opacity-80">· {{ what() }}</small></span
+  <!--
+    The relation and nothing else: the chip says what kind of thing is open — `Adjusting
+    scope` — and never what it is about. Where the person is, is the tool's to say and
+    this chip's to whisper on hover, which is also why nothing here can grow long enough
+    to crowd the text bar beside it.
+  -->
+  <!--
+    Bound, not static: `uiText` merges what arrives through its `class` *input*, and a
+    static attribute never reaches it — so `text-foreground` and `text-white` would both
+    land on the element and the stylesheet's order would decide, which is how the label
+    came out dark in the dark theme (the person, 2026-09-13).
+  -->
+  <span
+    data-part="what"
+    uiText
+    variant="ui"
+    [class]="'flex items-center whitespace-nowrap ps-3 pe-3 text-white'"
+    >{{ label() }}</span
   >
+
+  <!--
+    Leaving is its own square, in cherry, to the very edge: a way out that shares the
+    chip's own colour reads as part of the label rather than as a thing to press (the
+    person, 2026-09-13). Its cross is white and large enough to aim at.
+  -->
   <button
     type="button"
     data-action="clear"
     aria-label="Cancel the tool"
     (click)="clear.emit()"
-    class="grid size-6 place-items-center rounded-sm text-primary leading-none opacity-75 hover:bg-card hover:opacity-100"
+    class="flex aspect-square items-center justify-center self-stretch bg-cherry text-[1.15rem] text-white leading-none transition-colors hover:brightness-125"
   >
     ×
   </button>

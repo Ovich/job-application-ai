@@ -59,6 +59,9 @@ const aProfile = (questions: Question[] = []): Profile => ({
         location: "Yverdon-les-Bains",
         arrangement: null,
       },
+      lines: [
+        { id: "line-migration", text: "Ran the migration programme", documents: 1, sources: [] },
+      ],
       children: [
         itemOf({
           id: "project-opendidac",
@@ -120,7 +123,7 @@ const opened = async () => {
   };
   /** What the scrolling column is following: `region`, or `head` when it was sent back. */
   const columnIsAt = () => page()?.querySelector("[data-at]")?.getAttribute("data-at") ?? null;
-  await eventually(() => expect(at("profile-sheet, [data-empty]")).not.toBeNull());
+  await eventually(() => expect(at("profile-sheet")).not.toBeNull());
   return { harness, page, at, all, region, press, type, saveIt, columnIsAt, eventually };
 };
 
@@ -152,22 +155,96 @@ describe("a click on a region with no question waiting (criteria 1 and 3)", () =
 
     await press("chip-k8s");
 
-    expect(textOf(at("[data-part=what]"))).toBe("Scope · Kubernetes");
+    // The relation alone; what it is about is the tool's to show.
+    expect(textOf(at("[data-part=what]"))).toBe("Adjusting scope");
     // Nothing else in the assistant's column names it: the prefix is the only place the
     // clicked thing is said, and no sentence is composed about it anywhere.
     const said = textOf(at("profile-assistant")).split("Kubernetes").length - 1;
     expect(said).toBe(1);
   });
 
-  it("closes on Cancel and writes nothing", async () => {
+  it("closes on the prefix's ×, the one way out, and writes nothing", async () => {
     profileIs(aProfile());
     const { at, press, eventually } = await opened();
     await press("chip-k8s");
 
-    (at("[data-action=cancel]") as HTMLButtonElement).click();
+    // The tool has no Cancel of its own any more (the person, 2026-09-13).
+    expect(at("[data-action=cancel]")).toBeNull();
+    (at("[data-action=clear]") as HTMLButtonElement).click();
 
     await eventually(() => expect(at("scope-tool")).toBeNull());
     expect(at("[data-part=rule]")).toBeNull();
+  });
+});
+
+describe("a click on an item whose question is still open (the person, 2026-09-13)", () => {
+  const docker = (state: "waiting" | "skipped") =>
+    questionOf({
+      id: "q-docker",
+      itemId: "chip-docker",
+      itemTitle: "Docker",
+      lead: "Did you write the Dockerfiles or run the registry?",
+      state,
+    });
+
+  it("opens the question waiting on it, with its own rows, and never the sentence", async () => {
+    profileIs(aProfile([docker("waiting")]));
+    const { at, all, press } = await opened();
+
+    await press("chip-docker");
+
+    expect(textOf(at("scope-tool [data-part=lead]"))).toBe(
+      "Did you write the Dockerfiles or run the registry?",
+    );
+    expect(all("[data-action=alt]").length).toBeGreaterThan(0);
+  });
+
+  it("reopens a question that was skipped, with its own rows, so it can still be answered", async () => {
+    profileIs(aProfile([docker("skipped")]));
+    const { at, all, press } = await opened();
+
+    await press("chip-docker");
+
+    // The mark still says `scope to clarify` on it: the appropriate tool is the question, not
+    // the one-sentence tool that proposes nothing.
+    expect(textOf(at("scope-tool [data-part=lead]"))).toBe(
+      "Did you write the Dockerfiles or run the registry?",
+    );
+    expect(all("[data-action=alt]").length).toBeGreaterThan(0);
+    expect(textOf(at("[data-part=what]"))).toBe("Adjusting scope");
+  });
+});
+
+describe("a click on a line (the person, 2026-09-13)", () => {
+  it("opens the tool on the line, saying where it is and not what it says", async () => {
+    profileIs(aProfile());
+    const { at, press } = await opened();
+
+    await press("line-migration");
+
+    expect(textOf(at("scope-tool [data-part=lead]"))).toBe(theSentence);
+    // The path, not the sentence: the sheet has lifted the line already, and a bullet
+    // repeated here would be the same thing said twice (the person, 2026-09-13). What
+    // the highlight cannot say is which row of which post is about to be written on.
+    expect(textOf(at("scope-tool [data-part=where]"))).toBe(
+      "R&D Collaborator in Software Engineering · row 1",
+    );
+    expect(textOf(at("profile-assistant"))).not.toContain("Ran the migration programme");
+  });
+
+  it("keeps what is written as a rule on the line's post, about the line", async () => {
+    profileIs(aProfile());
+    const { region, press, type, saveIt, eventually } = await opened();
+
+    await press("line-migration");
+    await type("I coordinated it, others ran it");
+    await saveIt();
+
+    await eventually(() =>
+      expect(textOf(region("post-heig")?.querySelector("[data-part=rule]"))).toBe(
+        "✓ Ran the migration programme: I coordinated it, others ran it",
+      ),
+    );
   });
 });
 
@@ -180,7 +257,8 @@ describe("the same sentence wherever it is opened (criterion 2)", () => {
     for (const id of ["chip-k8s", "project-opendidac", "post-heig"]) {
       await press(id);
       said.push(textOf(at("scope-tool [data-part=lead]")));
-      (at("[data-action=cancel]") as HTMLButtonElement).click();
+      // Closing is the prefix's × and nothing else (the person, 2026-09-13).
+      (at("[data-action=clear]") as HTMLButtonElement).click();
       await eventually(() => expect(at("scope-tool")).toBeNull());
     }
 
@@ -240,7 +318,8 @@ describe("where the profile is left (criteria 5 and 8)", () => {
     const { at, press, columnIsAt, eventually } = await opened();
 
     await press("chip-k8s");
-    (at("[data-action=cancel]") as HTMLButtonElement).click();
+    // Closing is the prefix's × and nothing else (the person, 2026-09-13).
+    (at("[data-action=clear]") as HTMLButtonElement).click();
     await eventually(() => expect(at("scope-tool")).not.toBeNull());
 
     expect(columnIsAt()).toBe("region");
@@ -337,5 +416,72 @@ describe("a second visit, days later (criterion 7)", () => {
     expect(textOf(at("profile-assistant"))).toContain("Welcome back.");
     expect(textOf(page())).not.toContain("I read your 5 documents");
     expect(textOf(at("profile-bar"))).toContain("From 5 documents, read on");
+  });
+});
+
+/**
+ * What the column does with nobody touching it (the person, 2026-09-13).
+ *
+ * The first question opens the instant the profile arrives, and the item it is about is
+ * usually far down the sheet. The column has to go there — which it did not, for a
+ * while: the reveal ran on the same change that opened the question, asked the sheet for
+ * an item the sheet had not drawn yet, found nothing, and never ran again. `data-at` is
+ * what catches it, because a runtime with no layout has no other way to see it.
+ */
+describe("the column, before anybody clicks anything", () => {
+  it("follows the first question's own item, without a click", async () => {
+    profileIs(
+      aProfile([
+        questionOf({
+          id: "q1",
+          itemId: "chip-docker",
+          itemTitle: "Docker",
+          lead: "Did you write the Dockerfiles or run the registry?",
+        }),
+      ]),
+    );
+    const { at, columnIsAt, eventually } = await opened();
+
+    await eventually(() => {
+      expect(at("scope-tool")).not.toBeNull();
+      expect(columnIsAt()).toBe("region");
+    });
+  });
+});
+
+/**
+ * What the guided sequence does and does not gate (`2026-09-13-guided-effects.spec.md`,
+ * and the person, 2026-09-13).
+ */
+describe("the opening sequence", () => {
+  it("opens the tool whenever something is still to clarify, sequence or no sequence", async () => {
+    profileIs(
+      aProfile([
+        questionOf({
+          id: "q1",
+          itemId: "chip-docker",
+          itemTitle: "Docker",
+          lead: "Did you write the Dockerfiles or run the registry?",
+        }),
+      ]),
+    );
+    const { at, eventually } = await opened();
+
+    await eventually(() => {
+      expect(at("scope-tool")).not.toBeNull();
+      expect(at("[data-guide]")?.getAttribute("data-guide")).toBe("done");
+    });
+  });
+
+  it("says the whole opening at once when the conversation is not new", async () => {
+    // A person coming back: the column is resumed, not begun, so nothing is performed —
+    // and the words are all there regardless.
+    profileIs(aProfile());
+    const { at, eventually } = await opened();
+
+    await eventually(() => {
+      expect(textOf(at("[data-part=opening]"))).toContain("Every fact on the right carries");
+      expect(textOf(at("[data-part=tail]"))).toContain("I ask only those");
+    });
   });
 });

@@ -1,4 +1,5 @@
 import { Component, input, output } from "@angular/core";
+import { UiTooltip } from "../../ui/tooltip/tooltip";
 import { UiText } from "../../ui/typography/text/text";
 
 /**
@@ -13,15 +14,24 @@ import { UiText } from "../../ui/typography/text/text";
  */
 @Component({
   selector: "tool-prefix",
-  imports: [UiText],
+  imports: [UiText, UiTooltip],
   templateUrl: "./tool-prefix.html",
+  // A flex item of the composer's row, and one that keeps what it needs: beside an input
+  // that grows, a prefix left to shrink is crushed to its first letter (the person,
+  // 2026-09-12). It takes its content's width, up to the ceiling the chip carries.
+  host: { class: "flex shrink-0 items-stretch" },
 })
 export class ToolPrefix {
-  /** The word the use case names the relation with: `Scope` in the intake. */
+  /** The word the use case names the relation with: `Adjusting scope` in the intake. */
   public readonly label = input.required<string>();
 
-  /** The thing the tool is working on, in its own words: the item's title. */
-  public readonly what = input.required<string>();
+  /**
+   * What this tool does, said on hover: the chip's word is short by necessity, and a
+   * person meeting it for the first time should be able to ask what it means without
+   * pressing anything (the person, 2026-09-13). Not what the tool is *about* — where a
+   * person is, is the tool's own to say.
+   */
+  public readonly describes = input.required<string>();
 
   public readonly clear = output<void>();
 }

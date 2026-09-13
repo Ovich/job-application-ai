@@ -29,29 +29,39 @@
       >
         A
       </div>
-      <div>
-        <p uiText variant="body" class="mb-2">
-          I read your {{ reading().documents }} documents. Every fact on the right carries the
-          document it came from, and I wrote nothing that is not in them.
-        </p>
+      <!--
+        The opening lands rather than appears (`2026-09-13-guided-effects.spec.md`): the
+        first sentence a word at a time, the card as one beat, then the second sentence.
+        What is shown is a slice of the very same text — nothing here is written by the
+        performance, which is the whole of `G1`.
 
-        <div class="mt-1.5 border-border border-l-[3px] py-1.5 ps-4">
-          <reading-card
-            [documents]="reading().documents"
-            [facts]="reading().facts"
-            [left]="left()"
-          />
-        </div>
+        `aria-live="polite"` so a screen reader is told once it settles rather than on
+        every word.
+      -->
+      <div aria-live="polite">
+        @if (openingShown(); as landed) {
+          <p data-part="opening" uiText variant="body" class="mb-2">{{ landed }}</p>
+        }
 
-        <p uiText variant="body" class="mt-3">
-          Some facts say what you did but not what your part was, or two documents disagree. I ask
-          only those. Everything else I could tell from your documents.
-        </p>
+        @if (card()) {
+          <div class="mt-1.5 border-border border-l-[3px] py-1.5 ps-4">
+            <reading-card
+              [documents]="reading().documents"
+              [facts]="reading().facts"
+              [left]="left()"
+            />
+          </div>
+        }
+
+        @if (tailShown(); as landed) {
+          <p data-part="tail" uiText variant="body" class="mt-3">{{ landed }}</p>
+        }
       </div>
     </div>
   }
 
-  @if (opener(); as first) {
+  <!-- The opener lands last, after the tool has opened under it (`G3`). -->
+  @if (openerShown(); as first) {
     <div data-msg="ai" class="grid grid-cols-[30px_1fr] gap-3">
       <div
         aria-hidden="true"
@@ -59,7 +69,7 @@
       >
         A
       </div>
-      <p data-part="opener" uiText variant="body">{{ first }}</p>
+      <p data-part="opener" uiText variant="body" aria-live="polite">{{ first }}</p>
     </div>
   }
 
@@ -76,7 +86,7 @@
   }
   <ng-container assistantTool>
     @if (asked(); as open) {
-      <scope-tool [tool]="open" (pick)="pick($event)" (skip)="skip()" (cancel)="skip()" />
+      <scope-tool [tool]="open" (pick)="pick($event)" (skip)="skip()" />
     }
   </ng-container>
 </assistant>

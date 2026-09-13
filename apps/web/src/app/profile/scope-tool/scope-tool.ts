@@ -50,11 +50,15 @@ export type OpenQuestion = {
 };
 
 /**
- * The tool the person opened themselves. It carries nothing: the sentence is fixed and
- * what is in scope is the prefix's, so there is no field here for a proposal to arrive
- * in.
+ * The tool the person opened themselves. It carries **where** they are and nothing else:
+ * the sentence is fixed, and there is no field here for a proposal to arrive in.
+ *
+ * `where` is a path — `R&D Collaborator in Software Engineering · row 3` — and never
+ * the thing's own words (the person, 2026-09-13). The sheet has lifted what was
+ * clicked, so repeating a bullet's sentence here says it twice; what a person cannot
+ * see from the highlight alone is which row of which item they are about to write on.
  */
-export type Clarification = { kind: "clarification" };
+export type Clarification = { kind: "clarification"; where: string };
 
 /** What is open in the dock: a question that was asked, or one the person opened. */
 export type OpenTool = OpenQuestion | Clarification;
@@ -71,9 +75,6 @@ export class ScopeTool {
   public readonly pick = output<{ optionId: string }>();
 
   public readonly skip = output<void>();
-
-  /** Cancel, which only the person-opened shape offers. It writes nothing. */
-  public readonly cancel = output<void>();
 
   /** The question, when one was asked. `null` is the shape that proposes nothing. */
   protected readonly asked = computed<OpenQuestion | null>(() => {

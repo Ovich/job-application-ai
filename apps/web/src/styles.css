@@ -33,6 +33,15 @@
   --warn-soft: #d977061f;
   --danger: #b91c1c;
   --danger-soft: #dc26261f;
+  /* Dark cherry: the one red that is an action rather than a warning — leaving what is
+     open. Deeper than `danger`, because it sits on the prefix's blue and has to hold
+     its own there (the person, 2026-09-13). */
+  --cherry: #8c1c2e;
+
+  /* The send button's own blues, the person's own values (2026-09-13). Theme-independent
+     for the same reason the chip's are: white text on a solid thing. */
+  --send: #0575e6;
+  --send-deep: #021b79;
 
   /* The rendered CV is paper, not interface: its palette does not follow the theme. */
   --cv-ink: #18181b;
@@ -81,6 +90,9 @@
   --color-warn-soft: var(--warn-soft);
   --color-danger: var(--danger);
   --color-danger-soft: var(--danger-soft);
+  --color-cherry: var(--cherry);
+  --color-send: var(--send);
+  --color-send-deep: var(--send-deep);
   --color-cv-ink: var(--cv-ink);
   --color-cv-muted: var(--cv-muted);
   --color-cv-accent: var(--cv-accent);

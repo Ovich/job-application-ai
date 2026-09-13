@@ -4,6 +4,7 @@ import { RouterTestingHarness } from "@angular/router/testing";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { routes } from "../../../src/app/app.routes";
 import { CurrentUser } from "../../../src/app/auth/current-user";
+import { itemOf, profileIs, resetIntake } from "../../support/intake";
 import { failing, reset, sentTo, signedInAs, signedOut, unreachable } from "../../support/session";
 
 /**
@@ -24,11 +25,17 @@ const stefan = { name: "Stefan Teofanovic", email: "stefan@example.com" };
 describe("CurrentUser", () => {
   beforeEach(() => {
     reset();
+    // `/profile` loads the viewer, and a profile with nothing in it now leaves for
+    // `/documents` (the person, 2026-09-12). These cases are about the session and the
+    // deletion gate, so the person they sign in as has something read.
+    resetIntake();
+    profileIs({ summary: itemOf({ id: "summary", kind: "summary", title: "Someone." }) });
     TestBed.configureTestingModule({ providers: [provideRouter(routes)] });
   });
 
   afterEach(() => {
     reset();
+    resetIntake();
   });
 
   const currentUser = () => TestBed.inject(CurrentUser);

@@ -1,14 +1,24 @@
 <section uiContainer width="md" uiStack gap="xl" aria-label="Your documents">
-  <div uiStack gap="sm">
-    <h1 uiText variant="figure" weight="semibold">Start with what you already have</h1>
-    <p uiText tone="muted">
-      Every CV you ever wrote tells a different part of the story. Give me all of them, the old ones
-      too. No file? Your LinkedIn page alone works, and so does a photo of a paper CV.
-    </p>
-  </div>
+  <!--
+    The screen's own head, on its own page. Inside a modal the panel is already titled,
+    and a heading under a title is the same thing said twice (`ID160`).
+  -->
+  @if (!embedded()) {
+    <div uiStack gap="sm">
+      <h1 uiText variant="figure" weight="semibold">Start with what you already have</h1>
+      <p uiText tone="muted">
+        Every CV you ever wrote tells a different part of the story. Give me all of them, the old
+        ones too. No file? Your LinkedIn page alone works, and so does a photo of a paper CV.
+      </p>
+    </div>
+  }
 
   @if (refusal(); as sentence) {
     <app-notice tone="warn" lead="Not added.">{{ sentence }}</app-notice>
+  }
+
+  @if (landed()) {
+    <app-notice tone="ok" lead="Read.">Opening your profile.</app-notice>
   }
 
   @if (state() === "empty") {
@@ -27,7 +37,7 @@
           >
             <span uiText variant="ui" class="min-w-0 flex-1 truncate">{{ row.filename }}</span>
             <span uiText variant="caption" tone="muted" class="whitespace-nowrap">{{
-              kindOf(row)
+              sideOf(row)
             }}</span>
             <button
               hlmBtn
@@ -99,10 +109,10 @@
         </div>
       </div>
     </div>
+  }
 
-    @for (reason of failures(); track reason) {
-      <app-notice tone="warn" lead="One document could not be read.">{{ reason }}</app-notice>
-    }
+  @for (reason of failures(); track reason) {
+    <app-notice tone="warn" lead="One document could not be read.">{{ reason }}</app-notice>
   }
 
   @if (state() !== "reading") {
@@ -127,7 +137,7 @@
   }
 
   <div uiRow gap="md" class="flex-wrap">
-    @if (state() === "added") {
+    @if (state() === "added" && ready()) {
       <span uiText variant="caption" tone="muted"
         >About two minutes. You can leave, the reading goes on.</span
       >
@@ -139,16 +149,26 @@
     }
     @if (state() !== "reading") {
       <span class="ms-auto max-sm:ms-0 max-sm:w-full">
-        <button
-          hlmBtn
-          size="lg"
-          type="button"
-          class="max-sm:w-full"
-          [disabled]="!ready()"
-          (click)="read()"
-        >
-          Read my documents
-        </button>
+        @if (allRead()) {
+          <!--
+            The way onward, which is not the same door from both sides: a page opens the
+            profile, and a modal over the profile simply closes on it.
+          -->
+          <button hlmBtn size="lg" type="button" class="max-sm:w-full" (click)="seeProfile()">
+            {{ embedded() ? "Done" : "See my profile" }}
+          </button>
+        } @else {
+          <button
+            hlmBtn
+            size="lg"
+            type="button"
+            class="max-sm:w-full"
+            [disabled]="!ready()"
+            (click)="read()"
+          >
+            Read my documents
+          </button>
+        }
       </span>
     }
   </div>

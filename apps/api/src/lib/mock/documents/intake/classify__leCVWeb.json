@@ -1,7 +1,0 @@
-{
-  "case": "intake.classify:leCVWeb",
-  "stands_for": "cv-archive/2022/leCVWeb.docx, the person's own CV as it stood in September 2022, and the set's only Word file. It is four years older than the two 2026 CVs and disagrees with them across years, which is what makes SL3's merge a real merge rather than two copies of one document. US1 promises Word works; this is the case behind that promise.",
-  "content": "{\"kind\":\"cv\",\"language\":\"fr\",\"confidence\":0.94,\"why\":\"Un CV redige sous Word: un en-tete avec le nom et les coordonnees, une accroche, des postes dates en ordre antichronologique s'arretant en 2022, une rubrique formation et une liste de competences techniques. Les intitules sont en francais.\"}",
-  "tool_calls": [],
-  "usage": { "input_tokens": 980, "output_tokens": 64 }
-}

@@ -1,6 +1,7 @@
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { type Document, document } from "@app/db";
+import type { ObjectKey, Storage } from "../../src/lib/storage";
 import { testDb } from "./database";
 
 /**
@@ -108,16 +109,36 @@ export const uploadOfAddress = (address: string): FormData => {
 };
 
 /**
+ * The bytes a run finds behind a row, by the name on that row.
+ *
+ * One of the person's six is its own file. Anything else is a name the suite has no
+ * document for, and it is given bytes that are not the format its name claims — which
+ * is exactly what a document that cannot become text is now that the reading turns
+ * every file into characters before it asks anything (`ID157`, `ID159`). It is never a
+ * canned document standing for nothing: it is not a document at all, on purpose.
+ */
+const bytesBehind = (filename: string): Uint8Array =>
+  Object.values(theSet).some((each) => each.filename === filename)
+    ? bytesOfFixture(filename)
+    : new TextEncoder().encode(`${filename} holds nothing a reader can turn into text`);
+
+/**
  * Rows straight into the database, for a case that is about what happens to a document
  * rather than about how it got there — the reading run, and the resume that reads its
  * rows back. They carry a storage key composed the way the route composes one, so a run
  * over them reaches the storage the same way.
+ *
+ * **The bytes go in beside the row when a storage is handed over**, and a run needs
+ * them: the reading reads each file as text itself before it asks anything (`ID157`),
+ * so a row whose object is absent is a document that fails rather than one that is read.
+ * A case about the rows alone — a listing, a removal — passes no storage and gets none.
  */
 export const documentsFor = async (
   userId: string,
   filenames: readonly string[],
-): Promise<Document[]> =>
-  testDb
+  storage?: Storage,
+): Promise<Document[]> => {
+  const rows = await testDb
     .insert(document)
     .values(
       filenames.map((filename, at) => ({
@@ -132,3 +153,15 @@ export const documentsFor = async (
       })),
     )
     .returning();
+
+  if (storage !== undefined) {
+    for (const row of rows) {
+      if (row.storageKey === null) continue;
+      await storage.put(row.storageKey as ObjectKey, {
+        bytes: bytesBehind(row.filename),
+        mediaType: row.mediaType,
+      });
+    }
+  }
+  return rows;
+};

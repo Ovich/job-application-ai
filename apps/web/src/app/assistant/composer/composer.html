@@ -1,36 +1,56 @@
+<!--
+  The open tool belongs to the bottom of the column with the composer (the person,
+  2026-09-12), and it is the part that grows: a question with four answers is tall. So
+  it is capped and scrolls inside itself, and what it cannot take from the conversation
+  above it is the conversation's.
+-->
 @if (tool(); as open) {
   <tool-dock data-part="dock">
     <ng-content />
   </tool-dock>
 }
 
-<div class="flex items-center gap-2 rounded-lg border border-border bg-card py-2 pe-2 ps-3">
+<!--
+  The bar a person writes in, with the prefix inline at its head. **The box itself has no
+  padding** (the person, 2026-09-13): the prefix sits flush in the corner and fills the
+  bar's height, and what keeps its distance from the edges is the text and the button,
+  each inside a container of its own. A pill floating in a padded box was the thing
+  saying where a person's words were going, and it said it too quietly.
+-->
+<div class="flex items-stretch overflow-hidden rounded-lg border border-border bg-card">
   @if (tool(); as open) {
-    <tool-prefix [label]="open.label" [what]="open.what" (clear)="clear.emit()" />
+    <tool-prefix [label]="open.label" [describes]="open.describes" (clear)="clear.emit()" />
   }
 
-  <input
-    type="text"
-    data-part="composer"
-    aria-label="Message"
-    placeholder="Say it in your own words, or click anything in your profile"
-    [value]="draft()"
-    (input)="typed($event)"
-    class="min-w-0 flex-1 border-0 bg-transparent px-1 py-1.5 text-body outline-none"
-  />
+  <div class="flex min-w-0 flex-1 items-center px-3 py-2">
+    <input
+      type="text"
+      data-part="composer"
+      aria-label="Message"
+      placeholder="Say it in your own words, or click anything in your profile"
+      [value]="draft()"
+      (input)="typed($event)"
+      class="min-w-0 flex-1 border-0 bg-transparent text-body outline-none"
+    />
+  </div>
 
-  <button
-    type="button"
-    data-part="send"
-    hlmBtn
-    size="sm"
-    [disabled]="!ready()"
-    (click)="save.emit()"
-  >
-    {{ verb() }}
-  </button>
-</div>
-
-<div uiText variant="caption" tone="muted" class="mt-2">
-  Nothing is sent to anyone. Your answers are kept as your rules, and every CV respects them.
+  <div class="flex items-center p-2">
+    <!--
+      The one thing that commits what a person wrote, and it says so (the person,
+      2026-09-13): the same gradient mechanic as the prefix, in the blues they chose,
+      sliding on hover. Disabled it goes flat, because a button that looks live and does
+      nothing is worse than one that looks spent.
+    -->
+    <button
+      type="button"
+      data-part="send"
+      hlmBtn
+      size="sm"
+      [disabled]="!ready()"
+      (click)="save.emit()"
+      class="bg-[linear-gradient(to_right,var(--send)_0%,var(--send-deep)_51%,var(--send)_100%)] bg-[length:200%_auto] px-5 font-semibold text-white shadow-sm transition-[background-position] duration-500 hover:bg-right disabled:bg-none disabled:bg-muted disabled:text-muted-foreground disabled:shadow-none"
+    >
+      {{ verb() }}
+    </button>
+  </div>
 </div>

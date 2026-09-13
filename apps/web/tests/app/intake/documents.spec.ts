@@ -1,5 +1,5 @@
 import { TestBed } from "@angular/core/testing";
-import { provideRouter } from "@angular/router";
+import { provideRouter, Router } from "@angular/router";
 import { RouterTestingHarness } from "@angular/router/testing";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { routes } from "../../../src/app/app.routes";
@@ -7,6 +7,8 @@ import {
   documentsAre,
   droppingNext,
   intakeRequests,
+  itemOf,
+  profileIs,
   resetIntake,
   rowOf,
   runSays,
@@ -351,6 +353,14 @@ describe("a reload mid-run (criterion 11, US3)", () => {
       rowOf({ id: "three", filename: "BS-HEIGVD-IL-Diplome.pdf", status: "waiting" }),
     ]);
 
+    // The profile these two documents made: a viewer asked for one that is empty *and*
+    // made of no document sends a person back here, which is right for somebody who has
+    // never dropped anything and wrong for somebody who just read two.
+    profileIs({
+      documents: 2,
+      summary: itemOf({ id: "summary", kind: "summary", title: "Someone." }),
+    });
+
     const screen = await opened();
 
     await screen.eventually(() => {
@@ -372,5 +382,121 @@ describe("a reload mid-run (criterion 11, US3)", () => {
 
     expect(intakeRequests()).toEqual([{ method: "GET", address: "/api/intake/documents" }]);
     expect(Object.keys(globalThis.localStorage ?? {})).toEqual([]);
+  });
+});
+
+/**
+ * The upload page is a list a person keeps: a reading that has finished gives it back,
+ * with the way to what the reading made (the person, 2026-09-12).
+ */
+describe("documents already read", () => {
+  it("hands the list back, and offers the profile instead of a dead button", async () => {
+    documentsAre([
+      rowOf({
+        id: "one",
+        filename: "2026-08-30_cv_FR.pdf",
+        status: "read",
+        readAt: "2026-09-12T10:00:00.000Z",
+      }),
+      rowOf({
+        id: "two",
+        filename: "BS-HEIGVD-IL-Diplome.pdf",
+        status: "read",
+        readAt: "2026-09-12T10:00:00.000Z",
+      }),
+    ]);
+
+    const screen = await opened();
+
+    await screen.eventually(() => {
+      expect(screen.rows()).toEqual(["2026-08-30_cv_FR.pdf read", "BS-HEIGVD-IL-Diplome.pdf read"]);
+      expect(screen.buttonLabelled("Remove 2026-08-30_cv_FR.pdf")).not.toBeUndefined();
+      expect(screen.page()?.querySelector("ui-drop-zone")).not.toBeNull();
+      expect(screen.read()).toBeUndefined();
+      expect(screen.buttonSaying("See my profile")).not.toBeUndefined();
+    });
+
+    // Where it goes, rather than where the harness ends up: the assertion is about this
+    // screen's own doing, and a router that then loads the viewer is SL3's business.
+    const going = vi.spyOn(TestBed.inject(Router), "navigateByUrl");
+    screen.buttonSaying("See my profile")?.click();
+
+    expect(going).toHaveBeenCalledWith("/profile");
+  });
+
+  it("reads a failed document again, because a run takes everything not read", async () => {
+    documentsAre([
+      rowOf({
+        id: "one",
+        filename: "2026-08-30_cv_FR.pdf",
+        status: "read",
+        readAt: "2026-09-12T10:00:00.000Z",
+      }),
+      rowOf({ id: "two", filename: "a-document-nobody-recorded.pdf", status: "failed" }),
+    ]);
+
+    const screen = await opened();
+
+    await screen.eventually(() => {
+      expect(screen.buttonSaying("See my profile")).toBeUndefined();
+      expect(screen.read()?.disabled).toBe(false);
+    });
+  });
+});
+
+/**
+ * What happens the moment a reading lands (the person, 2026-09-12): a green line, and a
+ * second later the profile it made.
+ */
+describe("the reading lands", () => {
+  it("says so in green, then opens the profile a second later", async () => {
+    documentsAre([rowOf({ id: "one", filename: "2026-08-30_cv_EN.pdf" })]);
+    runSays([
+      { kind: "document", id: "one", status: "reading", reason: null },
+      { kind: "document", id: "one", status: "read", reason: null },
+      { kind: "run", status: "done" },
+    ]);
+    const screen = await opened();
+    const going = vi.spyOn(TestBed.inject(Router), "navigateByUrl");
+
+    await screen.eventually(() => expect(screen.read()?.disabled).toBe(false));
+    screen.read()?.click();
+
+    // The word first, and the page still where the person left it.
+    await screen.eventually(() => {
+      const notice = screen.page()?.querySelector('app-notice[role="status"]');
+      expect(textOf(notice)).toContain("Read.");
+      expect(textOf(notice)).toContain("Opening your profile.");
+    });
+    expect(going).not.toHaveBeenCalled();
+
+    // Then the move, and only then.
+    await vi.waitFor(() => expect(going).toHaveBeenCalledWith("/profile"), { timeout: 4000 });
+  });
+
+  it("stays where it is when the reading failed, because there is nothing to open", async () => {
+    documentsAre([rowOf({ id: "one", filename: "2026-08-30_cv_EN.pdf" })]);
+    runSays([
+      { kind: "document", id: "one", status: "reading", reason: null },
+      {
+        kind: "document",
+        id: "one",
+        status: "failed",
+        reason: "2026-08-30_cv_EN.pdf could not be read.",
+      },
+      { kind: "run", status: "done" },
+    ]);
+    const screen = await opened();
+    const going = vi.spyOn(TestBed.inject(Router), "navigateByUrl");
+
+    await screen.eventually(() => expect(screen.read()?.disabled).toBe(false));
+    screen.read()?.click();
+
+    await screen.eventually(() => {
+      expect(textOf(screen.page())).toContain("could not be read");
+    });
+    await new Promise((resolve) => setTimeout(resolve, 1400));
+    expect(going).not.toHaveBeenCalled();
+    expect(screen.page()?.querySelector('app-notice[role="status"]')).toBeNull();
   });
 });

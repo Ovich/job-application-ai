@@ -72,7 +72,11 @@
           "options": {
             "tsConfig": "tsconfig.spec.json",
             "include": ["../tests/**/*.spec.ts"],
-            "setupFiles": ["tests/support/session.ts", "tests/support/intake.ts"]
+            "setupFiles": [
+              "tests/support/session.ts",
+              "tests/support/intake.ts",
+              "tests/support/guide.ts"
+            ]
           }
         }
       },

@@ -1,4 +1,5 @@
-import { Component, computed, signal } from "@angular/core";
+import { Component, computed, inject, input, output, signal } from "@angular/core";
+import { Router } from "@angular/router";
 import type { InferResponseType } from "hono/client";
 import { api } from "../../lib/api";
 import { UiDropZone } from "../../ui/drop-zone/drop-zone";
@@ -31,9 +32,13 @@ import { UiText } from "../../ui/typography/text/text";
  * shown as the route's own sentence, never one invented here: the route knows the limit
  * and which document was already there, and this screen does not.
  *
- * The reading's end does not navigate anywhere. The viewer's route is SL3's, and the
- * screen rests on the finished reading until it exists.
+ * The reading's end does not navigate on its own: a person may have left the tab, and a
+ * page that jumps under them is a page that took the decision. What it does offer, once
+ * every document is read, is the way to the profile — the thing they came here to make.
  */
+
+/** How long the green line stands before the profile opens (the person, 2026-09-12). */
+const afterTheReading = 1000;
 
 /** A row, as the list route answers it. Inferred; nothing about it is declared here. */
 type Document = InferResponseType<typeof api.intake.documents.$get, 200>[number];
@@ -85,26 +90,70 @@ export class AppDocuments {
 
   protected readonly address = signal("");
 
-  /** Whether a run was started here. A reload finds it in the rows instead. */
+  /**
+   * Whether a run started here is still going. A reload finds it in the rows instead,
+   * and the end of the stream puts it back down: a run that has finished leaves the
+   * screen editable, the same as one nobody started.
+   */
   protected readonly started = signal(false);
 
   /** The route's own sentence for the last refusal, or nothing. */
   protected readonly refusal = signal<string | null>(null);
 
+  /** Whether the reading has just landed, which is what the green line says. */
+  protected readonly landed = signal(false);
+
+  /**
+   * Whether this screen is somebody else's content rather than its own page. A modal on
+   * the profile renders it (`ID160`); the route renders it alone.
+   */
+  public readonly embedded = input<boolean>(false);
+
+  /**
+   * The reading landed, said to whoever is holding this screen. The route takes it as
+   * the moment to open the profile; a modal takes it as the moment to close and read
+   * the profile back. Neither decision belongs here.
+   */
+  public readonly done = output<void>();
+
   /**
    * Which of the mockup's three states the screen is in. `reading` is not a flag a
    * person turned on: a row that says `reading` puts the screen there whoever started
    * the run, which is what makes coming back to a tab agree with leaving it.
+   *
+   * A run that has finished puts the screen back to `added`, not `reading`: the list is
+   * a person's documents, not a receipt, and they add to it and take from it whenever
+   * they like (the person, 2026-09-12). Only a run still in flight locks it.
    */
   protected readonly state = computed<"empty" | "added" | "reading">(() => {
     const documents = this.documents();
-    if (this.started() || documents.some((row) => row.status !== "waiting")) return "reading";
-    return documents.length === 0 ? "empty" : "added";
+    if (documents.length === 0) return "empty";
+    const inFlight = this.started() || documents.some((row) => row.status === "reading");
+    return inFlight ? "reading" : "added";
   });
 
-  /** At least one document or an address: the whole of the primary button's condition. */
+  /** What a run would take: everything the reading has not finished with. */
+  protected readonly unread = computed(() =>
+    this.documents().filter((row) => row.status !== "read"),
+  );
+
+  /**
+   * Something unread, or an address: the whole of the primary button's condition. The
+   * run reads every row that is not `read` — a failed one included, which is how a
+   * failure is tried again — so what leaves the button off is a list with nothing left
+   * to read.
+   */
   protected readonly ready = computed(
-    () => this.documents().length > 0 || this.address().trim() !== "",
+    () => this.unread().length > 0 || this.address().trim() !== "",
+  );
+
+  /**
+   * Every document read: there is nothing to press Read for, and the thing a person came
+   * here to make now exists. The button becomes the way to it rather than a disabled
+   * control on a page with nothing left to do (the person, 2026-09-12).
+   */
+  protected readonly allRead = computed(
+    () => this.documents().length > 0 && this.unread().length === 0,
   );
 
   protected readonly failures = computed(() =>
@@ -115,8 +164,30 @@ export class AppDocuments {
 
   protected readonly accept = accepted;
 
+  private readonly router = inject(Router);
+
   constructor() {
     void this.load();
+  }
+
+  /**
+   * The way onward once every document is read: the profile itself from the page, and
+   * nothing but a closed modal from inside one — a person there is already on it.
+   */
+  protected seeProfile(): void {
+    if (this.embedded()) {
+      this.done.emit();
+      return;
+    }
+    void this.router.navigateByUrl("/profile");
+  }
+
+  /**
+   * What a row says on its right: what the reading made of it once there is a reading,
+   * and what kind it looks like before then.
+   */
+  protected sideOf(row: Document): string {
+    return row.status === "waiting" ? this.kindOf(row) : row.status;
   }
 
   /** What a row is called on the screen: the reader's kind, or what the source is. */
@@ -188,7 +259,29 @@ export class AppDocuments {
       held = blocks.pop() ?? "";
       for (const block of blocks) this.apply(block);
     }
+
+    // The stream is over, so nothing is in flight any more: the list goes back to being
+    // one a person keeps. `load` has the rows as the run left them, and `started` is the
+    // only thing that would still say otherwise.
+    this.started.set(false);
     await this.load();
+
+    /**
+     * The reading landed, so the person is taken to what it made (the person,
+     * 2026-09-12). The word comes first and the move a second later: a screen that
+     * jumps the instant a run ends leaves nobody sure it worked, and a second is long
+     * enough to read four words and short enough not to be a wait.
+     *
+     * Only when something was actually read. A run whose documents all failed says so
+     * in its own notices and stays where it is, because there is nothing to go to.
+     */
+    if (this.allRead()) {
+      this.landed.set(true);
+      setTimeout(() => {
+        this.done.emit();
+        if (!this.embedded()) void this.router.navigateByUrl("/profile");
+      }, afterTheReading);
+    }
   }
 
   /** One block of the stream, if it carries a leaf this screen draws. */

@@ -1,7 +1,0 @@
-{
-  "case": "intake.extract:BS-HEIGVD-IL-Diplome",
-  "stands_for": "diplomas/BS-HEIGVD-IL-Diplome.pdf, the bachelor's diploma itself. A diploma states one thing and states it exactly, which is why it is the document a merge can be checked against: the wording here is the certificate's, not a CV's summary of it.",
-  "content": "{\"facts\":[{\"kind\":\"education\",\"title\":\"Bachelor of Science HES-SO en Ingenierie des medias\",\"said\":\"Bachelor of Science HES-SO en Informatique, orientation Ingenierie logicielle, delivre par la HEIG-VD, Yverdon-les-Bains, 2022.\",\"lines\":[]},{\"kind\":\"identity\",\"title\":\"Stefan Teofanovic\",\"said\":\"Le present diplome est decerne a Stefan Teofanovic.\",\"lines\":[]}]}",
-  "tool_calls": [],
-  "usage": { "input_tokens": 640, "output_tokens": 120 }
-}

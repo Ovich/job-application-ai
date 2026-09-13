@@ -1,7 +1,0 @@
-{
-  "case": "intake.classify:2026-08-30_cv_FR",
-  "stands_for": "cv-generic/2026-08-30_cv_FR.pdf, the person's own general CV in French, recognised as a CV written in French. Its English counterpart is the case beside it, and the pair is what makes SL3's merge provable against two real documents of one person.",
-  "content": "{\"kind\":\"cv\",\"language\":\"fr\",\"confidence\":0.97,\"why\":\"Un document de carriere antichronologique: un en-tete avec les coordonnees, un resume, des postes dates avec leurs puces, une section diplomes et une liste de langues. Les intitules de sections et le corps du texte sont en francais.\"}",
-  "tool_calls": [],
-  "usage": { "input_tokens": 1180, "output_tokens": 62 }
-}

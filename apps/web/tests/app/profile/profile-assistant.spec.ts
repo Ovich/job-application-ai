@@ -71,7 +71,9 @@ describe("the reading and the first question (criterion 4)", () => {
     expect(textOf(at("[data-part=lead]"))).toBe("Which was it?");
     expect(textOf(at("[data-part=opener]"))).toBe("First, Kubernetes.");
     expect(at("[data-part=prefix]")).not.toBeNull();
-    expect(textOf(at("[data-part=what]"))).toBe("Scope · Kubernetes");
+    // The chip names the relation and never the item: the title is data, and data is
+    // in the tool below it (the person, 2026-09-12).
+    expect(textOf(at("[data-part=what]"))).toBe("Adjusting scope");
   });
 
   it("opens the first one still waiting when a person comes back", async () => {
