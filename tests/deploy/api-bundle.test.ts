@@ -1,7 +1,6 @@
-import { spawnSync } from "node:child_process";
-import { existsSync, mkdtempSync, readFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
+import { build } from "esbuild";
 import { describe, expect, it } from "vitest";
 import { parse } from "yaml";
 
@@ -15,9 +14,9 @@ import { parse } from "yaml";
  * warning, CloudFormation reported success, and the distribution's fallback turned the
  * dead function into a page that looked fine and signed nobody in.
  *
- * So the bundle is built here, from the workflow's own command, on every push. The
- * flags are read out of `deploy.yml` rather than repeated, because a guard that keeps
- * its own copy of the command stops guarding the moment the two drift.
+ * So the bundle is built here, with the workflow's own flags, on every push. They are
+ * read out of `deploy.yml` rather than repeated, because a guard that keeps its own copy
+ * of the command stops guarding the moment the two drift.
  *
  * **A warning is a failure.** The one that mattered was `empty-import-meta`: the output
  * format is the thing that decides whether `import.meta.url` is an address or nothing,
@@ -44,31 +43,42 @@ const esbuildArguments = (script: string): string[] => {
     .split("\n")
     .find((each) => each.includes("esbuild"));
   if (line === undefined) throw new Error("the `Bundle the API` step no longer runs esbuild");
-  // `pnpm exec esbuild <entry> <flags…>`, and only the flags and the entry are wanted.
+  // `pnpm exec esbuild <entry> <flags…>`, and only the entry and the flags are wanted.
   return line.trim().split(/\s+/).slice(3);
 };
 
+/**
+ * Those arguments as the library takes them. esbuild's own API rather than its command,
+ * because a test that spawns a binary by its path is a test about `node_modules` layout:
+ * this one is about the flags.
+ *
+ * `outfile` is dropped with `write: false` — what the bundle is called is the artefact's
+ * business, and nothing here is asked to produce one.
+ */
+const optionsFrom = (args: string[]) => {
+  const entryPoints: string[] = [];
+  const flags: Record<string, string | boolean> = {};
+  for (const arg of args) {
+    if (!arg.startsWith("--")) {
+      entryPoints.push(arg);
+      continue;
+    }
+    const [name, ...rest] = arg.slice(2).split("=");
+    if (name === undefined || name === "outfile") continue;
+    flags[name] = rest.length === 0 ? true : rest.join("=");
+  }
+  return { entryPoints, ...flags, write: false, logLevel: "silent" } as Parameters<typeof build>[0];
+};
+
 describe("the API bundle the deploy ships", () => {
-  it("builds out of the workflow's own command without one warning", () => {
-    const out = mkdtempSync(join(tmpdir(), "api-bundle-"));
-    // Everything but where it lands: the workflow's outfile is the artefact's path and
-    // this run is only ever asked whether the build is clean.
-    const args = esbuildArguments(bundleStep())
-      .filter((each) => !each.startsWith("--outfile="))
-      .concat(`--outfile=${join(out, "index.mjs")}`);
+  it("builds with the workflow's own flags without one warning", async () => {
+    const built = await build(optionsFrom(esbuildArguments(bundleStep())));
 
-    const built = spawnSync(
-      process.execPath,
-      [join(root, "node_modules/esbuild/bin/esbuild"), ...args],
-      {
-        cwd: root,
-        encoding: "utf8",
-      },
-    );
-
-    expect(built.stderr).not.toContain("WARNING");
-    expect(built.status).toBe(0);
-  }, 60_000);
+    // The text, not the count: a failure here has to say which warning, or the next
+    // person reads `expected 1 to be 0` and learns nothing — which is the whole
+    // complaint this file exists to answer.
+    expect(built.warnings.map((each) => `${each.text} (${each.id})`)).toEqual([]);
+  }, 120_000);
 
   it("ships the mock's answer documents beside the bundle", () => {
     // The deployed function is given no `AI_BASE_URL`, so it answers itself and reads
