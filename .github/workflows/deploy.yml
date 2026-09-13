@@ -142,13 +142,27 @@ jobs:
       #
       # The key is the commit SHA, so an artefact is traceable to the code it came from
       # and a redeploy of the same commit changes nothing in the stack.
+      #
+      # ESM, and `.mjs`, because the source is ESM and says so: `apps/api` is
+      # `"type": "module"`, and the mock resolves its own directory from
+      # `import.meta.url`. Bundled as CommonJS — esbuild's default for this platform —
+      # `import.meta` is empty, that line throws `Invalid URL` while the module is still
+      # loading, and every route is dead behind a distribution that falls back to the
+      # page. Lambda reads `index.mjs` for the handler `index.handler` as it reads
+      # `index.js`, so nothing else moves. `tests/deploy/api-bundle.test.ts` builds this
+      # same command on every push and fails on a warning, because this shipped with the
+      # warning printed and nobody reading it.
       - name: Bundle the API
         id: api
         run: |
           set -euo pipefail
           pnpm exec esbuild apps/api/src/lambda.ts \
-            --bundle --platform=node --target=node24 --minify --sourcemap \
-            --outfile=dist/lambda/index.js
+            --bundle --platform=node --target=node24 --format=esm --minify --sourcemap \
+            --outfile=dist/lambda/index.mjs
+          # The answers the function serves itself. `App-dev.yaml` gives it no
+          # `AI_BASE_URL`, so it is its own double and reads these from beside the
+          # bundle at run time; nothing else puts them in the zip.
+          cp -R apps/api/src/lib/mock/documents dist/lambda/documents
           (cd dist/lambda && zip --quiet --recurse-paths ../api.zip .)
           key="api/${GITHUB_SHA}.zip"
           aws s3 cp dist/api.zip "s3://job-application-artefacts-${AWS_ACCOUNT}-${AWS_REGION}/${key}"

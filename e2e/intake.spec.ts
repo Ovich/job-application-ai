@@ -33,6 +33,11 @@ test.afterAll(async () => {
 });
 
 test("documents dropped are read, and leaving loses nothing", async ({ browser }) => {
+  // The wait below reads documents through the paced double and carries a timeout of
+  // its own. A test may not outlive its own budget, so the budget has to be the
+  // larger of the two: at Playwright's default 30s the wait was cut off at half its
+  // allowance, and only on a runner slow enough to need it.
+  test.setTimeout(90_000);
   const context = await signedIn(browser, who);
   const page = await context.newPage();
 
@@ -68,6 +73,11 @@ test("documents dropped are read, and leaving loses nothing", async ({ browser }
 });
 
 test("a typed LinkedIn address alone is accepted, with no file at all", async ({ browser }) => {
+  // The wait below reads documents through the paced double and carries a timeout of
+  // its own. A test may not outlive its own budget, so the budget has to be the
+  // larger of the two: at Playwright's default 30s the wait was cut off at half its
+  // allowance, and only on a runner slow enough to need it.
+  test.setTimeout(90_000);
   const context = await signedIn(browser, { ...who, email: "intake-address-only@example.com" });
   const page = await context.newPage();
 

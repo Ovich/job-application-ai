@@ -37,6 +37,11 @@ test.afterAll(async () => {
 test("the assistant asks, the answers become rules, and a reload still has them", async ({
   browser,
 }) => {
+  // The wait below reads documents through the paced double and carries a timeout of
+  // its own. A test may not outlive its own budget, so the budget has to be the
+  // larger of the two: at Playwright's default 30s the wait was cut off at half its
+  // allowance, and only on a runner slow enough to need it.
+  test.setTimeout(120_000);
   const context = await signedIn(browser, who);
   const page = await context.newPage();
 
@@ -115,6 +120,11 @@ test("the assistant asks, the answers become rules, and a reload still has them"
 test("a chip clicked, a rule written on it, and somebody else's deletion beside it", async ({
   browser,
 }) => {
+  // The wait below reads documents through the paced double and carries a timeout of
+  // its own. A test may not outlive its own budget, so the budget has to be the
+  // larger of the two: at Playwright's default 30s the wait was cut off at half its
+  // allowance, and only on a runner slow enough to need it.
+  test.setTimeout(120_000);
   const context = await signedIn(browser, {
     name: "Stefan Teofanovic",
     email: "clarification-end-to-end@example.com",

@@ -48,6 +48,11 @@ test.afterAll(async () => {
 test("the profile shows everything that was read, and each region lights alone", async ({
   browser,
 }) => {
+  // The wait below reads documents through the paced double and carries a timeout of
+  // its own. A test may not outlive its own budget, so the budget has to be the
+  // larger of the two: at Playwright's default 30s the wait was cut off at half its
+  // allowance, and only on a runner slow enough to need it.
+  test.setTimeout(90_000);
   const context = await signedIn(browser, who);
   const page = await context.newPage();
 
@@ -119,6 +124,11 @@ test("the profile shows everything that was read, and each region lights alone",
 });
 
 test("below 1024 px the profile is one column, and the bar switches it", async ({ browser }) => {
+  // The wait below reads documents through the paced double and carries a timeout of
+  // its own. A test may not outlive its own budget, so the budget has to be the
+  // larger of the two: at Playwright's default 30s the wait was cut off at half its
+  // allowance, and only on a runner slow enough to need it.
+  test.setTimeout(90_000);
   const context = await signedIn(browser, {
     ...who,
     email: "profile-one-column@example.com",
