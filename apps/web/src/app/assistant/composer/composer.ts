@@ -79,12 +79,13 @@ export class Composer {
   protected readonly ready = computed(() => this.canSave() || this.draft().trim() !== "");
 
   /**
-   * How tall the text area stands: the lines written, never fewer than two — one line is
-   * the bar's — and never more than eight, past which it scrolls rather than pushing the
-   * conversation off the column.
+   * How tall the text area stands: the lines written and one empty row under them, so the
+   * last line never sits on the bar (the person, 2026-09-14) — never fewer than two, and
+   * never more than eight, past which it scrolls rather than pushing the conversation off
+   * the column.
    */
   protected readonly rows = computed(() =>
-    Math.min(8, Math.max(2, this.draft().split("\n").length)),
+    Math.min(8, Math.max(2, this.draft().split("\n").length + 1)),
   );
 
   private readonly line = viewChild<ElementRef<HTMLInputElement>>("line");
