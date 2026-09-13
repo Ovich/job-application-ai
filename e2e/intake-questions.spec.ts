@@ -183,7 +183,12 @@ test("a chip clicked, a rule written on it, and somebody else's deletion beside 
     email: `deleting-beside-${Date.now()}@example.com`,
   });
   const theirPage = await other.newPage();
-  await theirPage.goto("/profile");
+  // `/documents`, not `/profile`, for the reason `auth.spec` already gives: this person has
+  // handed nothing over, so the viewer sends them to the drop zone, and a redirect that
+  // lands under the click throws away the menu it just opened. On a slow runner it landed
+  // after the click, and the test waited its whole budget for a menu item that was never
+  // coming. The shell, and its account menu, are the same on both pages.
+  await theirPage.goto("/documents");
   await theirPage.getByRole("button", { name: "Your account" }).click();
   await theirPage.getByRole("menuitem", { name: "Delete my account" }).click();
   const gate = theirPage.getByRole("dialog", { name: "Delete your account?" });
