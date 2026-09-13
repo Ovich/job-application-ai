@@ -225,8 +225,9 @@ describe("a click on a line (the person, 2026-09-13)", () => {
     expect(textOf(at("scope-tool [data-part=lead]"))).toBe(theSentence);
     // The path, not the sentence: the sheet has lifted the line already, and a bullet
     // repeated here would be the same thing said twice (the person, 2026-09-13). What
-    // the highlight cannot say is which row of which post is about to be written on.
-    expect(textOf(at("scope-tool [data-part=where]"))).toBe(
+    // the highlight cannot say is which row of which post is about to be written on —
+    // and the composer says it now, beside the words about it (the person, 2026-09-14).
+    expect(textOf(at("composer [data-part=where]"))).toBe(
       "R&D Collaborator in Software Engineering · row 1",
     );
     expect(textOf(at("profile-assistant"))).not.toContain("Ran the migration programme");

@@ -123,7 +123,8 @@ describe("what leaves the column (criteria 6, 8)", () => {
     const send = () => element.querySelector<HTMLButtonElement>("[data-part=send]");
 
     expect(send()?.disabled).toBe(true);
-    expect(textOf(send())).toBe("Save");
+    // One icon for every commit (the person, 2026-09-14); its name still says which.
+    expect(send()?.getAttribute("aria-label")).toBe("Save");
 
     element.querySelectorAll<HTMLButtonElement>("[data-action=alt]")[0]?.click();
     await fixture.whenStable();

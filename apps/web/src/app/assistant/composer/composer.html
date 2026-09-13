@@ -8,6 +8,17 @@
   <tool-dock data-part="dock">
     <ng-content />
   </tool-dock>
+
+  <!--
+    Where a person is, between the tool and the bar while the bar is one line (the
+    person, 2026-09-14). Once the text has moved above, this line moves into the bar and
+    takes the single line's place.
+  -->
+  @if (!multiline() && open.where !== "") {
+    <span data-part="where" uiText variant="caption" tone="muted" class="mb-1.5 block truncate">{{
+      open.where
+    }}</span>
+  }
 }
 
 <!--
@@ -17,40 +28,84 @@
   each inside a container of its own. A pill floating in a padded box was the thing
   saying where a person's words were going, and it said it too quietly.
 -->
-<div class="flex items-stretch overflow-hidden rounded-lg border border-border bg-card">
-  @if (tool(); as open) {
-    <tool-prefix [label]="open.label" [describes]="open.describes" (clear)="clear.emit()" />
+<div class="flex flex-col overflow-hidden rounded-lg border border-border bg-card">
+  <!--
+    Many lines open on top of the base, inside the same box, so the text and what it goes
+    to still read as one thing (the person, 2026-09-14).
+  -->
+  @if (multiline()) {
+    <div class="flex px-3 pt-2">
+      <textarea
+        #lines
+        data-part="composer"
+        aria-label="Message"
+        [rows]="rows()"
+        [value]="draft()"
+        (input)="typed($event)"
+        (keydown)="pressed($event)"
+        class="min-w-0 flex-1 resize-none border-0 bg-transparent text-body outline-none"
+      ></textarea>
+    </div>
   }
 
-  <div class="flex min-w-0 flex-1 items-center px-3 py-2">
-    <input
-      type="text"
-      data-part="composer"
-      aria-label="Message"
-      placeholder="Say it in your own words, or click anything in your profile"
-      [value]="draft()"
-      (input)="typed($event)"
-      class="min-w-0 flex-1 border-0 bg-transparent text-body outline-none"
-    />
-  </div>
+  <div data-part="bar" class="flex items-stretch">
+    @if (tool(); as open) {
+      <tool-prefix [label]="open.label" [describes]="open.describes" (clear)="clear.emit()" />
+    }
 
-  <div class="flex items-center p-2">
-    <!--
-      The one thing that commits what a person wrote, and it says so (the person,
-      2026-09-13): the same gradient mechanic as the prefix, in the blues they chose,
-      sliding on hover. Disabled it goes flat, because a button that looks live and does
-      nothing is worse than one that looks spent.
-    -->
-    <button
-      type="button"
-      data-part="send"
-      hlmBtn
-      size="sm"
-      [disabled]="!ready()"
-      (click)="save.emit()"
-      class="bg-[linear-gradient(to_right,var(--send)_0%,var(--send-deep)_51%,var(--send)_100%)] bg-[length:200%_auto] px-5 font-semibold text-white shadow-sm transition-[background-position] duration-500 hover:bg-right disabled:bg-none disabled:bg-muted disabled:text-muted-foreground disabled:shadow-none"
-    >
-      {{ verb() }}
-    </button>
+    <div class="flex min-w-0 flex-1 items-center px-3 py-2">
+      @if (multiline()) {
+        @if (tool(); as open) {
+          <span data-part="where" uiText variant="caption" tone="muted" class="truncate">{{
+            open.where
+          }}</span>
+        }
+      } @else {
+        <input
+          #line
+          type="text"
+          data-part="composer"
+          aria-label="Message"
+          placeholder="Say it in your own words, or click anything in your profile"
+          [value]="draft()"
+          (input)="typed($event)"
+          (keydown)="pressed($event)"
+          class="min-w-0 flex-1 border-0 bg-transparent text-body outline-none"
+        />
+      }
+    </div>
+
+    <div class="flex items-end p-2">
+      <!--
+        The one thing that commits what a person wrote: one button whatever it commits
+        (the person, 2026-09-14), an arrow, its name saying `Send` or `Save` to whoever
+        cannot see it. The same gradient mechanic as the prefix, in the blues they chose,
+        sliding on hover. Disabled it goes flat, because a button that looks live and does
+        nothing is worse than one that looks spent.
+      -->
+      <button
+        type="button"
+        data-part="send"
+        hlmBtn
+        size="sm"
+        [attr.aria-label]="verb()"
+        [disabled]="!ready()"
+        (click)="save.emit()"
+        class="aspect-square bg-[linear-gradient(to_right,var(--send)_0%,var(--send-deep)_51%,var(--send)_100%)] bg-[length:200%_auto] px-0 text-white shadow-sm transition-[background-position] duration-500 hover:bg-right disabled:bg-none disabled:bg-muted disabled:text-muted-foreground disabled:shadow-none"
+      >
+        <svg
+          class="size-4"
+          viewBox="0 0 16 16"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="2"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+          aria-hidden="true"
+        >
+          <path d="M8 13V3M3.5 7.5 8 3l4.5 4.5" />
+        </svg>
+      </button>
+    </div>
   </div>
 </div>

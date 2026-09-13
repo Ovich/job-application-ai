@@ -283,14 +283,20 @@ export class ProfileAssistant {
   /**
    * What the prefix says, and what hovering it explains: this use case's own word and
    * its own sentence, supplied here and nowhere in core — which is what "concrete tool
-   * prefixes per use case" means. Nothing a document wrote appears in either: where a
-   * person is, is the tool's to say.
+   * prefixes per use case" means. Nothing a document wrote appears in either.
+   *
+   * **Where a person is travels with it** (the person, 2026-09-14): the path — an item's
+   * name, or a post and a row — is the composer's to show, between the tool and the bar
+   * while the bar is one line and inside the bar once it is many. It moved out of the
+   * tool so that it sits beside what is being written about it.
    */
   protected readonly tool = computed(() => {
     const pressed = this.clarifying();
-    if (pressed !== null) return { label: scope, describes: whatScopeMeans };
+    if (pressed !== null) return { label: scope, describes: whatScopeMeans, where: pressed.where };
     const question = this.open();
-    return question === null ? null : { label: scope, describes: whatScopeMeans };
+    return question === null
+      ? null
+      : { label: scope, describes: whatScopeMeans, where: question.where };
   });
 
   /** The count under the reading card: what is left for the person to say. */
