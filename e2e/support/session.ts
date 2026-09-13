@@ -73,21 +73,38 @@ const where = `postgres://${database.username}@${database.host}:${database.port}
  */
 const localAuthSecret = "local_dev_only_not_a_real_secret_00000000";
 
-const localConnection = postgres({ ...database, max: 1, connect_timeout: 5 });
+/**
+ * The local instance, opened on demand and reopened after `forget` lets it go, the way
+ * the deployed database below already is.
+ *
+ * Opened once at module load it could not survive `forget`, and `forget` is what every
+ * spec file calls in its `afterAll`: the files of a project share one worker process, so
+ * the first file to finish ended the connection the rest were still going to sign people
+ * in on, and each of them failed on its first insert with a message blaming the dev
+ * server. It never showed on a laptop, where Playwright gives each file a worker of its
+ * own; on CI, where the default is one worker, it took out every file but the first.
+ */
+const openLocal = () => {
+  const connection = postgres({ ...database, max: 1, connect_timeout: 5 });
+  const instance = betterAuth({
+    baseURL: appUrl.local,
+    secret: localAuthSecret,
+    database: drizzleAdapter(drizzle(connection, { schema }), { provider: "pg" }),
+    // Cast, and the helpers typed below by the library's own `TestHelpers`: the plugin's
+    // declared `init` may answer `options: undefined`, which the plugin contract refuses
+    // under this repository's `exactOptionalPropertyTypes`. The value is the library's.
+    plugins: [testUtils() as BetterAuthPlugin],
+  });
+  return { connection, instance };
+};
 
-const localInstance = betterAuth({
-  baseURL: appUrl.local,
-  secret: localAuthSecret,
-  database: drizzleAdapter(drizzle(localConnection, { schema }), { provider: "pg" }),
-  // Cast, and the helpers typed below by the library's own `TestHelpers`: the plugin's
-  // declared `init` may answer `options: undefined`, which the plugin contract refuses
-  // under this repository's `exactOptionalPropertyTypes`. The value is the library's.
-  plugins: [testUtils() as BetterAuthPlugin],
-});
+let local: ReturnType<typeof openLocal> | undefined;
 
 /** The library's test helpers, which the plugin puts on the instance's context. */
-const helpers = async (): Promise<TestHelpers> =>
-  ((await localInstance.$context) as unknown as { test: TestHelpers }).test;
+const helpers = async (): Promise<TestHelpers> => {
+  local ??= openLocal();
+  return ((await local.instance.$context) as unknown as { test: TestHelpers }).test;
+};
 
 /** The ids of everyone this file saved, per address, so `forget` removes whoever is left. */
 const made: Record<Where, string[]> = { local: [], deployed: [] };
@@ -210,5 +227,6 @@ export const forget = async (at: Where = "local"): Promise<void> => {
   for (const id of made.local.splice(0)) {
     await test.deleteUser(id);
   }
-  await localConnection.end();
+  await local?.connection.end();
+  local = undefined;
 };
