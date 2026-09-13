@@ -1,4 +1,5 @@
 import { Hono } from "hono";
+import { answeredInProcessBy } from "./lib/ai";
 import { auth } from "./lib/auth";
 import { health } from "./routes/health";
 import { intake } from "./routes/intake";
@@ -41,6 +42,15 @@ export const app = new Hono()
   // error at the one moment it is already lost. The distribution passes this through
   // unchanged: only a 403 is mapped to the page (see infra/App-dev.yaml).
   .notFound((c) => c.json({ error: "no such route" }, 404));
+
+// The composition root's one act beyond assembling the routes: `lib/ai` is handed the
+// application that answers its own address, so a call to a base URL that is this app's
+// is answered here, in process, with no network hop (ID130, ID150, F1). It is handed
+// over rather than imported there, because `lib/ai` is reached by the very steps this
+// file is assembled from. Nothing about which environment this is enters into it: the
+// boundary compares the address it was configured with against this app's own, and a
+// base URL naming anywhere else is dialled.
+answeredInProcessBy(async (request) => app.fetch(request));
 
 /** The type the web app's RPC client is built from: types flow, nothing is redeclared. */
 export type AppType = typeof app;

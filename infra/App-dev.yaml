@@ -148,6 +148,20 @@ Resources:
           # rather than a literal, so the function and the resource can never disagree
           # about it.
           STORAGE_URL: !Sub "s3://${DocumentsBucket}"
+          # Where the reading's answers come from, and in dev that is this application
+          # itself (D14, ID127, SL6's F1). A plain literal, because it is not a secret:
+          # no key is registered anywhere, no Secrets Manager entry is created or read
+          # for it, and a reading in this environment costs nothing and reaches no
+          # provider. The day one is reached, this line names it and no code changes.
+          #
+          # It is this app's own address on purpose. The call never leaves the function:
+          # `lib/ai` compares the address it was configured with against APP_URL above
+          # and answers itself in process (apps/api/src/lib/ai/own-address.ts), so there
+          # is no second invocation, no second slice of the timeout and no signed
+          # outbound request. Set explicitly rather than left to its default, which is a
+          # laptop's own port and is precisely what a deployed function must never fall
+          # back to: it did, and every document came back unread.
+          AI_BASE_URL: https://dev.job-application.app/mock/v1
 
   # The URL is unreachable except through the distribution, which signs every request it
   # forwards. An unauthenticated function URL would be a second, public front door to the
