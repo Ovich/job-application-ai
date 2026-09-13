@@ -282,6 +282,22 @@ export const droppingNext = (filename: string): void => {
   dropping = filename;
 };
 
+/** An upload the case has not let through yet. */
+let held: Promise<void> | null = null;
+
+/**
+ * The next upload stays on its way up until the case lets it land, which is the only way
+ * to stand at the moment a person presses Read while the rest of a drop is still
+ * arriving. What it hands back is the letting.
+ */
+export const holdingNextUpload = (): (() => void) => {
+  let release = (): void => {};
+  held = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  return () => release();
+};
+
 /** The next upload is refused, with the status and the body the route would send. */
 export const uploadRefused = (status: number, body: unknown): void => {
   refusal = { status, body };
@@ -302,6 +318,7 @@ export const resetIntake = (): void => {
   frames = [];
   requests = [];
   dropping = null;
+  held = null;
   ruleCount = 1;
 };
 
@@ -454,6 +471,18 @@ alsoAnswering((address, init) => {
   if (path === "/api/intake/documents" && method === "GET") return json(rows);
 
   if (path === "/api/intake/documents" && method === "POST") {
+    if (held !== null) {
+      // Held open by the case, and landing as any upload lands once the case lets it: a
+      // row for the file, and the row in the list the route answers from then on.
+      const waiting = held;
+      held = null;
+      const filename = uploadIn(init?.body).filename ?? "a-held-document.pdf";
+      return waiting.then(() => {
+        const row = rowOf({ id: `document-${rows.length + 1}`, filename });
+        rows = [...rows, row];
+        return json(row, 201);
+      });
+    }
     if (refusal !== null) {
       const refused = refusal;
       refusal = null;
