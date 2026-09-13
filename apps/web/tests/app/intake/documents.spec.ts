@@ -6,6 +6,7 @@ import { routes } from "../../../src/app/app.routes";
 import {
   documentsAre,
   droppingNext,
+  holdingNextUpload,
   intakeRequests,
   itemOf,
   profileIs,
@@ -191,6 +192,37 @@ describe("the documents screen, with documents added (US1, criterion 8)", () => 
       expect(screen.rows().join(" ")).toContain("leCVWeb.docx");
     });
     expect(intakeRequests().filter((each) => each.method === "POST")).toHaveLength(1);
+  });
+
+  /**
+   * A drop still arriving is not yet something to read. The run reads the rows that exist
+   * when it starts, and files go up one at a time, so with one document already here the
+   * button was on while the rest of a drop was still uploading — and a press then read
+   * part of what the person chose. It is also what made `intake-questions` flaky: the
+   * spec pressed Read the moment it could, and on a slow runner that moment came before
+   * a 4.5 MB CV had landed.
+   */
+  it("keeps Read off while a drop is still uploading, even with a document already here", async () => {
+    documentsAre([rowOf({ id: "one", filename: "2026-08-30_cv_FR.pdf" })]);
+    const screen = await opened();
+    await screen.eventually(() => {
+      expect(screen.read()?.disabled).toBe(false);
+    });
+
+    droppingNext("CV-2025.pdf");
+    const land = holdingNextUpload();
+    dropOf(screen.page(), [fileNamed("CV-2025.pdf")]);
+
+    await screen.eventually(() => {
+      expect(screen.read()?.disabled).toBe(true);
+    });
+
+    land();
+
+    await screen.eventually(() => {
+      expect(screen.rows().join(" ")).toContain("CV-2025.pdf");
+      expect(screen.read()?.disabled).toBe(false);
+    });
   });
 
   it("removes a row when the remove is pressed, and disables the button on the last one", async () => {

@@ -100,6 +100,13 @@ export class AppDocuments {
   /** The route's own sentence for the last refusal, or nothing. */
   protected readonly refusal = signal<string | null>(null);
 
+  /**
+   * Whether files a person chose are still on their way up. They go one at a time, and a
+   * row appears as each one lands, so a list can look ready while the rest of the
+   * selection is still arriving.
+   */
+  protected readonly uploading = signal(false);
+
   /** Whether the reading has just landed, which is what the green line says. */
   protected readonly landed = signal(false);
 
@@ -138,13 +145,19 @@ export class AppDocuments {
   );
 
   /**
-   * Something unread, or an address: the whole of the primary button's condition. The
-   * run reads every row that is not `read` — a failed one included, which is how a
-   * failure is tried again — so what leaves the button off is a list with nothing left
-   * to read.
+   * Something unread, or an address, and nothing still on its way up: the whole of the
+   * primary button's condition. The run reads every row that is not `read` — a failed
+   * one included, which is how a failure is tried again — so what leaves the button off
+   * is a list with nothing left to read.
+   *
+   * **And a selection still arriving.** The run reads the rows that exist when it starts,
+   * so a press while the rest of a drop is uploading reads part of what the person chose
+   * and leaves the rest waiting — a profile made of one CV when they gave it three. With
+   * one document already landed the button would otherwise be on, which is exactly the
+   * moment a person, or a test, presses it.
    */
   protected readonly ready = computed(
-    () => this.unread().length > 0 || this.address().trim() !== "",
+    () => !this.uploading() && (this.unread().length > 0 || this.address().trim() !== ""),
   );
 
   /**
@@ -206,16 +219,28 @@ export class AppDocuments {
     if (answer.ok) this.documents.set(await answer.json());
   }
 
+  /** How many drops are still uploading, so a second drop does not end the first's wait. */
+  private arriving = 0;
+
   protected async onFilesChosen(files: File[]): Promise<void> {
     this.refusal.set(null);
-    for (const file of files) {
-      const answer = await api.intake.documents.$post({ form: { file } });
-      const said = (await answer.json()) as Document & { error?: string };
-      if (answer.ok) {
-        this.documents.update((rows) => [...rows, said]);
-      } else {
-        this.refusal.set(said.error ?? null);
+    this.arriving += 1;
+    this.uploading.set(true);
+    try {
+      for (const file of files) {
+        const answer = await api.intake.documents.$post({ form: { file } });
+        const said = (await answer.json()) as Document & { error?: string };
+        if (answer.ok) {
+          this.documents.update((rows) => [...rows, said]);
+        } else {
+          this.refusal.set(said.error ?? null);
+        }
       }
+    } finally {
+      // A refused or failed upload still ends the wait: the button comes back for what did
+      // land, and the refusal's own sentence says what did not.
+      this.arriving -= 1;
+      this.uploading.set(this.arriving > 0);
     }
   }
 
