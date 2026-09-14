@@ -162,6 +162,26 @@ describe("posting a free message (SL3)", () => {
     expect(core.entries()).toEqual([opening, mine]);
   });
 
+  it("posts what the words are about beside them, when the screen says (S8.7, ID233)", async () => {
+    const core = await opened();
+    // The screen's call, as `ProfileViewer.clarified` makes it: the words and what they are about.
+    const post: (text: string, about: { itemId: string; lineId?: string }) => Promise<void> =
+      core.post.bind(core);
+
+    const posting = post("I ran the services.", { itemId: "post-heig", lineId: "line-2" });
+    theReply.says({ kind: "done" });
+    theReply.ends();
+    await posting;
+
+    expect(messagesPosted()).toEqual([
+      {
+        address: "/api/conversations/profile/messages",
+        text: "I ran the services.",
+        about: { itemId: "post-heig", lineId: "line-2" },
+      },
+    ]);
+  });
+
   it("refuses a second post while a reply streams, and sends nothing", async () => {
     const core = await opened();
 

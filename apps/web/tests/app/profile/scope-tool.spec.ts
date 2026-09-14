@@ -142,7 +142,7 @@ describe("the tool the person opened themselves (SL5, criteria 1 and 3)", () => 
     expect(element.querySelector("fieldset")).toBeNull();
     expect(element.querySelector("[data-action=skip]")).toBeNull();
     expect(textOf(element.querySelector("[data-part=foot]"))).toContain(
-      "What you write is kept as your rule for it.",
+      "What you write goes into the conversation, about this.",
     );
   });
 

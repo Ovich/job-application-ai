@@ -216,7 +216,7 @@ test("the assistant asks, the answers become rules, and a reload still has them"
  *
  * Both projects collect it, as the case above.
  */
-test("a chip clicked, a rule written on it, and somebody else's deletion beside it", async ({
+test("a chip clicked, words about it in the conversation, and somebody else's deletion beside it", async ({
   browser,
 }, testInfo) => {
   // The wait below reads documents through the paced double and carries a timeout of
@@ -272,15 +272,25 @@ test("a chip clicked, a rule written on it, and somebody else's deletion beside 
   await page.locator("[data-part=composer]").fill(ownWords);
   await page.locator("[data-part=send]").click();
 
-  // The check line is under that chip, and the assistant is back on what still waits.
-  await expect(page.locator("[data-part=rule]").filter({ hasText: ownWords })).toHaveCount(1);
+  /**
+   * What the person wrote is a message naming the chip (agent-consolidation `S8.7`,
+   * `ID233`): in the conversation with the chip's where above it, and no rule under it.
+   */
+  const wroteAboutTheChip = async (): Promise<void> => {
+    const mine = page.locator("[data-msg=person]").filter({ hasText: ownWords });
+    await expect(mine).toHaveCount(1, { timeout: 15_000 });
+    await expect(mine.locator("[data-part=about]")).toHaveText(label);
+    await expect(page.locator("[data-part=rule]").filter({ hasText: ownWords })).toHaveCount(0);
+  };
+  await wroteAboutTheChip();
+  // The assistant is back on what still waits.
   await expect(page.locator("[data-action=alt]").first()).toBeVisible();
 
-  // A second visit, which keeps nothing in the page: the profile, the rule, and the
-  // first question still waiting. No done state and no exit.
+  // A second visit, which keeps nothing in the page: the profile, the words about the
+  // chip, and the first question still waiting. No done state and no exit.
   await page.reload();
   await expect(page.locator("profile-sheet")).toBeVisible();
-  await expect(page.locator("[data-part=rule]").filter({ hasText: ownWords })).toHaveCount(1);
+  await wroteAboutTheChip();
   // Performed again when the conversation still holds only its opening, shown at once
   // when it holds more (`S8.2`): either way the tool is active once the column is.
   await expect(page.locator("scope-tool")).toBeVisible({ timeout: 15_000 });
@@ -312,7 +322,7 @@ test("a chip clicked, a rule written on it, and somebody else's deletion beside 
 
   await page.reload();
   await expect(page.locator("profile-sheet")).toBeVisible();
-  await expect(page.locator("[data-part=rule]").filter({ hasText: ownWords })).toHaveCount(1);
+  await wroteAboutTheChip();
 
   await other.close();
 });
