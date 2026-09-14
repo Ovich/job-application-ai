@@ -18,15 +18,14 @@
       >
         {{ initials() }}
       </div>
-      <!-- The bubble sits on the right; the words in it read from the left (ID221). -->
+      <!--
+        The bubble sits on the right; the words in it read from the left (ID221). It is the
+        send button's fixed blue with white text, so dark mode flips neither (ID232).
+      -->
       <div class="flex min-w-0 flex-col items-end gap-2 text-left">
         @for (part of entry.parts; track $index) {
           @if (part.kind === "text") {
-            <p
-              uiText
-              variant="body"
-              class="rounded-lg bg-primary px-3.5 py-2 text-primary-foreground"
-            >
+            <p uiText variant="body" class="rounded-lg bg-send px-3.5 py-2 text-white">
               {{ textOf(part) }}
             </p>
           } @else {
