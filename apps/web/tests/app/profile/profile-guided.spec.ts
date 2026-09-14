@@ -325,6 +325,82 @@ describe("a brand-new conversation, performed (S8.1, S8.2)", () => {
   });
 });
 
+describe("the column keeps its thread for the visit (S8.4b, ID227)", () => {
+  const terraform = questionOf({
+    id: "q3",
+    itemId: "chip-terraform",
+    itemTitle: "Terraform",
+    lead: "Did you write the modules or apply them?",
+  });
+
+  const threeChips = (): Profile => {
+    const profile = aProfile([kubernetes, docker, terraform]);
+    return {
+      ...profile,
+      groups: [
+        itemOf({
+          id: "group-devops",
+          kind: "group",
+          title: "DevOps and cloud",
+          children: [
+            chip("chip-k8s", "Kubernetes"),
+            chip("chip-docker", "Docker"),
+            chip("chip-terraform", "Terraform"),
+          ],
+        }),
+      ],
+    };
+  };
+
+  /** What the column reads, top to bottom: each performed line's words, each stored part's kind. */
+  const thread = (all: (selector: string) => Element[]): string[] =>
+    all(
+      "profile-assistant :is([data-part=opening], [data-part=opener], [data-part=ack], [data-part=answered], [data-part=skipped], [data-part=waiting])",
+    ).map((each) => {
+      const part = each.getAttribute("data-part");
+      return part === "opener" || part === "ack" ? textOf(each) : (part ?? "");
+    });
+
+  it("reads every performed line in order after two decisions, and a reload shows only what was stored", async () => {
+    profileIs(threeChips());
+    const { at, all, active, pick, eventually } = await opened();
+    await eventually(() => expect(active()).toEqual(everythingActive));
+
+    await pick(0);
+    await eventually(() => expect(textOf(at("scope-tool [data-part=lead]"))).toBe(docker.lead));
+    (at("[data-action=skip]") as HTMLButtonElement).click();
+    await eventually(() => expect(textOf(at("scope-tool [data-part=lead]"))).toBe(terraform.lead));
+
+    expect(thread(all)).toEqual([
+      "opening",
+      "First, Kubernetes.",
+      "answered",
+      "Noted.",
+      "Next, Docker.",
+      "skipped",
+      "Put aside for later.",
+      "Next, Terraform.",
+      "waiting",
+    ]);
+
+    // A reload keeps nothing in the page: the stored entries come back, the lines said
+    // on the way do not.
+    TestBed.resetTestingModule();
+    TestBed.configureTestingModule({ providers: [provideRouter(routes)] });
+    const again = await opened();
+    await again.eventually(() => expect(again.active()).toEqual(everythingActive));
+    const reloaded = thread(again.all);
+    expect(reloaded.filter((each) => ["opening", "answered", "skipped"].includes(each))).toEqual([
+      "opening",
+      "answered",
+      "skipped",
+    ]);
+    for (const said of ["First, Kubernetes.", "Noted.", "Next, Docker.", "Put aside for later."]) {
+      expect(reloaded).not.toContain(said);
+    }
+  });
+});
+
 describe("between tools (S8.3, ID217, ID219)", () => {
   it("thinks while the answer is saved, then says Noted., names the next question and activates it", async () => {
     profileIs(aProfile([kubernetes, docker]));
@@ -336,7 +412,7 @@ describe("between tools (S8.3, ID217, ID219)", () => {
       await saving;
       return suiteFetch(input, init);
     });
-    const { at, active, pick, eventually } = await opened();
+    const { at, all, active, pick, eventually } = await opened();
     await eventually(() => expect(active()).toEqual(everythingActive));
 
     await pick(0);
@@ -349,7 +425,7 @@ describe("between tools (S8.3, ID217, ID219)", () => {
     await eventually(() => expect(textOf(at("scope-tool [data-part=lead]"))).toBe(docker.lead));
     expect(at("[data-part=activity]")).toBeNull();
     expect(textOf(at("[data-part=ack]"))).toBe("Noted.");
-    expect(textOf(at("[data-part=opener]"))).toBe("Next, Docker.");
+    expect(all("[data-part=opener]").map(textOf)).toEqual(["First, Kubernetes.", "Next, Docker."]);
     const said = textOf(at("profile-assistant"));
     expect(said.indexOf("Noted.")).toBeLessThan(said.indexOf("Next, Docker."));
     expect(active()).toEqual(everythingActive);
@@ -358,20 +434,20 @@ describe("between tools (S8.3, ID217, ID219)", () => {
 
   it("says Put aside for later. after a skip, names the next question and activates it", async () => {
     profileIs(aProfile([kubernetes, docker]));
-    const { at, active, eventually } = await opened();
+    const { at, all, active, eventually } = await opened();
     await eventually(() => expect(active()).toEqual(everythingActive));
 
     (at("[data-action=skip]") as HTMLButtonElement).click();
 
     await eventually(() => expect(textOf(at("scope-tool [data-part=lead]"))).toBe(docker.lead));
     expect(textOf(at("[data-part=ack]"))).toBe("Put aside for later.");
-    expect(textOf(at("[data-part=opener]"))).toBe("Next, Docker.");
+    expect(all("[data-part=opener]").map(textOf)).toEqual(["First, Kubernetes.", "Next, Docker."]);
     expect(active()).toEqual(everythingActive);
   });
 
   it("activates nothing, draws no waiting line and says That is all I needed. after the last decision", async () => {
     profileIs(aProfile([kubernetes]));
-    const { at, active, pick, eventually } = await opened();
+    const { at, all, active, pick, eventually } = await opened();
     await eventually(() => expect(active()).toEqual(everythingActive));
 
     await pick(0);
@@ -382,7 +458,8 @@ describe("between tools (S8.3, ID217, ID219)", () => {
     expect(at("scope-tool")).toBeNull();
     expect(at("[data-part=waiting]")).toBeNull();
     expect(textOf(at("[data-part=ack]"))).toBe("Noted.");
-    expect(at("[data-part=opener]")).toBeNull();
+    // The first opener stays for the visit (`ID227`); no next one is said after the last.
+    expect(all("[data-part=opener]").map(textOf)).toEqual(["First, Kubernetes."]);
     expect(active()).toMatchObject({ label: false, choices: false, lifted: false, waiting: false });
   });
 

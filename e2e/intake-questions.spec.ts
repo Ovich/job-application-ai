@@ -1,5 +1,5 @@
 import { fileURLToPath } from "node:url";
-import { expect, test } from "@playwright/test";
+import { expect, type Page, test } from "@playwright/test";
 import { forget, signedIn } from "./support/session";
 
 /**
@@ -29,6 +29,34 @@ const three = [
 ];
 
 const who = { name: "Stefan Teofanovic", email: "questions-end-to-end@example.com" };
+
+/**
+ * The conversation's newest line is read, not hidden under the tool (agent-consolidation
+ * `S8.4b`, `ID227`): the waiting line's box lies inside the visible area of the column that
+ * scrolls it, and above the top of the tool dock.
+ */
+const waitingLineInView = async (page: Page): Promise<void> => {
+  const waiting = page.locator("[data-part=waiting]");
+  await expect(waiting).toBeVisible({ timeout: 15_000 });
+  await expect
+    .poll(() =>
+      waiting.evaluate((line) => {
+        let column = line.parentElement;
+        while (column !== null && !/(auto|scroll)/.test(getComputedStyle(column).overflowY)) {
+          column = column.parentElement;
+        }
+        const dock = document.querySelector("[data-part=dock]");
+        if (column === null || dock === null) return "no scrolling column or no dock";
+        const its = line.getBoundingClientRect();
+        const seen = column.getBoundingClientRect();
+        const top = dock.getBoundingClientRect().top;
+        return its.top >= seen.top && its.bottom <= seen.bottom && its.bottom <= top
+          ? "in view above the dock"
+          : `line ${its.top}..${its.bottom}, column ${seen.top}..${seen.bottom}, dock top ${top}`;
+      }),
+    )
+    .toBe("in view above the dock");
+};
 
 test.afterAll(async () => {
   await forget();
@@ -81,6 +109,7 @@ test("the assistant asks, the answers become rules, and a reload still has them"
   // The first question is open with no click at all, and the count is a count.
   const count = page.locator("[data-part=count]");
   await expect(page.locator("scope-tool")).toBeVisible();
+  await waitingLineInView(page);
   await expect(count).toHaveText(/^0 of \d+ answered$/);
   await expect(page.locator("body")).not.toContainText("%");
 
@@ -101,7 +130,7 @@ test("the assistant asks, the answers become rules, and a reload still has them"
   await expect(count).toHaveText(/^1 of \d+ answered$/);
   // The assistant acknowledges, names the next question and activates its tool, with the
   // line saying it waits for the person (`S8.3`, `ID218`).
-  await expect(page.locator("[data-part=waiting]")).toBeVisible({ timeout: 15_000 });
+  await waitingLineInView(page);
   await expect(page.locator("[data-action=alt]").first()).toBeVisible();
   await expect(page.locator("[data-part=lead]")).not.toHaveText(firstLead ?? "");
 
@@ -118,6 +147,7 @@ test("the assistant asks, the answers become rules, and a reload still has them"
   await page.locator("[data-action=skip]").click();
   await expect(count).toHaveText(/^2 of \d+ answered, 1 for the builder$/);
   await expect(page.locator("scope-tool")).toBeVisible();
+  await waitingLineInView(page);
 
   // The rules are on the sheet, as the check line under their items.
   await expect(page.locator("[data-part=rule]").filter({ hasText: firstRule ?? "" })).toHaveCount(
