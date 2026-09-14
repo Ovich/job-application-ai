@@ -78,8 +78,11 @@ test("the assistant asks, the answers become rules, and a reload still has them"
   await expect(count).toHaveText(/^1 of \d+ answered$/);
   await expect(page.locator("[data-part=lead]")).not.toHaveText(firstLead ?? "");
 
-  // One answered in the person's own words, with nothing picked at all.
+  // One answered in the person's own words: the question's last row, which is a pick that
+  // carries words (plan ID205). Words with no row picked are a free message, and stay
+  // covered by `e2e/conversation.spec.ts`.
   const ownWords = "I only ever read the dashboards, never set anything up";
+  await page.locator("[data-action=alt]").last().click();
   await page.locator("[data-part=composer]").fill(ownWords);
   await page.locator("[data-part=send]").click();
   await expect(count).toHaveText(/^2 of \d+ answered$/);
