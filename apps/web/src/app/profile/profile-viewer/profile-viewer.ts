@@ -109,20 +109,22 @@ export class ProfileViewer {
 
   /**
    * Whether the person put the tool down by pressing the dimmed profile. It stays down
-   * until they press a region again — otherwise the waiting question, which is still
-   * waiting, would open itself the instant it was closed.
+   * until they press a region again — otherwise the assistant, which is still waiting on
+   * that question, would activate it again the instant it was closed.
    */
   protected readonly dismissed = signal(false);
 
   /**
    * Which ending the last closed tool was, and the whole of `S5.4`: the profile returns
    * to its head when the **assistant's own run** ends, and stays where the person left
-   * it when a clarification does (the mockup's `next(after, viaQuestion)`).
+   * it when a clarification does (the mockup's `next(after, viaQuestion)`). An activation
+   * by the assistant is what marks a run (agent-consolidation `SL8`); nothing has before
+   * it, so the profile does not move before it either.
    *
    * A field and not a signal, deliberately: the effect below must not re-run because
    * this moved, only because what is lifted did.
    */
-  private viaQuestion = true;
+  private viaQuestion = false;
 
   private readonly scroller = viewChild<ElementRef<HTMLElement>>("scroller");
 
@@ -138,15 +140,14 @@ export class ProfileViewer {
   );
 
   /**
-   * The question the assistant has open: the one still open on the item the person
-   * pressed, skipped ones included, or the first one waiting when they pressed nothing.
-   * The assistant decides the same way from the same two inputs; this is what the sheet
-   * is placed by. A line has no question, so a press on one opens its item's never.
+   * The question whose tool is active: the one still open on the item pressed or
+   * activated, skipped ones included, and nothing otherwise — nothing is active by
+   * default (agent-consolidation `ID215`). The assistant decides the same way from the
+   * same input. A line has no question, so being on one opens its item's never.
    */
   private readonly open = computed(() => {
     const region = this.selected();
-    if (region === null) return this.waiting()[0] ?? null;
-    if (region.kind === "line") return null;
+    if (region === null || region.kind === "line") return null;
     return this.stillOpen().find((question) => question.itemId === region.id) ?? null;
   });
 
@@ -162,13 +163,12 @@ export class ProfileViewer {
   });
 
   /**
-   * Which region the sheet lifts: the region the person pressed themselves, line or
-   * item, or the open question's item. Nothing is lifted when no tool is open.
+   * Which region the sheet lifts: the region pressed or activated, line or item. Nothing
+   * is lifted when no tool is active.
    */
   protected readonly lifted = computed(() => {
     const pressed = this.pressed();
-    if (pressed !== null) return pressed.lineId ?? pressed.itemId;
-    return this.open()?.itemId ?? null;
+    return pressed === null ? null : (pressed.lineId ?? pressed.itemId);
   });
 
   /**
@@ -302,8 +302,14 @@ export class ProfileViewer {
       if (lifted === null) {
         // The assistant's own run has ended: the reading is what the person came to see
         // and the last question left them deep inside a list (`ID125`, rule 5). A tool
-        // the person opened themselves ends without moving anything (`S5.4`).
-        if (this.viaQuestion && this.profile() !== null && this.questions().length > 0) {
+        // the person opened themselves ends without moving anything (`S5.4`), and so does
+        // one between two of the assistant's questions, whose next activation places it.
+        if (
+          this.viaQuestion &&
+          this.profile() !== null &&
+          this.questions().length > 0 &&
+          this.waiting().length === 0
+        ) {
           backToHead(column);
         }
         return;
@@ -436,6 +442,16 @@ export class ProfileViewer {
     return null;
   }
 
+  /**
+   * The assistant activated a question's tool (agent-consolidation `ID215`, `ID216`):
+   * handled as a press on that item, the one path a tool is activated by, and marking the
+   * assistant's run so the column returns to its head once no tool is left (`ID125`).
+   */
+  protected activated(activation: { itemId: string }): void {
+    this.viaQuestion = true;
+    this.chosen({ kind: "item", id: activation.itemId });
+  }
+
   /** One answer written, and the profile read back, so the rule shown is the rule kept. */
   protected async answered(said: {
     questionId: string;
@@ -443,26 +459,42 @@ export class ProfileViewer {
     words?: string;
   }): Promise<void> {
     this.viaQuestion = true;
-    this.selected.set(null);
-    await api.intake.questions[":id"].answer.$post({
-      param: { id: said.questionId },
-      json: {
-        ...(said.optionId === undefined ? {} : { optionId: said.optionId }),
-        ...(said.words === undefined ? {} : { words: said.words }),
-      },
-    });
-    // The answer is an entry of the conversation now (agent-consolidation `S7.1`), so the
-    // conversation is read back with the profile.
-    await Promise.all([this.load(), this.core.reload()]);
+    await this.decide(
+      api.intake.questions[":id"].answer.$post({
+        param: { id: said.questionId },
+        json: {
+          ...(said.optionId === undefined ? {} : { optionId: said.optionId }),
+          ...(said.words === undefined ? {} : { words: said.words }),
+        },
+      }),
+    );
   }
 
   protected async skipped(said: { questionId: string }): Promise<void> {
     this.viaQuestion = true;
-    this.selected.set(null);
-    await api.intake.questions[":id"].answer.$post({
-      param: { id: said.questionId },
-      json: { skip: true },
-    });
+    await this.decide(
+      api.intake.questions[":id"].answer.$post({
+        param: { id: said.questionId },
+        json: { skip: true },
+      }),
+    );
+  }
+
+  /**
+   * A decision posted, and the profile and the conversation read back whether it was
+   * kept or not, which is what the assistant waits on while it thinks (`ID217`). Kept,
+   * nothing is active any more and the assistant activates what comes next; not kept, the
+   * tool stays on the item with what the person had picked.
+   *
+   * The decision is an entry of the conversation (agent-consolidation `S7.1`), so the
+   * conversation is read back with the profile.
+   */
+  private async decide(posting: Promise<{ ok: boolean }>): Promise<void> {
+    const kept = await posting.then(
+      (answer) => answer.ok,
+      () => false,
+    );
+    if (kept) this.selected.set(null);
     await Promise.all([this.load(), this.core.reload()]);
   }
 

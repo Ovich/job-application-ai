@@ -3,8 +3,8 @@
 <!--
   The core assistant draws the column, the dock, the prefix and the bar (S7.4). What is
   written below is the intake's and nothing in `app/assistant/` knows a word of it: the
-  greeting, the reading, the opener, the stream, and the interview tool that goes into
-  the dock.
+  greeting, the reading, the openers, the acknowledgements, the waiting line, and the
+  interview tool that goes into the dock.
 -->
 <assistant [tool]="tool()" [canSave]="picked() !== null" (save)="save()" (clear)="skip()">
   <!--
@@ -25,7 +25,7 @@
       @if (welcome(); as hello) {
         <!--
           A second visit: the run that produced this profile is behind the person, so its
-          opener is not replayed and nothing here says the profile is finished (US9).
+          opening is not replayed and nothing here says the profile is finished (US9).
         -->
         <div data-msg="ai" class="grid grid-cols-[30px_1fr] gap-3">
           <div
@@ -34,7 +34,17 @@
           >
             A
           </div>
-          <p data-part="welcome" uiText variant="body">{{ hello }}</p>
+          <div class="flex min-w-0 flex-col gap-1">
+            <p data-part="welcome" uiText variant="body">{{ hello }}</p>
+            <time
+              data-part="at"
+              uiText
+              variant="caption"
+              tone="muted"
+              [attr.title]="exactlyWhen(openingAt())"
+              >{{ when(openingAt()) }}</time
+            >
+          </div>
         </div>
       } @else {
         <div data-msg="ai" class="grid grid-cols-[30px_1fr] gap-3">
@@ -71,36 +81,66 @@
             @if (tailShown(); as landed) {
               <p data-part="tail" uiText variant="body" class="mt-3">{{ landed }}</p>
             }
+
+            @if (openingShown() !== "") {
+              <time
+                data-part="at"
+                uiText
+                variant="caption"
+                tone="muted"
+                class="mt-1 block"
+                [attr.title]="exactlyWhen(openingAt())"
+                >{{ when(openingAt()) }}</time
+              >
+            }
           </div>
         </div>
       }
     </ng-template>
   </assistant-conversation>
 
-  <!-- The opener lands last, after the tool has opened under it (`G3`). -->
-  @if (openerShown(); as first) {
-    <div data-msg="ai" class="grid grid-cols-[30px_1fr] gap-3">
-      <div
-        aria-hidden="true"
-        class="mt-0.5 grid size-[30px] place-items-center rounded-full bg-primary font-semibold text-label text-primary-foreground"
-      >
-        A
+  <!--
+    What the assistant says on this turn and does not store (ID201): the opener, the
+    acknowledgement of a decision just kept, or that it has all it needs. Each is timed
+    when it was said (ID220).
+  -->
+  @for (line of turn(); track $index) {
+    @if (shown(line); as landed) {
+      <div data-msg="ai" class="grid grid-cols-[30px_1fr] gap-3">
+        <div
+          aria-hidden="true"
+          class="mt-0.5 grid size-[30px] place-items-center rounded-full bg-primary font-semibold text-label text-primary-foreground"
+        >
+          A
+        </div>
+        <div class="flex min-w-0 flex-col gap-1">
+          <p
+            [attr.data-part]="line.part"
+            uiText
+            variant="body"
+            [tone]="line.tone"
+            aria-live="polite"
+          >
+            {{ landed }}
+          </p>
+          <time
+            data-part="at"
+            uiText
+            variant="caption"
+            tone="muted"
+            [attr.title]="exactlyWhen(line.at)"
+            >{{ when(line.at) }}</time
+          >
+        </div>
       </div>
-      <p data-part="opener" uiText variant="body" aria-live="polite">{{ first }}</p>
-    </div>
+    }
   }
 
-  @for (said of stream(); track $index) {
-    <div data-msg="ai" class="grid grid-cols-[30px_1fr] gap-3">
-      <div
-        aria-hidden="true"
-        class="mt-0.5 grid size-[30px] place-items-center rounded-full bg-primary font-semibold text-label text-primary-foreground"
-      >
-        A
-      </div>
-      <p uiText variant="body" [tone]="said.kind === 'ok' ? 'ok' : 'foreground'">{{ said.text }}</p>
-    </div>
+  <!-- The last line while a question's tool is active: it waits for the person (ID218). -->
+  @if (waitingLine(); as waiting) {
+    <p data-part="waiting" uiText variant="caption" tone="muted" role="status">{{ waiting }}</p>
   }
+
   <ng-container assistantTool>
     @if (asked(); as open) {
       <scope-tool [tool]="open" (pick)="pick($event)" (skip)="skip()" />
