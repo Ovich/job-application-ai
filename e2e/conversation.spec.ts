@@ -103,9 +103,8 @@ test("a free message and its streamed reply land, and a reload shows both after 
   await expect(assistant.locator("[data-part=opening]")).toHaveCount(1);
   await expect(said).toHaveText([/Which document did you read first\?/, /No pre generated text/]);
 
-  const stored = (await (
-    await page.request.get("/api/conversations/profile")
-  ).json()) as Conversation & {
+  const stored = (await (await page.request.get("/api/conversations/profile")).json()) as {
+    id: string;
     entries: { position: number; author: string; parts: { text?: string }[] }[];
   };
   expect(
