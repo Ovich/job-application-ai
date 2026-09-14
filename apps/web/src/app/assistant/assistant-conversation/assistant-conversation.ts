@@ -1,7 +1,17 @@
 import { NgComponentOutlet, NgTemplateOutlet } from "@angular/common";
-import { Component, computed, contentChild, inject, TemplateRef, type Type } from "@angular/core";
+import {
+  Component,
+  computed,
+  contentChild,
+  DestroyRef,
+  inject,
+  signal,
+  TemplateRef,
+  type Type,
+} from "@angular/core";
 import { CurrentUser } from "../../auth/current-user";
 import { initialsOf } from "../../auth/session";
+import { ago, exactly } from "../../lib/ago";
 import { UiText } from "../../ui/typography/text/text";
 import { AssistantCore, type Entry } from "../assistant-core";
 import { ASSISTANT_PARTS } from "../provide-assistant";
@@ -64,6 +74,27 @@ export class AssistantConversation {
    * shows them.
    */
   protected readonly initials = computed(() => initialsOf(this.currentUser.person()?.name ?? ""));
+
+  /**
+   * The time the phrases are said from, read again once a minute while the conversation
+   * is on the screen (`ID220`), so `just now` becomes `1 min ago` with no reload.
+   */
+  private readonly now = signal(new Date());
+
+  constructor() {
+    const every = setInterval(() => this.now.set(new Date()), 60 * 1000);
+    inject(DestroyRef).onDestroy(() => clearInterval(every));
+  }
+
+  /** When an entry was stored, as a phrase: `5 min ago`. */
+  protected when(createdAt: string): string {
+    return ago(new Date(createdAt), this.now());
+  }
+
+  /** When an entry was stored, in full, for the hover. */
+  protected exactlyWhen(createdAt: string): string {
+    return exactly(new Date(createdAt));
+  }
 
   /** The words of a `text` part. */
   protected textOf(part: Part): string {
