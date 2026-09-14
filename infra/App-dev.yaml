@@ -30,6 +30,31 @@ Parameters:
       The ARN of the Cert-dev certificate, read from that stack's output in us-east-1.
     AllowedPattern: ^arn:aws:acm:us-east-1:\d{12}:certificate/.+$
 
+  # Switching the AI from the mock to a provider is these two values on a deploy, and no
+  # code (goal 9, ID195). Both default to the mock, so a deploy that names neither is the
+  # environment as it has always been.
+  AiBaseUrl:
+    Type: String
+    Default: https://dev.job-application.app/mock/v1
+    Description: >-
+      Where the reading and the assistants ask for answers, ending at the /v1-equivalent.
+      The default is this app's own mock, which the function answers in process.
+
+  # The NAME of a Secrets Manager entry, never a key (ID214): a parameter's value is shown
+  # in the console, in describe-stacks and in the pipeline's command, so the key itself is
+  # resolved from the entry while the stack applies, as every other secret here is. Empty
+  # means no key at all. The deploy role must also be granted the entry before it is set
+  # (Deploy.yaml), which is not done yet.
+  AiKeyEntry:
+    Type: String
+    Default: ""
+    Description: >-
+      Name of the Secrets Manager entry whose SecretString is the AI provider's key, or
+      empty for the mock, which needs none.
+
+Conditions:
+  HasAiKey: !Not [!Equals [!Ref AiKeyEntry, ""]]
+
 Resources:
   # Declared rather than left to the function, which would otherwise create a group that
   # outlives the stack and keeps its logs for ever. Rule 18 says what a log line may
@@ -148,20 +173,27 @@ Resources:
           # rather than a literal, so the function and the resource can never disagree
           # about it.
           STORAGE_URL: !Sub "s3://${DocumentsBucket}"
-          # Where the reading's answers come from, and in dev that is this application
-          # itself (D14, ID127, SL6's F1). A plain literal, because it is not a secret:
-          # no key is registered anywhere, no Secrets Manager entry is created or read
-          # for it, and a reading in this environment costs nothing and reaches no
-          # provider. The day one is reached, this line names it and no code changes.
+          # Where the reading's and the assistants' answers come from: the AiBaseUrl
+          # parameter, which defaults to this application itself (D14, ID127, ID195). With
+          # the default no key is registered anywhere, no Secrets Manager entry is read,
+          # and a call in this environment costs nothing and reaches no provider. The day
+          # one is reached, the parameter names it and no code changes.
           #
-          # It is this app's own address on purpose. The call never leaves the function:
-          # `lib/ai` compares the address it was configured with against APP_URL above
-          # and answers itself in process (apps/api/src/lib/ai/own-address.ts), so there
-          # is no second invocation, no second slice of the timeout and no signed
-          # outbound request. Set explicitly rather than left to its default, which is a
-          # laptop's own port and is precisely what a deployed function must never fall
-          # back to: it did, and every document came back unread.
-          AI_BASE_URL: https://dev.job-application.app/mock/v1
+          # The default is this app's own address on purpose. The call never leaves the
+          # function: `lib/ai` compares the address it was configured with against APP_URL
+          # above and answers itself in process (apps/api/src/lib/ai/own-address.ts), so
+          # there is no second invocation, no second slice of the timeout and no signed
+          # outbound request. Set explicitly rather than left to the schema's default,
+          # which is a laptop's own port and is precisely what a deployed function must
+          # never fall back to: it did, and every document came back unread.
+          AI_BASE_URL: !Ref AiBaseUrl
+          # The provider's key, only when AiKeyEntry names an entry, and then only as a
+          # dynamic reference resolved while the stack applies (ID214). Absent otherwise,
+          # so the schema's throwaway stands and the mock ignores it.
+          AI_API_KEY: !If
+            - HasAiKey
+            - !Sub "{{resolve:secretsmanager:${AiKeyEntry}:SecretString}}"
+            - !Ref AWS::NoValue
 
   # The URL is unreachable except through the distribution, which signs every request it
   # forwards. An unauthenticated function URL would be a second, public front door to the

@@ -10,6 +10,9 @@
  * is complete, which is the one thing a stream must not be waited for.
  */
 
+import type { BrowserContext } from "@playwright/test";
+import { payloadHashOf } from "./api";
+
 /** One frame as the reader received it: what the envelope said, without when. */
 export type Frame = {
   readonly seq: number;
@@ -41,6 +44,70 @@ export type Stop =
   | { readonly frames: number }
   | { readonly until: (frame: Frame) => boolean }
   | { readonly forMs: number };
+
+/**
+ * One leaf a conversation's stream carries (`ID170`, `ID196`, `ID210`): the person's
+ * entry, what the agent is doing, the reply's text, the reply's entry, then done or error.
+ */
+export type Leaf =
+  | {
+      readonly kind: "entry";
+      readonly entry: { readonly position: number; readonly author: string };
+    }
+  | { readonly kind: "status"; readonly text: string }
+  | { readonly kind: "text"; readonly text: string }
+  | { readonly kind: "done" }
+  | { readonly kind: "error"; readonly message: string };
+
+/**
+ * Posts `body` to the stream at `url` as that context's person, and reads every leaf until
+ * the server ends the stream (`ID197`).
+ *
+ * A POST from the test process is not the browser's client, so it states what that
+ * client states: the payload hash of the bytes that leave, without which the deployed
+ * function URL refuses the request with a 403 the distribution answers as the page
+ * (`ID58`), and the context's cookie, which the platform's `fetch` does not hold. The
+ * content type is checked before a frame is parsed, because a `200` in `text/html` is
+ * that page rather than a stream.
+ */
+export const postStream = async (
+  context: BrowserContext,
+  url: string,
+  body: unknown,
+): Promise<Leaf[]> => {
+  const sent = JSON.stringify(body);
+  const cookie = (await context.cookies(url))
+    .map((each) => `${each.name}=${each.value}`)
+    .join("; ");
+  const response = await fetch(url, {
+    method: "POST",
+    headers: {
+      accept: "text/event-stream",
+      "content-type": "application/json",
+      "x-amz-content-sha256": await payloadHashOf(sent),
+      cookie,
+    },
+    body: sent,
+    signal: AbortSignal.timeout(60_000),
+  });
+  const contentType = response.headers.get("content-type") ?? "";
+  if (response.status !== 200 || !contentType.startsWith("text/event-stream")) {
+    throw new Error(
+      `the message answered ${response.status} in ${contentType || "no content type"} rather than opening a stream`,
+    );
+  }
+  return (await response.text())
+    .split("\n\n")
+    .map((event) =>
+      event
+        .split("\n")
+        .find((line) => line.startsWith("data:"))
+        ?.slice("data:".length)
+        .trim(),
+    )
+    .filter((data): data is string => data !== undefined && data !== "")
+    .map((data) => (JSON.parse(data) as { leaf: Leaf }).leaf);
+};
 
 /** How long a stream may say nothing at all, beats included, before the read is a failure. */
 const defaultSilenceMs = 15_000;

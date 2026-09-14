@@ -170,9 +170,10 @@ jobs:
             --bundle --platform=node --target=node24 --format=esm --minify --sourcemap \
             --banner:js='import{createRequire}from"node:module";globalThis.require=createRequire(import.meta.url);' \
             --outfile=dist/lambda/index.mjs
-          # The answers the function serves itself. `App-dev.yaml` gives it no
-          # `AI_BASE_URL`, so it is its own double and reads these from beside the
-          # bundle at run time; nothing else puts them in the zip.
+          # The answers the function serves itself. `App-dev.yaml` points `AI_BASE_URL`
+          # at this app's own mock by default, which the function answers in process,
+          # reading these from beside the bundle at run time; nothing else puts them in
+          # the zip.
           cp -R apps/api/src/lib/mock/documents dist/lambda/documents
           (cd dist/lambda && zip --quiet --recurse-paths ../api.zip .)
           key="api/${GITHUB_SHA}.zip"

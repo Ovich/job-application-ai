@@ -369,6 +369,83 @@ describe("what the function signs people in with (ID60, ID71)", () => {
    * that signs a person in on the deployed address reads the same one (ID100, ID101).
    * Named down to the secret, so the pipeline's rights do not grow with the account's.
    */
+  /**
+   * Switching to a provider is two parameter values and no further slice (goal 9, `ID195`,
+   * `ID214`): the address, and the NAME of the Secrets Manager entry that holds the key.
+   * The key itself never travels as a parameter, and with no entry named there is no key
+   * at all, so the default deploy reaches no secret and answers from the mock.
+   *
+   * The variable is read as CloudFormation would evaluate it for a given parameter
+   * value, so what is asserted is the function's environment in each case, not the
+   * spelling of the intrinsic that produces it.
+   */
+  it("hands the function no AI_API_KEY unless AiKeyEntry is set, and then only as a Secrets Manager reference", () => {
+    const template = readYamlTemplate(infra("App-dev.yaml"));
+    const noValue = Symbol("AWS::NoValue");
+    type Evaluated = string | boolean | typeof noValue | undefined;
+
+    const evaluate = (node: Json | undefined, given: Record<string, string>): Evaluated => {
+      if (node === undefined || typeof node === "string") return node;
+      if (node === null || typeof node !== "object" || Array.isArray(node)) {
+        throw new Error(`cannot evaluate ${JSON.stringify(node)}`);
+      }
+      const [[name, argument]] = Object.entries(node) as [[string, Json]];
+      const list = Array.isArray(argument) ? argument : [];
+      switch (name) {
+        case "Ref":
+          if (argument === "AWS::NoValue") return noValue;
+          return given[String(argument)];
+        case "Fn::Sub":
+          return String(argument).replace(/\$\{([^}]+)\}/g, (_, ref: string) => given[ref] ?? "");
+        case "Fn::Equals":
+          return evaluate(list[0], given) === evaluate(list[1], given);
+        case "Fn::Not":
+          return !evaluate(list[0], given);
+        case "Condition":
+          return evaluate(template.Conditions?.[String(argument)], given);
+        case "Fn::If":
+          return evaluate(template.Conditions?.[String(list[0])], given)
+            ? evaluate(list[1], given)
+            : evaluate(list[2], given);
+        default:
+          throw new Error(`cannot evaluate ${name}`);
+      }
+    };
+
+    const withDefaults = (overrides: Record<string, string>) =>
+      Object.fromEntries(
+        Object.entries(template.Parameters ?? {}).map(([name, declared]) => [
+          name,
+          overrides[name] ??
+            String((declared as { Default?: string } | null)?.Default ?? `<${name}>`),
+        ]),
+      );
+    const { AI_API_KEY } = (
+      resource("App-dev", "Api").Properties as {
+        Environment: { Variables: Record<string, Json> };
+      }
+    ).Environment.Variables;
+    const keyWith = (overrides: Record<string, string>) => {
+      const value = evaluate(AI_API_KEY, withDefaults(overrides));
+      return value === noValue ? undefined : value;
+    };
+
+    const { AiKeyEntry } = template.Parameters ?? {};
+    expect(AiKeyEntry).toMatchObject({ Default: "" });
+    expect(keyWith({})).toBeUndefined();
+    expect(keyWith({ AiKeyEntry: "jobapp/dev/ai-key" })).toBe(
+      "{{resolve:secretsmanager:jobapp/dev/ai-key:SecretString}}",
+    );
+  });
+
+  it("points the function at its own mock unless AiBaseUrl says otherwise", () => {
+    const { AiBaseUrl } = readYamlTemplate(infra("App-dev.yaml")).Parameters ?? {};
+    expect(AiBaseUrl).toMatchObject({ Default: "https://dev.job-application.app/mock/v1" });
+    expect(at("App-dev", "Api", "Properties.Environment.Variables.AI_BASE_URL.Ref")).toBe(
+      "AiBaseUrl",
+    );
+  });
+
   it("lets the deploy role read the two secrets it is named for, and no others", () => {
     const policy = leaves(resource("Deploy", "DeployRolePolicy") as unknown as Json);
     const allowed = [...policy]

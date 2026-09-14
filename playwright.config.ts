@@ -50,8 +50,8 @@ export default defineConfig({
       // the same reason `intake` is: the deployed environment's storage has never been
       // exercised and its AI values are SL6's, so a run there would read documents no
       // bucket holds and ask a mock the template does not yet point at.
-      // `conversation` joins at agent-consolidation SL2 and is local-only until its SL6
-      // (ID178), for the reason `profile` is: it reads documents first.
+      // `conversation` joins at agent-consolidation SL2, and both projects collect it from
+      // that plan's SL6 (ID178).
       testMatch:
         /(health-stream|auth|entry-route|intake|intake-questions|profile|conversation)\.spec\.ts$/,
       use: { baseURL: "http://localhost:4200" },
@@ -64,7 +64,13 @@ export default defineConfig({
       // access control, the payload hash and the session cookie's road through the
       // distribution exist at all. A spec collected by both projects skips what only
       // one address can answer, the way `health-stream` already does.
-      testMatch: /(health(-stream)?|auth|entry-route)\.spec\.ts$/,
+      //
+      // `conversation` is the first product spec it collects (agent-consolidation SL6,
+      // ID178): its routes' cases give the person a reading straight into the database
+      // (ID212) and then ask only the API, so nothing in them needs a document read on
+      // dev. `intake`, `profile` and `intake-questions` still read real documents through
+      // the page, which the deployed suite cannot do (ID138), so they stay local.
+      testMatch: /(health(-stream)?|auth|entry-route|conversation)\.spec\.ts$/,
       use: { baseURL: "https://dev.job-application.app" },
       // One worker, and the reason is the environment rather than the tests. Nothing
       // here writes any more — the health route only reads — but the specs share one
