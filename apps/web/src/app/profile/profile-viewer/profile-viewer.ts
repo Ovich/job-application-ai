@@ -392,7 +392,8 @@ export class ProfileViewer {
     if (this.selected() === null) return;
     const target = event.target;
     if (target instanceof Element) {
-      if (target.closest("composer") !== null) return;
+      // The view toggle below 1024 px counts like the composer: it is how the tool is reached.
+      if (target.closest("composer, [data-action=toggle-view]") !== null) return;
       const region = target.closest("[data-region]")?.getAttribute("data-id") ?? null;
       if (region !== null && region === this.lifted()) return;
     }
