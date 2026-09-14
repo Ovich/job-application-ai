@@ -42,9 +42,21 @@ const payloadHash = "x-amz-content-sha256";
 
 type Fetching = (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>;
 
+/**
+ * The `fetch` a case replaced, put back when it ends.
+ *
+ * Not `vi.unstubAllGlobals`: that restores the platform's own `fetch`, and the unit-test
+ * builder runs spec files in one shared context (`isolate: false`), where the suite's
+ * stand-in (`tests/support/session.ts`) is installed once per worker. Every file that
+ * ran after this one in the same worker then called the real network — which files those
+ * were depended on how many workers the machine gave the run.
+ */
+let replaced: typeof fetch | undefined;
+
 /** Stands in for the network and keeps what was handed to it. */
 function captureRequests() {
   const fetching = vi.fn<Fetching>(async () => new Response("{}", { status: 200 }));
+  replaced ??= globalThis.fetch;
   vi.stubGlobal("fetch", fetching);
   return fetching;
 }
@@ -57,7 +69,8 @@ function requestSentTo(fetching: ReturnType<typeof captureRequests>) {
 
 describe("the API client", () => {
   afterEach(() => {
-    vi.unstubAllGlobals();
+    if (replaced !== undefined) vi.stubGlobal("fetch", replaced);
+    replaced = undefined;
   });
 
   it("states the digest of the body it sends", async () => {

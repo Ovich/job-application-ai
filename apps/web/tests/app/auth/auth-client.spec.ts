@@ -36,6 +36,13 @@ const digestOfAccentedBody = "7f3f78b3affc1cdd97cf653b689322a261a8c72ab6c7a7c690
 
 type Fetching = (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>;
 
+/**
+ * The `fetch` a case replaced, put back when it ends. The unit-test builder runs spec
+ * files in one shared context (`isolate: false`), so a mock left in place here is what
+ * every later file in the same worker would call instead of the suite's stand-in.
+ */
+let replaced: typeof fetch | undefined;
+
 /** Stands in for the network and keeps what the library handed it. */
 const captureRequests = () => {
   const fetching = vi.fn<Fetching>(
@@ -45,6 +52,7 @@ const captureRequests = () => {
         headers: { "content-type": "application/json" },
       }),
   );
+  replaced ??= globalThis.fetch;
   vi.stubGlobal("fetch", fetching);
   return fetching;
 };
@@ -63,6 +71,8 @@ const requestSentTo = (fetching: ReturnType<typeof captureRequests>) => {
 describe("the library's client", () => {
   afterEach(() => {
     vi.clearAllMocks();
+    if (replaced !== undefined) vi.stubGlobal("fetch", replaced);
+    replaced = undefined;
   });
 
   it("states the digest of the body the library sends", async () => {
