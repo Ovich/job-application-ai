@@ -8,6 +8,7 @@ import {
   conversationIs,
   emptyProfile,
   entryOf,
+  intakeRequests,
   itemOf,
   type Profile,
   profileIs,
@@ -483,5 +484,230 @@ describe("between tools (S8.3, ID217, ID219)", () => {
     expect(textOf(at("scope-tool [data-part=lead]"))).toBe(kubernetes.lead);
     expect(all("[data-action=alt]")[0]?.getAttribute("aria-pressed")).toBe("true");
     expect(active()).toEqual(everythingActive);
+  });
+});
+
+/**
+ * A press away closes the tool (agent-consolidation `S8.8`, `ID236`): anywhere outside the
+ * dock, the composer and the lifted region, whoever opened the tool, and that press opens
+ * nothing. Escape closes it the same way. A close decides nothing.
+ */
+describe("a press anywhere away closes the tool (S8.8, ID236)", () => {
+  /** A pointer press as a browser delivers it: the pointer going down, then the click. */
+  const pressOn = (element: Element | null | undefined): void => {
+    element?.dispatchEvent(new Event("pointerdown", { bubbles: true }));
+    (element as HTMLElement | null | undefined)?.click();
+  };
+
+  /** What a closed tool leaves: no label, no path, no choices, no lift, no dimming, no waiting line. */
+  const putDown = {
+    label: false,
+    path: false,
+    choices: false,
+    lifted: false,
+    dimmed: false,
+    waiting: false,
+  };
+
+  it("closes on a press on another region and opens nothing there; a second press opens that region's tool", async () => {
+    profileIs(aProfile([kubernetes, docker]));
+    const { at, region, active, eventually } = await opened();
+    await eventually(() => expect(active()).toEqual(everythingActive));
+
+    pressOn(region("chip-docker"));
+
+    await eventually(() => expect(active()).toMatchObject(putDown));
+    expect(at("scope-tool")).toBeNull();
+
+    pressOn(region("chip-docker"));
+
+    await eventually(() => expect(textOf(at("scope-tool [data-part=lead]"))).toBe(docker.lead));
+    expect(active()).toEqual(everythingActive);
+  });
+
+  it("closes on a press on the assistant's column outside the dock", async () => {
+    profileIs(aProfile([kubernetes, docker]));
+    const { at, active, eventually } = await opened();
+    await eventually(() => expect(active()).toEqual(everythingActive));
+
+    pressOn(at("[data-part=opener]"));
+
+    await eventually(() => expect(active()).toMatchObject(putDown));
+    expect(at("scope-tool")).toBeNull();
+  });
+
+  it("closes a tool the person opened on a press on the page's bar", async () => {
+    profileIs(aProfile([kubernetes, docker]));
+    const { at, region, active, eventually } = await opened();
+    await eventually(() => expect(active()).toEqual(everythingActive));
+    pressOn(region("chip-docker"));
+    await eventually(() => expect(active()).toMatchObject(putDown));
+    pressOn(region("chip-docker"));
+    await eventually(() => expect(textOf(at("scope-tool [data-part=lead]"))).toBe(docker.lead));
+
+    pressOn(at("profile-bar"));
+
+    await eventually(() => expect(active()).toMatchObject(putDown));
+    expect(at("scope-tool")).toBeNull();
+  });
+
+  it("closes on Escape, records no decision, and a press on the question's item reopens it", async () => {
+    profileIs(aProfile([kubernetes, docker]));
+    const { at, region, active, state, eventually } = await opened();
+    await eventually(() => expect(active()).toEqual(everythingActive));
+    const activated = state();
+
+    document.body.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+
+    await eventually(() => expect(active()).toMatchObject(putDown));
+    expect(at("scope-tool")).toBeNull();
+    expect(intakeRequests().filter((each) => each.address.endsWith("/answer"))).toEqual([]);
+
+    pressOn(region("chip-k8s"));
+
+    await eventually(() => expect(state()).toEqual(activated));
+  });
+
+  it("keeps the tool on a press on the view toggle below 1024 px, and the dock shows after switching", async () => {
+    profileIs(aProfile([kubernetes, docker]));
+    const { at, all, active, eventually } = await opened();
+    await eventually(() => expect(active()).toEqual(everythingActive));
+    const toggle = all("profile-bar button").find((each) => textOf(each) === "Back to the chat");
+    expect(toggle).toBeDefined();
+
+    pressOn(toggle);
+
+    await eventually(() => expect(at("[data-view]")?.getAttribute("data-view")).toBe("chat"));
+    expect(active()).toEqual(everythingActive);
+    expect(at("[data-part=dock]")).not.toBeNull();
+    expect(textOf(at("scope-tool [data-part=lead]"))).toBe(kubernetes.lead);
+  });
+
+  it("keeps the tool on a press on a row of the tool, in the composer and on the lifted region", async () => {
+    profileIs(aProfile([kubernetes, docker]));
+    const { at, all, region, active, eventually } = await opened();
+    await eventually(() => expect(active()).toEqual(everythingActive));
+
+    pressOn(all("[data-action=alt]")[1]);
+    pressOn(at("[data-part=composer]"));
+    pressOn(region("chip-k8s"));
+
+    await eventually(() =>
+      expect(all("[data-action=alt]")[1]?.getAttribute("aria-pressed")).toBe("true"),
+    );
+    expect(active()).toEqual(everythingActive);
+    expect(textOf(at("scope-tool [data-part=lead]"))).toBe(kubernetes.lead);
+  });
+});
+
+/**
+ * A conversation with history opens on its latest exchange (agent-consolidation `S8.9`,
+ * `ID237`): once drawn, the assistant's column is kept at its end while it settles, until
+ * the person scrolls or presses in it.
+ *
+ * jsdom lays nothing out and has no `ResizeObserver`, so the column is given a height and a
+ * content height here and the observers are stood in for, to say the column changed size.
+ */
+describe("a conversation with history opens on its latest exchange (S8.9, ID237)", () => {
+  let told: (() => void)[] = [];
+  let platformObserver: typeof ResizeObserver;
+
+  beforeEach(() => {
+    told = [];
+    platformObserver = globalThis.ResizeObserver;
+    globalThis.ResizeObserver = class {
+      constructor(callback: () => void) {
+        told.push(callback);
+      }
+      observe(): void {}
+      unobserve(): void {}
+      disconnect(): void {}
+    } as unknown as typeof ResizeObserver;
+  });
+
+  afterEach(() => {
+    globalThis.ResizeObserver = platformObserver;
+  });
+
+  /** The column's size changed, as every observer would report it. */
+  const resized = (): void => {
+    for (const callback of told) callback();
+  };
+
+  /** A stored history longer than the column: the opening and five messages after it. */
+  const aHistory = () => [
+    entryOf(1, [
+      { kind: "text", text: sentence, scripted: true },
+      { kind: "text", text: tail, scripted: true },
+    ]),
+    ...[2, 3, 4, 5, 6].map((position) =>
+      entryOf(
+        position,
+        [{ kind: "text", text: `Message ${position}.` }],
+        position % 2 === 0 ? "person" : "assistant",
+      ),
+    ),
+  ];
+
+  /** The conversation's scrolling column, given a height and a content height to scroll. */
+  const laidOut = (column: HTMLElement, size: { client: number; content: number }): void => {
+    let top = 0;
+    Object.defineProperty(column, "clientHeight", { get: () => size.client, configurable: true });
+    Object.defineProperty(column, "scrollHeight", { get: () => size.content, configurable: true });
+    Object.defineProperty(column, "scrollTop", {
+      get: () => top,
+      set: (to: number) => {
+        top = to;
+      },
+      configurable: true,
+    });
+  };
+
+  const opening = async () => {
+    profileIs(aProfile([kubernetes, docker]));
+    conversationIs(aHistory());
+    const screen = await opened();
+    await screen.eventually(() => expect(screen.active()).toEqual(everythingActive));
+    const column = screen.at("profile-assistant assistant > div") as HTMLElement;
+    expect(column).not.toBeNull();
+    return { ...screen, column };
+  };
+
+  it("keeps the column at its end when its content grows after the first render", async () => {
+    const { column } = await opening();
+    const size = { client: 300, content: 2000 };
+    laidOut(column, size);
+    column.scrollTop = 1700;
+
+    size.content = 2600;
+    resized();
+
+    expect(column.scrollTop).toBeGreaterThanOrEqual(2600 - 300);
+  });
+
+  it("takes the column to its end when it gets its size after the first render, as the chat shown below 1024 px does", async () => {
+    const { column } = await opening();
+    const size = { client: 0, content: 0 };
+    laidOut(column, size);
+
+    size.client = 300;
+    size.content = 2000;
+    resized();
+
+    expect(column.scrollTop).toBeGreaterThanOrEqual(2000 - 300);
+  });
+
+  it.each(["wheel", "pointerdown"])("stops keeping it once the person uses it: %s", async (use) => {
+    const { column } = await opening();
+    const size = { client: 300, content: 2000 };
+    laidOut(column, size);
+    column.scrollTop = 1700;
+
+    column.dispatchEvent(new Event(use, { bubbles: true }));
+    column.scrollTop = 400;
+    size.content = 2600;
+    resized();
+
+    expect(column.scrollTop).toBe(400);
   });
 });

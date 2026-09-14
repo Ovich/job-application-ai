@@ -87,6 +87,38 @@ const waitingLineInView = async (page: Page): Promise<void> => {
     .toBe("in view above the dock");
 };
 
+/**
+ * The conversation opens on its latest exchange (agent-consolidation `S8.9`, `ID237`): the
+ * foot of its newest line, the waiting line while a tool is active and the last message
+ * otherwise, lies inside the visible area of the column that scrolls it.
+ */
+const newestLineInView = async (page: Page): Promise<void> => {
+  await expect(page.locator("profile-assistant [data-msg]").first()).toBeVisible({
+    timeout: 15_000,
+  });
+  await expect
+    .poll(() =>
+      page.evaluate(() => {
+        const host = document.querySelector("profile-assistant");
+        const newest =
+          host?.querySelector("[data-part=waiting]") ??
+          Array.from(host?.querySelectorAll("[data-msg]") ?? []).at(-1) ??
+          null;
+        let column = newest?.parentElement ?? null;
+        while (column !== null && !/(auto|scroll)/.test(getComputedStyle(column).overflowY)) {
+          column = column.parentElement;
+        }
+        if (newest === null || column === null) return "no newest line or no scrolling column";
+        const its = newest.getBoundingClientRect();
+        const seen = column.getBoundingClientRect();
+        return its.bottom > seen.top && its.bottom <= seen.bottom + 1
+          ? "in view"
+          : `line ${its.top}..${its.bottom}, column ${seen.top}..${seen.bottom}`;
+      }),
+    )
+    .toBe("in view");
+};
+
 // biome-ignore lint/correctness/noEmptyPattern: Playwright reads the fixtures a hook asks for off its destructuring pattern, so the argument has to be destructured even when it needs none of them.
 test.afterAll(async ({}, testInfo) => {
   const at = addressOf(testInfo.project.name);
@@ -204,6 +236,19 @@ test("the assistant asks, the answers become rules, and a reload still has them"
   );
   await expect(page.locator("[data-part=rule]").filter({ hasText: ownWords })).toHaveCount(1);
   await expect(count).toHaveText(/^2 of \d+ answered, 1 for the builder$/);
+
+  // A conversation with history opens on its latest exchange (agent-consolidation `S8.9`,
+  // `ID237`). Below 1024 px the column is drawn hidden behind the sheet, and it is on its end
+  // once shown.
+  await newestLineInView(page);
+  await page.setViewportSize({ width: 800, height: 900 });
+  await page.reload();
+  await expect(page.locator("profile-sheet")).toBeVisible();
+  // The view toggle counts like the composer (`ID236`): the tool stays active across it.
+  await page.getByRole("button", { name: "Back to the chat" }).click();
+  await expect(page.locator("scope-tool")).toBeVisible();
+  await expect(page.locator("[data-part=dock]")).toBeVisible();
+  await waitingLineInView(page);
 });
 
 /**
@@ -257,6 +302,13 @@ test("a chip clicked, words about it in the conversation, and somebody else's de
   const label = (await plain.textContent())?.trim() ?? "";
   expect(label).not.toBe("");
 
+  // A press away closes the question the assistant activated and opens nothing on the chip
+  // it landed on (agent-consolidation `S8.8`, `ID236`): no tool, and the sheet undimmed.
+  await plain.click();
+  await expect(page.locator("scope-tool")).toHaveCount(0);
+  await expect(page.locator("profile-sheet article")).not.toHaveAttribute("data-focused", "true");
+
+  // A second press opens the chip's own tool.
   await plain.click();
 
   // The tool proposes nothing at all, and only the prefix says what is in scope.
