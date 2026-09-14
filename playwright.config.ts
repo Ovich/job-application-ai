@@ -52,8 +52,11 @@ export default defineConfig({
       // bucket holds and ask a mock the template does not yet point at.
       // `conversation` joins at agent-consolidation SL2, and both projects collect it from
       // that plan's SL6 (ID178).
+      // `dev-sql` is the local project's alone and always will be (agent-consolidation SL9,
+      // ID228): it proves `pnpm dev:sql` on the local container, and dev is one shared
+      // database nothing but the app may write to.
       testMatch:
-        /(health-stream|auth|entry-route|intake|intake-questions|profile|conversation)\.spec\.ts$/,
+        /(health-stream|auth|entry-route|intake|intake-questions|profile|conversation|dev-sql)\.spec\.ts$/,
       use: { baseURL: "http://localhost:4200" },
     },
     {
