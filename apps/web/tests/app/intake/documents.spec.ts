@@ -151,6 +151,21 @@ describe("the documents screen, empty (criterion 8)", () => {
   });
 });
 
+describe("no assistant during the profile intake (S3.0, ID202)", () => {
+  it("draws no assistant and opens no conversation", async () => {
+    documentsAre([rowOf({ id: "document-1", filename: "2026-08-30_cv_EN.pdf" })]);
+    const { page, eventually } = await opened();
+
+    await eventually(() => expect(page()?.querySelector("[data-row=document]")).not.toBeNull());
+    expect(
+      page()?.querySelector("assistant, profile-assistant, assistant-conversation"),
+    ).toBeNull();
+    expect(
+      intakeRequests().filter((each) => each.address.startsWith("/api/conversations/")),
+    ).toEqual([]);
+  });
+});
+
 describe("the documents screen, with documents added (US1, criterion 8)", () => {
   it("shows a row per document with the kind the reader detected", async () => {
     documentsAre([

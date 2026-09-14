@@ -190,22 +190,42 @@ describe("the profile assistant's own opening, as the application is composed (I
       { kind: "text", text: `First, ${first?.itemTitle}.`, scripted: true },
     ]);
   });
+});
 
-  it("has a form for a person with nothing read yet, and asks nothing", async () => {
-    const person = await signedIn("conversation-nothing-read@example.com");
+/**
+ * No assistant during the profile intake (`S3.0`, `ID202`, the person: *"There should be
+ * no assistant during the profile intake"*). Before a reading has made a profile there is
+ * no conversation to open, and nothing is stored that was never true: the first `GET`
+ * after the reading is the one that creates it, with the true opening.
+ */
+describe("before any reading (S3.0, ID202)", () => {
+  it("answers 409 and creates nothing, twice, so the first GET after a reading writes the true opening", async () => {
+    const person = await signedIn("conversation-before-a-reading@example.com");
+    const open = () =>
+      app.request("/api/conversations/profile", { headers: { cookie: person.cookie } });
 
-    const response = await app.request("/api/conversations/profile", {
-      headers: { cookie: person.cookie },
-    });
-    const parts = textsOf((await response.json()) as Answer);
+    const first = await open();
+    const second = await open();
 
-    expect(response.status).toBe(200);
-    expect(parts).toEqual([
-      {
-        kind: "text",
-        text: "I have not read any of your documents yet. Hand them over and I will read them.",
-        scripted: true,
-      },
-    ]);
+    expect(first.status).toBe(409);
+    expect(((await first.json()) as { error: string }).error).toBe("nothing read yet");
+    expect(second.status).toBe(409);
+
+    await documentsFor(
+      person.id,
+      [theSet.cvFrench.filename],
+      objects.storage as ReturnType<typeof localStorageIn>,
+    );
+    await (
+      await app.request("/api/intake/read", { method: "POST", headers: { cookie: person.cookie } })
+    ).text();
+    const after = await open();
+    const body = (await after.json()) as Answer;
+
+    expect(after.status).toBe(200);
+    expect(body.entries).toHaveLength(1);
+    expect(body.entries[0]?.parts[0]?.text).toBe(
+      "I read your 1 document. Every fact on the right carries the document it came from, and I wrote nothing that is not in them.",
+    );
   });
 });

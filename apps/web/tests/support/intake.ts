@@ -417,16 +417,11 @@ const scripted = (text: string) => ({ kind: "text", text, scripted: true });
 
 /**
  * The opening the API writes for this profile, composed the way the profile assistant
- * composes it: the sentence, the tail and the first waiting question's opener, or the one
- * sentence for a person with nothing read. Kept in step with it so a screen that draws
- * what it is answered draws what a person would read.
+ * composes it: the sentence, the tail and the first waiting question's opener. Kept in
+ * step with it so a screen that draws what it is answered draws what a person would read.
+ * A profile nothing has been read into has no conversation at all (`ID202`): see below.
  */
 const openingOf = (given: Profile): Entry => {
-  if (given.documents === 0) {
-    return entryOf(1, [
-      scripted("I have not read any of your documents yet. Hand them over and I will read them."),
-    ]);
-  }
   const waiting = given.questions.find((question) => question.state === "waiting");
   const moved = given.questions.some((question) => question.state !== "waiting");
   return entryOf(1, [
@@ -463,6 +458,11 @@ alsoAnswering((address, init) => {
   const path = new URL(address, "http://localhost").pathname;
   if (!path.startsWith("/api/conversations/")) return undefined;
   requests.push({ method: init?.method ?? "GET", address: path });
+  // Before a reading the API creates nothing and refuses (`S3.0`, `ID202`), and creates
+  // nothing on a second ask either, so nothing is kept here.
+  if (conversation === null && profile.documents === 0) {
+    return json({ error: "nothing read yet" }, 409);
+  }
   conversation ??= {
     status: 200,
     body: { id: "conversation-1", entries: [openingOf(profile)] },

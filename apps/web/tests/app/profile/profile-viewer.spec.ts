@@ -7,6 +7,7 @@ import type { RegionRef } from "../../../src/app/profile/profile-region/profile-
 import { ProfileSheet } from "../../../src/app/profile/profile-sheet/profile-sheet";
 import {
   conversationIs,
+  documentsAre,
   emptyProfile,
   entryOf,
   intakeRequests,
@@ -14,6 +15,7 @@ import {
   type Profile,
   profileIs,
   resetIntake,
+  rowOf,
 } from "../../support/intake";
 import { reset, signedInAs } from "../../support/session";
 
@@ -458,6 +460,29 @@ describe("the assistant's conversation (agent-consolidation SL2, S2.3)", () => {
       method: "GET",
       address: "/api/conversations/profile",
     });
+  });
+});
+
+describe("no assistant during the profile intake (S3.0, ID202)", () => {
+  it("opens no conversation and draws no assistant column for a person with nothing read", async () => {
+    profileIs(emptyProfile);
+    // Handed over and not read yet, so the viewer keeps the person rather than sending
+    // them to the documents.
+    documentsAre([rowOf({ id: "document-1", filename: "2026-08-30_cv_EN.pdf" })]);
+    const { page, harness } = await opened();
+    await vi.waitFor(() =>
+      expect(intakeRequests()).toContainEqual({ method: "GET", address: "/api/intake/documents" }),
+    );
+    harness.detectChanges();
+    await harness.fixture.whenStable();
+    harness.detectChanges();
+
+    expect(TestBed.inject(Router).url).toBe("/profile");
+    expect(
+      intakeRequests().filter((each) => each.address.startsWith("/api/conversations/")),
+    ).toEqual([]);
+    expect(page()?.querySelector('[aria-label="Assistant"]')).toBeNull();
+    expect(page()?.querySelector("profile-assistant")).toBeNull();
   });
 });
 
