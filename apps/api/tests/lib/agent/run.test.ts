@@ -567,3 +567,47 @@ describe("every request (S4.4, ID181, ID193)", () => {
     expect(tool?.function.parameters).toMatchSnapshot();
   });
 });
+
+/**
+ * S4.5b, `ID206`: a provider's prompt cache keys on the bytes of what it was sent, so
+ * step 2 must carry step 1's call exactly as the model wrote it — keys in its order, its
+ * spacing — while the edit and the drawing read the parsed input.
+ */
+describe("the model's own arguments, byte for byte (S4.5b, ID206)", () => {
+  it("gives step 2 the very arguments string step 1 received, and edits from the parsed input", async () => {
+    const at = await planted();
+    const conversation = await conversationOf(at.person);
+    const written = `{"operations": [{"text": "Shipped the developer platform.", "op": "replace_line", "lineId": "${at.lines[1]}"}],  "itemId": "${at.post}"}`;
+    const cases = withCases({
+      [stepOf(conversation, 1)]: {
+        stands_for: "a call whose keys are not in alphabetical order",
+        content: "I will shorten it.",
+        tool_calls: [{ id: "call_1", name: "edit_profile", arguments: written }],
+      },
+      [stepOf(conversation, 2)]: { stands_for: "the reply", content: "Done." },
+    });
+
+    let ran: { said: Ran[]; thrown: unknown };
+    try {
+      ran = await ranThrough(run(profileAssistant, conversation, at.person, aiThroughTheApp()));
+    } finally {
+      cases.dispose();
+    }
+
+    expect(ran.thrown).toBeUndefined();
+    const asked = bodyOf(1).messages.find((message) => message.tool_calls !== undefined) as
+      { tool_calls: { function: { arguments: string } }[] } | undefined;
+    expect(asked?.tool_calls[0]?.function.arguments).toBe(written);
+    const [, , call] = await entries(conversation);
+    expect(call?.parts[1]).toEqual({
+      kind: "tool_use",
+      id: "call_1",
+      name: "edit_profile",
+      input: JSON.parse(written),
+      arguments: written,
+    });
+    expect((await standing(at.person, at.post)).lines[1]?.text).toBe(
+      "Shipped the developer platform.",
+    );
+  });
+});

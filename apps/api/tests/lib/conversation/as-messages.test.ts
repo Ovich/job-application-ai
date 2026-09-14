@@ -104,6 +104,31 @@ describe("each part, as the model reads it (S4.3)", () => {
     ]);
   });
 
+  it("sends a tool_use's arguments back as the very string the model wrote, beside its parsed input (ID206)", () => {
+    const written =
+      '{"operations": [{"text": "Shipped.", "op": "remove_line"}],  "itemId": "item-nexplore"}';
+
+    const [message] = asMessages([
+      entry("assistant", [
+        {
+          kind: "tool_use",
+          id: "call_1",
+          name: "edit_profile",
+          input: JSON.parse(written),
+          arguments: written,
+        },
+      ]),
+    ]);
+
+    expect(message).toEqual({
+      role: "assistant",
+      content: null,
+      tool_calls: [
+        { id: "call_1", type: "function", function: { name: "edit_profile", arguments: written } },
+      ],
+    });
+  });
+
   it("serialises an applied tool_result as a tool message answering that call, before and after", () => {
     expect(
       asMessages([

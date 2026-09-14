@@ -225,7 +225,15 @@ describe("askWithTools", () => {
       );
 
       expect((await drained(answer.pieces)).join("")).toBe(said);
-      expect(await answer.calls).toEqual([{ id: "call_1", name: "edit_profile", arguments: edit }]);
+      // The parsed arguments, and the string exactly as it arrived (ID206).
+      expect(await answer.calls).toEqual([
+        {
+          id: "call_1",
+          name: "edit_profile",
+          arguments: edit,
+          argumentsText: JSON.stringify(edit),
+        },
+      ]);
     } finally {
       cases.dispose();
     }
