@@ -176,6 +176,7 @@ export async function* run(
           id: call.id,
           name: call.name,
           input: call.arguments,
+          arguments: call.argumentsText,
         })),
       ]);
       const answered = await append(tx, conversation, "tool", results);

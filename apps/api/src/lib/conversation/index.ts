@@ -177,7 +177,11 @@ export const asMessages = (said: Entry[]): Message[] =>
         {
           id: read.data.id,
           type: "function" as const,
-          function: { name: read.data.name, arguments: JSON.stringify(read.data.input ?? {}) },
+          // The model's own string when the part holds it (`ID206`), else the input as JSON.
+          function: {
+            name: read.data.name,
+            arguments: read.data.arguments ?? JSON.stringify(read.data.input ?? {}),
+          },
         },
       ];
     });

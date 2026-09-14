@@ -25,13 +25,16 @@ export const textPart = z.object({
 
 /**
  * A call the model made (`SL4`): the call's id, which its result answers, the tool's
- * name, and the input as the model passed it, parsed.
+ * name, the input as the model passed it, parsed, and the arguments string exactly as the
+ * model wrote it (`ID206`), which is what is sent back to it: a provider's prompt cache
+ * keys on the bytes, and a `jsonb` column keeps neither key order nor spacing.
  */
 export const toolUsePart = z.object({
   kind: z.literal("tool_use"),
   id: z.string().min(1),
   name: z.string().min(1),
   input: z.unknown(),
+  arguments: z.string().optional(),
 });
 
 /**

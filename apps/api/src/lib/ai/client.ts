@@ -70,8 +70,12 @@ export type About = { feature: string; step: string; input: string };
  */
 export type Tool = { name: string; description: string; parameters: object };
 
-/** One call the model made, its arguments parsed from the protocol's string. */
-export type ToolCall = { id: string; name: string; arguments: unknown };
+/**
+ * One call the model made: its arguments parsed from the protocol's string, and that
+ * string exactly as it arrived (`ID206`), so a later call can hand the model back what it
+ * wrote, byte for byte.
+ */
+export type ToolCall = { id: string; name: string; arguments: unknown; argumentsText: string };
 
 /**
  * One step of an answer that may call tools: its text as it arrives, and its calls.
@@ -228,6 +232,7 @@ export const createAi = (config: AiConfig): Ai => {
               id: call.id,
               name: call.name,
               arguments: JSON.parse(call.arguments === "" ? "{}" : call.arguments) as unknown,
+              argumentsText: call.arguments === "" ? "{}" : call.arguments,
             })),
         );
       } catch (cause) {
