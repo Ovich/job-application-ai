@@ -46,10 +46,13 @@ describe("the AI mock's mount", () => {
       body: JSON.stringify({ model: "m", messages: [] }),
     });
 
-    // A miss, because no such case is recorded — but a miss from the mock's own router,
-    // which is what proves the path is matched at all.
-    expect(answer.status).toBe(404);
-    expect((await answer.json()) as { case: unknown }).toMatchObject({ case: "nothing.at:all" });
+    // A miss, because no such case is recorded — but a miss from the mock's own handler,
+    // which answers its placeholder (`ID166`), and that is what proves the path is matched.
+    expect(answer.status).toBe(200);
+    expect(
+      ((await answer.json()) as { choices: { message: { content: string } }[] }).choices[0]?.message
+        .content,
+    ).toBe("No pre generated text");
   });
 
   it("adds no route under /api, so the SPA's routes and the distribution are untouched", async () => {

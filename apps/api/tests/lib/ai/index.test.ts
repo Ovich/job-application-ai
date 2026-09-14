@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { z } from "zod";
 import { aiThroughTheApp, forgetRequests, requestsSent, withCases } from "../../support/ai";
 
@@ -83,13 +83,18 @@ describe("a call through lib/ai", () => {
     }
   });
 
+  // A miss answers the mock's placeholder since `ID166`; the case asked for is named in
+  // the mock's log rather than in the answer.
   it("throws on a case nobody recorded, naming the case asked for", async () => {
     const cases = withCases({ [cvFr]: { stands_for: "a CV", content, tool_calls: [] } });
+    const logged = vi.spyOn(console, "warn").mockImplementation(() => {});
     try {
       await expect(
         aiThroughTheApp().ask([{ role: "user", content: "?" }], aboutNothingRecorded),
-      ).rejects.toThrow(/intake\.read:never-recorded/);
+      ).resolves.toBe("No pre generated text");
+      expect(String(logged.mock.calls[0]?.[0])).toMatch(/intake\.read:never-recorded/);
     } finally {
+      logged.mockRestore();
       cases.dispose();
     }
   });
@@ -141,16 +146,21 @@ describe("askStreaming", () => {
     expect(sent?.headers["x-jobapp-case"]).toBe(cvFr);
   });
 
+  // A miss streams the mock's placeholder since `ID166`.
   it("throws on a case nobody recorded, before a single piece is yielded", async () => {
     const cases = withCases({ [cvFr]: { stands_for: "a CV", content: long } });
+    const logged = vi.spyOn(console, "warn").mockImplementation(() => {});
     try {
-      await expect(async () => {
-        for await (const _ of aiThroughTheApp().askStreaming(
-          [{ role: "user", content: "?" }],
-          aboutNothingRecorded,
-        ));
-      }).rejects.toThrow(/intake\.read:never-recorded/);
+      const pieces: string[] = [];
+      for await (const piece of aiThroughTheApp().askStreaming(
+        [{ role: "user", content: "?" }],
+        aboutNothingRecorded,
+      )) {
+        pieces.push(piece);
+      }
+      expect(pieces.join("")).toBe("No pre generated text");
     } finally {
+      logged.mockRestore();
       cases.dispose();
     }
   });
