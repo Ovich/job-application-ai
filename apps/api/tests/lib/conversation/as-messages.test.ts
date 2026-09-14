@@ -175,6 +175,78 @@ describe("each part, as the model reads it (S4.3)", () => {
   });
 });
 
+/**
+ * The person's use of the assistant's tool, in words (`S7.2`, `ID209`): the agent reads
+ * an answer or a skip as the person's own message, so it knows what was said and never
+ * asks it again.
+ */
+describe("the person's tool use, as the model reads it (S7.2)", () => {
+  const asked = {
+    lead: "Which was it?",
+    where: "What you work with · DevOps and cloud",
+    options: [
+      { id: "q1-1", label: "Ran the cluster", hint: "nodes, upgrades, access" },
+      { id: "q1-2", label: "Ran services on it", hint: "deployed and operated the workloads" },
+    ],
+  };
+
+  it("serialises an answer as a user message naming the question, the option picked and the words", () => {
+    expect(
+      asMessages([
+        entry("person", [
+          { kind: "question_answered", ...asked, picked: "q1-2", words: "three clusters" },
+        ]),
+      ]),
+    ).toEqual([
+      {
+        role: "user",
+        content:
+          'I answered "Which was it?" (What you work with · DevOps and cloud): Ran services on it (deployed and operated the workloads). In my own words: three clusters',
+      },
+    ]);
+  });
+
+  it("serialises an answer with no words as the question and the option picked", () => {
+    expect(
+      asMessages([
+        entry("person", [{ kind: "question_answered", ...asked, picked: "q1-1", words: null }]),
+      ]),
+    ).toEqual([
+      {
+        role: "user",
+        content:
+          'I answered "Which was it?" (What you work with · DevOps and cloud): Ran the cluster (nodes, upgrades, access).',
+      },
+    ]);
+  });
+
+  it("serialises an answer in words alone as the question and the words", () => {
+    expect(
+      asMessages([
+        entry("person", [
+          { kind: "question_answered", ...asked, picked: null, words: "only the Helm charts" },
+        ]),
+      ]),
+    ).toEqual([
+      {
+        role: "user",
+        content:
+          'I answered "Which was it?" (What you work with · DevOps and cloud) in my own words: only the Helm charts',
+      },
+    ]);
+  });
+
+  it("serialises a skip as a user message saying the question was skipped", () => {
+    expect(asMessages([entry("person", [{ kind: "question_skipped", ...asked }])])).toEqual([
+      {
+        role: "user",
+        content:
+          'I skipped "Which was it?" (What you work with · DevOps and cloud) for now, without answering it.',
+      },
+    ]);
+  });
+});
+
 describe("the catalogue's tool parts (ID161)", () => {
   it("refuses a tool_result that carries neither before and after nor a refusal", () => {
     expect(() =>
