@@ -71,7 +71,12 @@ type Item = Answer["experience"][number];
   // The layout every assistant screen holds to (the person, 2026-09-12): this fills the
   // page rather than growing past it, so the window never scrolls and each column
   // decides for itself what moves inside it.
-  host: { class: "flex min-h-0 flex-1 flex-col" },
+  host: {
+    class: "flex min-h-0 flex-1 flex-col",
+    "(document:pointerdown)": "pressedAnywhere($event)",
+    "(document:click)": "pressEnded()",
+    "(document:keydown.escape)": "escaped()",
+  },
 })
 export class ProfileViewer {
   private readonly router = inject(Router);
@@ -355,13 +360,59 @@ export class ProfileViewer {
    * an item and never from a line.
    */
   protected chosen(region: RegionRef): void {
+    // The click of a press that has just closed a tool opens nothing (`ID236`).
+    if (this.swallowing) {
+      this.swallowing = false;
+      return;
+    }
+    this.select(region);
+  }
+
+  /** The one path a tool is activated by, a press's or the assistant's (`ID215`). */
+  private select(region: RegionRef): void {
     this.dismissed.set(false);
     this.selected.set(region);
   }
 
   /**
-   * A press on the dimmed profile closes what is open, and decides nothing (the person,
-   * 2026-09-13).
+   * Whether the press under way closed a tool on its way down, so that its click, which a
+   * region stops from travelling further, opens nothing where it landed (`ID236`).
+   */
+  private swallowing = false;
+
+  /**
+   * A press anywhere on the page while a tool is active closes it (agent-consolidation
+   * `S8.8`, `ID236`), unless it lands in the composer, which holds the dock, or on the
+   * lifted region itself. Read on the pointer going down, before the click: a press that
+   * lands everything of the performance at once (`G2`) finds no tool yet, so the tool it
+   * activates stays.
+   */
+  protected pressedAnywhere(event: Event): void {
+    this.swallowing = false;
+    if (this.selected() === null) return;
+    const target = event.target;
+    if (target instanceof Element) {
+      if (target.closest("composer") !== null) return;
+      const region = target.closest("[data-region]")?.getAttribute("data-id") ?? null;
+      if (region !== null && region === this.lifted()) return;
+    }
+    this.swallowing = true;
+    this.overlayPressed();
+  }
+
+  /** A click that reached the page ends the press: the next one is a press of its own. */
+  protected pressEnded(): void {
+    this.swallowing = false;
+  }
+
+  /** Escape closes the active tool as a press away does (`ID236`). */
+  protected escaped(): void {
+    if (this.selected() !== null) this.overlayPressed();
+  }
+
+  /**
+   * A press away closes what is open, and decides nothing (the person, 2026-09-13 and
+   * 2026-09-14).
    *
    * It used to skip the waiting question, which is a decision — *ask me in the builder*
    * — that nobody made by clicking away from something. Now it puts the tool down: the
@@ -451,7 +502,7 @@ export class ProfileViewer {
    */
   protected activated(activation: { itemId: string }): void {
     this.viaQuestion = true;
-    this.chosen({ kind: "item", id: activation.itemId });
+    this.select({ kind: "item", id: activation.itemId });
   }
 
   /** One answer written, and the profile read back, so the rule shown is the rule kept. */
