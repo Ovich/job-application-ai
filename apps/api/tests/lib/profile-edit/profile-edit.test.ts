@@ -287,9 +287,7 @@ describe("each operation, refused (S4.2, the spec's Failure modes)", () => {
   it("refuses removing an item that is not its child", async () => {
     const at = await planted();
 
-    const result = await edited(at.person, at.post, [
-      { op: "remove_child", childId: at.diploma },
-    ]);
+    const result = await edited(at.person, at.post, [{ op: "remove_child", childId: at.diploma }]);
 
     expect(result).toEqual({ refused: expect.any(String) });
     expect((await standing(at.person, at.diploma)).title).toBe("Bachelor in computer science");

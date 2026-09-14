@@ -562,9 +562,8 @@ describe("every request (S4.4, ID181, ID193)", () => {
 
     await ranThrough(run(profileAssistant, conversation, at.person, aiThroughTheApp()));
 
+    // Vitest's own snapshot file, which the formatter leaves as the suite wrote it.
     const [tool] = bodyOf(0).tools;
-    await expect(`${JSON.stringify(tool?.function.parameters, null, 2)}\n`).toMatchFileSnapshot(
-      "./edit-profile.schema.json",
-    );
+    expect(tool?.function.parameters).toMatchSnapshot();
   });
 });
