@@ -14,10 +14,10 @@ import { expect, test } from "@playwright/test";
  * collects this file, which is how CI's `e2e-local` job, the one job with a database up,
  * runs it; `pnpm check` runs with none.
  *
- * The command reads `.env.deployed` from where it is run, which `pnpm` makes the
- * repository's root. Each run here is from an empty directory of its own and hands the
- * connection string in the environment it gives the command, so the laptop's own
- * `.env.deployed`, when there is one, is never read and dev is never reached.
+ * The command reads the environment, then `.jobapp/dev.env` in the person's profile
+ * (`ID231`). Each run here is from an empty directory of its own that it is also told is
+ * the profile, and hands the connection string in the environment it gives the command,
+ * so the laptop's own `dev.env`, when there is one, is never read and dev is never reached.
  */
 
 const script = fileURLToPath(new URL("../scripts/dev-sql.ts", import.meta.url));
@@ -32,13 +32,16 @@ type Ran = { code: number; stdout: string; stderr: string };
 
 let elsewhere: string;
 
-/** `pnpm dev:sql <args>` from an empty directory, with only `env` as its environment. */
+/**
+ * `pnpm dev:sql <args>` from an empty directory, with only `env` as its environment and
+ * that same directory as the profile it looks for `.jobapp/dev.env` in.
+ */
 const devSql = (args: string[], env: Record<string, string>): Promise<Ran> =>
   new Promise((resolve) => {
     execFile(
       process.execPath,
       [script, ...args],
-      { cwd: elsewhere, env },
+      { cwd: elsewhere, env: { ...env, USERPROFILE: elsewhere, HOME: elsewhere } },
       (error, stdout, stderr) => {
         const code = error === null ? 0 : typeof error.code === "number" ? error.code : 1;
         resolve({ code, stdout, stderr });
@@ -79,6 +82,31 @@ test("an insert without --write is refused as a read-only transaction", async ()
   expect(ran.stderr).toMatch(/read-only transaction/);
   const left = await devSql([`select said from ${probe} where said = 'refused'`], toLocal);
   expect(JSON.parse(left.stdout)).toEqual([]);
+});
+
+test("a text of two statements is refused before anything is sent", async () => {
+  const ran = await devSql(["select 1; select 2"], toLocal);
+
+  expect(ran.code).not.toBe(0);
+  expect(ran.stderr).toMatch(/exactly one statement/);
+  expect(ran.stdout).toBe("");
+});
+
+test("a commit followed by an insert is refused, and the row is absent", async () => {
+  const ran = await devSql([`commit; insert into ${probe} (said) values ('escaped')`], toLocal);
+
+  expect(ran.code).not.toBe(0);
+  expect(ran.stderr).toMatch(/exactly one statement/);
+  const left = await devSql([`select said from ${probe} where said = 'escaped'`], toLocal);
+  expect(JSON.parse(left.stdout)).toEqual([]);
+});
+
+test("a semicolon inside a string, or one closing the statement, is still one statement", async () => {
+  const ran = await devSql(["select ';' as said, $$a;b$$ as quoted; -- done"], toLocal);
+
+  expect(ran.stderr).toBe("");
+  expect(ran.code).toBe(0);
+  expect(JSON.parse(ran.stdout)).toEqual([{ said: ";", quoted: "a;b" }]);
 });
 
 test("an insert with --write is committed", async () => {
