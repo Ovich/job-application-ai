@@ -1,8 +1,9 @@
+<!--
+  Where a person is is not this tool's to say any more (the person, 2026-09-14): the path
+  travels with the tool to the composer, which shows it between the tool and the bar, or
+  inside the bar once the text has many lines. The tool keeps what is being asked.
+-->
 @if (asked(); as question) {
-  <span data-part="where" uiText variant="caption" tone="muted" class="mb-1 block">{{
-    question.where
-  }}</span>
-
   <p data-part="lead" uiText variant="ui" class="mb-3">{{ question.lead }}</p>
 
   <!--
@@ -54,14 +55,9 @@
 } @else {
   <!--
     The tool the person opened themselves: one sentence, the same wherever it is opened,
-    and no option anywhere. Above it, where the person is — the item and the row — and
-    never what that row says: the sheet has highlighted it already (the person,
-    2026-09-13).
+    and no option anywhere, and never what the row it was opened on says: the sheet has
+    highlighted it already (the person, 2026-09-13).
   -->
-  <span data-part="where" uiText variant="caption" tone="muted" class="mb-1 block">{{
-    tool().kind === "clarification" ? $any(tool()).where : ""
-  }}</span>
-
   <p data-part="lead" uiText variant="ui" class="mb-3">
     Tell me what I should know about it, in your own words.
   </p>

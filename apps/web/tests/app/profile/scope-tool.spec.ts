@@ -75,7 +75,8 @@ describe("the answers, as rows (criterion 5)", () => {
       "say it below",
     ]);
     expect(rows().every((row) => row.getAttribute("aria-pressed") === "false")).toBe(true);
-    expect(textOf(element.querySelector("[data-part=where]"))).toBe(aQuestion.where);
+    // Where the question sits is the composer's to show now (the person, 2026-09-14).
+    expect(element.querySelector("[data-part=where]")).toBeNull();
     expect(textOf(element.querySelector("[data-part=lead]"))).toBe(aQuestion.lead);
   });
 
@@ -150,7 +151,7 @@ describe("the tool the person opened themselves (SL5, criteria 1 and 3)", () => 
 
     // The one fixed sentence says "it", never what "it" is. A tool that composed
     // "Your part in Kubernetes at Nestlé" would be inferring, in a smaller place.
-    expect(textOf(element.querySelector("[data-part=where]"))).toBe("");
+    expect(element.querySelector("[data-part=where]")).toBeNull();
     expect(textOf(element)).not.toContain("Kubernetes");
   });
 
