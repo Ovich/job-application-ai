@@ -50,7 +50,10 @@ export default defineConfig({
       // the same reason `intake` is: the deployed environment's storage has never been
       // exercised and its AI values are SL6's, so a run there would read documents no
       // bucket holds and ask a mock the template does not yet point at.
-      testMatch: /(health-stream|auth|entry-route|intake|intake-questions|profile)\.spec\.ts$/,
+      // `conversation` joins at agent-consolidation SL2 and is local-only until its SL6
+      // (ID178), for the reason `profile` is: it reads documents first.
+      testMatch:
+        /(health-stream|auth|entry-route|intake|intake-questions|profile|conversation)\.spec\.ts$/,
       use: { baseURL: "http://localhost:4200" },
     },
     {
