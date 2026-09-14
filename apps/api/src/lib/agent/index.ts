@@ -20,9 +20,16 @@ export type AgentTool<I = unknown, R = unknown> = {
 };
 
 /**
+ * What an opening throws when its conversation cannot exist yet (`ID202`): the profile's
+ * before a reading. Thrown inside the transaction that would create the conversation, so
+ * nothing is written; the route answers 409 with the message.
+ */
+export class NotYet extends Error {}
+
+/**
  * One concrete assistant: its name, which is the `:assistant` of the route; its prompt
  * and tools, read from `SL4`; and its opening, written as entry 1 when a conversation is
- * created and never again (`ID189`).
+ * created and never again (`ID189`), or `NotYet` thrown when there is nothing to open on.
  */
 export type AssistantDefinition = {
   name: string;

@@ -1,5 +1,5 @@
 import { TestBed } from "@angular/core/testing";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { AssistantCore } from "../../../src/app/assistant/assistant-core";
 import { provideAssistant } from "../../../src/app/assistant/provide-assistant";
 import {
@@ -7,7 +7,9 @@ import {
   conversationRefused,
   entryOf,
   intakeRequests,
+  messagesPosted,
   resetIntake,
+  theReply,
 } from "../../support/intake";
 import { reset } from "../../support/session";
 
@@ -69,5 +71,73 @@ describe("opening the conversation", () => {
 
     expect(core.failure()).toBe("sign in first");
     expect(core.entries()).toEqual([]);
+  });
+});
+
+/** Seam D: a free message, as a component reads the core (`SL3`, `US2`, `ID183`). */
+describe("posting a free message (SL3)", () => {
+  const opening = entryOf(1, [{ kind: "text", text: "I read your 2 documents." }]);
+  const mine = entryOf(2, [{ kind: "text", text: "I ran the services." }], "person");
+  const theirs = entryOf(3, [{ kind: "text", text: "No pre generated text" }]);
+
+  const opened = async (): Promise<AssistantCore> => {
+    conversationIs([opening]);
+    const core = coreOf("profile");
+    await core.open();
+    return core;
+  };
+
+  it("holds the person's entry at its frame, grows the reply per text frame, and holds both at done", async () => {
+    const core = await opened();
+
+    const posting = core.post("I ran the services.");
+    theReply.says({ kind: "entry", entry: mine });
+    await vi.waitFor(() => expect(core.entries()).toEqual([opening, mine]));
+    theReply.says({ kind: "text", text: "No pre" });
+    await vi.waitFor(() => expect(core.replying()).toBe("No pre"));
+    theReply.says({ kind: "text", text: " generated text" });
+    await vi.waitFor(() => expect(core.replying()).toBe("No pre generated text"));
+    theReply.says({ kind: "entry", entry: theirs });
+    theReply.says({ kind: "done" });
+    theReply.ends();
+    await posting;
+
+    expect(messagesPosted()).toEqual([
+      { address: "/api/conversations/profile/messages", text: "I ran the services." },
+    ]);
+    expect(core.replying()).toBeNull();
+    expect(core.entries()).toEqual([opening, mine, theirs]);
+    expect(core.failure()).toBeNull();
+  });
+
+  it("sets the failure, clears the reply and keeps the person's entry on an error frame", async () => {
+    const core = await opened();
+
+    const posting = core.post("I ran the services.");
+    theReply.says({ kind: "entry", entry: mine });
+    theReply.says({ kind: "text", text: "No pre" });
+    theReply.says({ kind: "error", message: "The assistant could not answer this time." });
+    theReply.ends();
+    await posting;
+
+    expect(core.failure()).toBe("The assistant could not answer this time.");
+    expect(core.replying()).toBeNull();
+    expect(core.entries()).toEqual([opening, mine]);
+  });
+
+  it("refuses a second post while a reply streams, and sends nothing", async () => {
+    const core = await opened();
+
+    const posting = core.post("I ran the services.");
+    theReply.says({ kind: "entry", entry: mine });
+    theReply.says({ kind: "text", text: "No pre" });
+    await vi.waitFor(() => expect(core.replying()).toBe("No pre"));
+
+    await core.post("And a second thing.");
+
+    expect(messagesPosted()).toHaveLength(1);
+    theReply.says({ kind: "done" });
+    theReply.ends();
+    await posting;
   });
 });

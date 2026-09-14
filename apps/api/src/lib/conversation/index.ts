@@ -3,6 +3,7 @@ import type * as schema from "@app/db";
 import { conversation, conversationEntry, type Part, parts as partsOf } from "@app/db";
 import { and, asc, type ExtractTablesWithRelations, eq, isNull, max } from "drizzle-orm";
 import type { PgQueryResultHKT, PgTransaction } from "drizzle-orm/pg-core";
+import type { Message } from "../ai";
 import { db } from "../db";
 import { isDuplicate } from "../db/duplicate";
 import type { Asking } from "../session";
@@ -127,6 +128,23 @@ export const entries = async (of: Conversation): Promise<Entry[]> =>
     .from(conversationEntry)
     .where(eq(conversationEntry.conversationId, of.id))
     .orderBy(asc(conversationEntry.position));
+
+/**
+ * The conversation as the model reads it (`ID162`): an entry's `text` parts, joined, one
+ * message per entry — the person's as `user`, everything else as `assistant`. Only `text`
+ * here; `SL4` adds the tool parts and `SL5` the question parts. An entry with no text is
+ * left out rather than sent empty.
+ */
+export const asMessages = (said: Entry[]): Message[] =>
+  said.flatMap((entry) => {
+    const text = entry.parts
+      .flatMap((part) =>
+        part.kind === "text" && typeof part["text"] === "string" ? [part["text"]] : [],
+      )
+      .join("\n\n");
+    if (text === "") return [];
+    return [{ role: entry.author === "person" ? "user" : "assistant", content: text }];
+  });
 
 /** One entry written after the last, in the caller's transaction. */
 export const append = async (

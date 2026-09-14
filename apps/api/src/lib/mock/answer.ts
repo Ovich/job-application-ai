@@ -1,7 +1,7 @@
 import type { Context } from "hono";
 import { createFactory } from "hono/factory";
 import { streamSSE } from "hono/streaming";
-import { caseNamed, casesHeld, type RecordedCase } from "./answers";
+import { caseNamed, type RecordedCase } from "./answers";
 import { anthropicFrames, anthropicWhole } from "./anthropic-envelope";
 import type { Frame } from "./frames";
 import { openAiFrames, openAiWhole } from "./openai-envelope";
@@ -48,23 +48,32 @@ type Asked = { model?: unknown; stream?: unknown };
 const wait = (ms: number) =>
   ms <= 0 ? Promise.resolve() : new Promise((done) => setTimeout(done, ms));
 
+/**
+ * What a miss answers (`ID166`, amending `ID113`): this text and nothing else, shaped as
+ * a recorded case so either envelope wraps it as it wraps any other. Never a guess at
+ * another case, and never a call. A structured call still fails on it, because it is
+ * not JSON; a free message gets a reply a person can read.
+ */
+const placeholder = (name: string | null): RecordedCase => ({
+  case: name ?? "(none named)",
+  stands_for: "a case nobody recorded",
+  content: "No pre generated text",
+  tool_calls: [],
+  usage: { input_tokens: 0, output_tokens: 0 },
+});
+
 const answer = async (c: Context, envelope: Envelope, configured: Pace) => {
   const name = c.req.header("X-Jobapp-Case") ?? null;
-  const recorded = caseNamed(name);
+  const held = caseNamed(name);
 
-  // A miss says the case it was asked for, what it holds, and how to write a new one.
-  // No pass-through and no generic answer: a test that reaches an unanswered path has
-  // to fail rather than pass on something invented (ID113).
-  if (recorded === undefined) {
-    return c.json(
-      {
-        error: `No recorded case ${name ?? "(none named in X-Jobapp-Case)"}. Record it with the intake's recording script, or add its file under apps/api/src/lib/mock/documents/<feature>/.`,
-        case: name,
-        held: casesHeld(),
-      },
-      404,
+  // The answer no longer says which case was missed, so the log does, in one line
+  // (`ID198`). A case name holds a conversation id or a document slug, no personal data.
+  if (held === undefined) {
+    console.warn(
+      `mock: no recorded case ${name ?? "(none named in X-Jobapp-Case)"}; answered "No pre generated text". Add its file under apps/api/src/lib/mock/documents/<feature>/.`,
     );
   }
+  const recorded = held ?? placeholder(name);
 
   const asked = (await c.req.json().catch(() => ({}))) as Asked;
   const model = typeof asked.model === "string" ? asked.model : "mock-model";

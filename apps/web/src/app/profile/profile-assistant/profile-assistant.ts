@@ -402,9 +402,13 @@ export class ProfileAssistant {
   }
 
   /**
-   * Save: the row that was picked, the words that were typed, or both (`US6`) — or, in
-   * the tool the person opened themselves, the words alone, which become that item's
+   * Save: the row that was picked, with the words that were typed if any (`US6`) — or,
+   * in the tool the person opened themselves, the words alone, which become that item's
    * rule and nothing else (`US8`).
+   *
+   * **Words with no pick are a free message** (agent-consolidation `SL3`, `US2`, `US3`):
+   * posted into the conversation, with nothing open or with a question open, which then
+   * stays open and moves no count.
    */
   protected save(): void {
     const words = this.assistant()?.draft().trim() ?? "";
@@ -420,12 +424,16 @@ export class ProfileAssistant {
       return;
     }
     const question = this.open();
-    if (question === null) return;
     const optionId = this.picked();
-    if (optionId === null && words === "") return;
+    if (question === null || optionId === null) {
+      if (words === "") return;
+      void this.core.post(words);
+      this.forget();
+      return;
+    }
     this.answered.emit({
       questionId: question.id,
-      ...(optionId === null ? {} : { optionId }),
+      optionId,
       ...(words === "" ? {} : { words }),
     });
     this.forget();

@@ -1,3 +1,4 @@
+import { signal, type WritableSignal } from "@angular/core";
 import { TestBed } from "@angular/core/testing";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { AssistantCore } from "../../../src/app/assistant/assistant-core";
@@ -5,6 +6,7 @@ import { provideAssistant } from "../../../src/app/assistant/provide-assistant";
 import { ProfileAssistant } from "../../../src/app/profile/profile-assistant/profile-assistant";
 import {
   conversationIs,
+  type Entry,
   entryOf,
   type Question,
   questionOf,
@@ -221,6 +223,120 @@ describe("the opening, as the conversation stored it (S2.3, US8)", () => {
     expect(textOf(at("[data-part=opening]"))).toBe(sentence);
     expect(textOf(element)).toContain("I ran the services, not the cluster.");
     expect(textOf(element).split(sentence)).toHaveLength(2);
+  });
+});
+
+/**
+ * Seam E: a free message in the profile's column (`SL3`, `US2`, `US3`, `ID176`). The core
+ * is stood in at its seam: its entries, its reply and its failure set per case, and what
+ * is posted recorded. What is asserted is text a person reads and keys a person presses.
+ */
+describe("a free message (SL3, US2, US3)", () => {
+  type Stood = {
+    entries: WritableSignal<Entry[]>;
+    replying: WritableSignal<string | null>;
+    failure: WritableSignal<string | null>;
+    post: ReturnType<typeof vi.fn>;
+    open: ReturnType<typeof vi.fn>;
+    reload: ReturnType<typeof vi.fn>;
+  };
+
+  const opening = entryOf(1, [
+    { kind: "text", text: "I read your 5 documents.", scripted: true },
+    { kind: "text", text: "I ask only those.", scripted: true },
+  ]);
+  const message = entryOf(2, [{ kind: "text", text: "I ran the services." }], "person");
+  const reply = entryOf(3, [{ kind: "text", text: "No pre generated text" }]);
+
+  const standIn = (entries: Entry[] = []): Stood => {
+    const stood: Stood = {
+      entries: signal(entries),
+      replying: signal<string | null>(null),
+      failure: signal<string | null>(null),
+      post: vi.fn(async () => {}),
+      open: vi.fn(async () => {}),
+      reload: vi.fn(async () => {}),
+    };
+    TestBed.overrideProvider(AssistantCore, { useValue: stood });
+    return stood;
+  };
+
+  const typeInto = (element: HTMLElement, words: string): void => {
+    const field = element.querySelector<HTMLInputElement>("[data-part=composer]");
+    if (field === null) throw new Error("no composer");
+    field.value = words;
+    field.dispatchEvent(new Event("input"));
+  };
+
+  it("posts the typed text once with nothing open, on Enter, and the composer is back to one empty line", async () => {
+    const core = standIn();
+    const { fixture, element } = await rendered(
+      three.map((question) => ({ ...question, state: "answered" as const })),
+    );
+
+    typeInto(element, "I ran the services.");
+    await fixture.whenStable();
+    element
+      .querySelector<HTMLInputElement>("[data-part=composer]")
+      ?.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter" }));
+    await fixture.whenStable();
+
+    expect(core.post).toHaveBeenCalledTimes(1);
+    expect(core.post).toHaveBeenCalledWith("I ran the services.");
+    expect(element.querySelector("textarea")).toBeNull();
+    expect(element.querySelector<HTMLInputElement>("[data-part=composer]")?.value).toBe("");
+  });
+
+  it("posts the typed text as a message with a question open and no pick, and the question stays open", async () => {
+    const core = standIn();
+    const { fixture, element, at } = await rendered(three);
+    const answered: unknown[] = [];
+    fixture.componentInstance.answered.subscribe((event) => answered.push(event));
+
+    typeInto(element, "Can I say something else first?");
+    await fixture.whenStable();
+    element.querySelector<HTMLButtonElement>("[data-part=send]")?.click();
+    await fixture.whenStable();
+
+    expect(core.post).toHaveBeenCalledWith("Can I say something else first?");
+    expect(answered).toEqual([]);
+    expect(at("scope-tool")).not.toBeNull();
+    expect(textOf(at("[data-part=lead]"))).toBe("Which was it?");
+    expect(textOf(at("[data-part=count]"))).toBe("0 of 3 answered");
+  });
+
+  it("draws the reply as it streams, under the message", async () => {
+    const core = standIn([opening, message]);
+    core.replying.set("No pre");
+    const { fixture, element } = await rendered(three);
+    await fixture.whenStable();
+
+    const said = textOf(element);
+    expect(textOf(element.querySelector("[data-part=replying]"))).toBe("No pre");
+    expect(said.indexOf("I ran the services.")).toBeLessThan(said.indexOf("No pre"));
+  });
+
+  it("draws the message and the reply at once, in order, after a reload", async () => {
+    standIn([opening, message, reply]);
+    const { fixture, element } = await rendered(three);
+    await fixture.whenStable();
+
+    const said = textOf(element);
+    expect(said).toContain("I ran the services.");
+    expect(said.indexOf("I ran the services.")).toBeLessThan(said.indexOf("No pre generated text"));
+    expect(element.hasAttribute("data-guide")).toBe(false);
+  });
+
+  it("says a failure in one sentence, and the message is still there", async () => {
+    const core = standIn([opening, message]);
+    core.failure.set("The assistant could not answer this time. Your message is kept.");
+    const { fixture, element } = await rendered(three);
+    await fixture.whenStable();
+
+    expect(
+      Array.from(element.querySelectorAll("[data-part=failure]")).map((each) => textOf(each)),
+    ).toEqual(["The assistant could not answer this time. Your message is kept."]);
+    expect(textOf(element)).toContain("I ran the services.");
   });
 });
 

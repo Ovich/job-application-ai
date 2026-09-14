@@ -60,3 +60,58 @@ test("the opening lands on a first visit, and a reload shows it once", async ({ 
   expect(again.id).toBe(first.id);
   expect(again.entries).toHaveLength(1);
 });
+
+/**
+ * A free message, walked for real (agent-consolidation `SL3`, `US2`, `US3`): typed with the
+ * first question open and nothing picked, its reply streamed by the paced mock as the
+ * words `No pre generated text`, and both read back after a reload, after the opening.
+ */
+test("a free message and its streamed reply land, and a reload shows both after the opening", async ({
+  browser,
+}) => {
+  test.setTimeout(90_000);
+  const context = await signedIn(browser, {
+    name: "Stefan Teofanovic",
+    email: "conversation-free-message@example.com",
+  });
+  const page = await context.newPage();
+
+  await page.goto("/documents");
+  await page.locator("input[type=file]").setInputFiles([`${documents}2026-08-30_cv_EN.pdf`]);
+  await page.getByRole("button", { name: "Read my documents" }).click();
+  await expect(page.locator("[data-row=document]").filter({ hasText: "read" })).toHaveCount(1, {
+    timeout: 30_000,
+  });
+
+  await page.goto("/profile");
+  const assistant = page.locator("profile-assistant");
+  await expect(assistant).toHaveAttribute("data-guide", "done");
+  const count = (await assistant.locator("[data-part=count]").textContent())?.trim();
+
+  const composer = assistant.locator("[data-part=composer]");
+  await composer.fill("Which document did you read first?");
+  await composer.press("Enter");
+
+  const said = assistant.locator("[data-entry]");
+  await expect(said.filter({ hasText: "Which document did you read first?" })).toHaveCount(1);
+  await expect(said.filter({ hasText: "No pre generated text" })).toHaveCount(1, {
+    timeout: 30_000,
+  });
+  await expect(assistant.locator("[data-part=count]")).toHaveText(count ?? "");
+
+  await page.reload();
+  await expect(assistant.locator("[data-part=opening]")).toHaveCount(1);
+  await expect(said).toHaveText([/Which document did you read first\?/, /No pre generated text/]);
+
+  const stored = (await (await page.request.get("/api/conversations/profile")).json()) as {
+    id: string;
+    entries: { position: number; author: string; parts: { text?: string }[] }[];
+  };
+  expect(
+    stored.entries.map((entry) => [entry.position, entry.author, entry.parts.at(-1)?.text]),
+  ).toEqual([
+    [1, "assistant", expect.any(String)],
+    [2, "person", "Which document did you read first?"],
+    [3, "assistant", "No pre generated text"],
+  ]);
+});

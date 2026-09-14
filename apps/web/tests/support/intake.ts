@@ -321,6 +321,7 @@ export const resetIntake = (): void => {
   held = null;
   ruleCount = 1;
   conversation = null;
+  resetReplies();
 };
 
 const json = (body: unknown, status = 200): Response =>
@@ -417,16 +418,11 @@ const scripted = (text: string) => ({ kind: "text", text, scripted: true });
 
 /**
  * The opening the API writes for this profile, composed the way the profile assistant
- * composes it: the sentence, the tail and the first waiting question's opener, or the one
- * sentence for a person with nothing read. Kept in step with it so a screen that draws
- * what it is answered draws what a person would read.
+ * composes it: the sentence, the tail and the first waiting question's opener. Kept in
+ * step with it so a screen that draws what it is answered draws what a person would read.
+ * A profile nothing has been read into has no conversation at all (`ID202`): see below.
  */
 const openingOf = (given: Profile): Entry => {
-  if (given.documents === 0) {
-    return entryOf(1, [
-      scripted("I have not read any of your documents yet. Hand them over and I will read them."),
-    ]);
-  }
   const waiting = given.questions.find((question) => question.state === "waiting");
   const moved = given.questions.some((question) => question.state !== "waiting");
   return entryOf(1, [
@@ -459,10 +455,98 @@ export const conversationRefused = (status: number, body: unknown): void => {
   conversation = { status, body };
 };
 
+/** One leaf of a message's stream, as the API's envelope carries it. */
+export type ReplyLeaf =
+  | { kind: "entry"; entry: Entry }
+  | { kind: "text"; text: string }
+  | { kind: "done" }
+  | { kind: "error"; message: string };
+
+/** Every message a screen posted, in order: where to, and the words. */
+let posted: { address: string; text: string }[] = [];
+
+/** The frames the case has said and the open reply has not carried yet. */
+let pending: string[] = [];
+
+/** The reply stream being read, or `null` before a message is posted. */
+let reply: ReadableStreamDefaultController<Uint8Array> | null = null;
+
+let replyEnded = false;
+
+let replySeq = 0;
+
+const flush = (): void => {
+  if (reply === null) return;
+  for (const frame of pending) reply.enqueue(new TextEncoder().encode(frame));
+  pending = [];
+  if (replyEnded) {
+    reply.close();
+    reply = null;
+  }
+};
+
+/** Every message posted to the conversations route, in order. */
+export const messagesPosted = (): { address: string; text: string }[] => posted;
+
+/**
+ * The reply to the message being posted, written by the case a leaf at a time, as the
+ * API streams it. An `entry` leaf is kept in the conversation too, because the API
+ * commits an entry before its frame: a reload reads what the stream said.
+ */
+export const theReply = {
+  says: (leaf: ReplyLeaf): void => {
+    if (leaf.kind === "entry" && conversation !== null) {
+      const body = conversation.body as { id: string; entries: Entry[] };
+      conversation = { ...conversation, body: { ...body, entries: [...body.entries, leaf.entry] } };
+    }
+    replySeq += 1;
+    pending.push(
+      `id: ${replySeq}\ndata: ${JSON.stringify({ seq: replySeq, version: 1, leaf })}\n\n`,
+    );
+    flush();
+  },
+  ends: (): void => {
+    replyEnded = true;
+    flush();
+  },
+};
+
+export const resetReplies = (): void => {
+  posted = [];
+  pending = [];
+  reply = null;
+  replyEnded = false;
+  replySeq = 0;
+};
+
+alsoAnswering((address, init) => {
+  const path = new URL(address, "http://localhost").pathname;
+  if (!/^\/api\/conversations\/[^/]+\/messages$/.test(path)) return undefined;
+  requests.push({ method: init?.method ?? "GET", address: path });
+  const said = (typeof init?.body === "string" ? JSON.parse(init.body) : {}) as { text?: string };
+  posted.push({ address: path, text: said.text ?? "" });
+  // A case may say the whole reply, its end included, before the request arrives: the
+  // stream then carries what is pending and closes at once.
+  return new Response(
+    new ReadableStream<Uint8Array>({
+      start(controller) {
+        reply = controller;
+        flush();
+      },
+    }),
+    { status: 200, headers: { "content-type": "text/event-stream" } },
+  );
+});
+
 alsoAnswering((address, init) => {
   const path = new URL(address, "http://localhost").pathname;
   if (!path.startsWith("/api/conversations/")) return undefined;
   requests.push({ method: init?.method ?? "GET", address: path });
+  // Before a reading the API creates nothing and refuses (`S3.0`, `ID202`), and creates
+  // nothing on a second ask either, so nothing is kept here.
+  if (conversation === null && profile.documents === 0) {
+    return json({ error: "nothing read yet" }, 409);
+  }
   conversation ??= {
     status: 200,
     body: { id: "conversation-1", entries: [openingOf(profile)] },
