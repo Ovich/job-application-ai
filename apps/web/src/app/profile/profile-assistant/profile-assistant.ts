@@ -1,3 +1,4 @@
+import { NgTemplateOutlet } from "@angular/common";
 import {
   afterNextRender,
   Component,
@@ -10,6 +11,8 @@ import {
   viewChild,
 } from "@angular/core";
 import { Assistant } from "../../assistant/assistant/assistant";
+import { AssistantConversation } from "../../assistant/assistant-conversation/assistant-conversation";
+import { AssistantCore } from "../../assistant/assistant-core";
 import { guide } from "../../guide/guide";
 import { atOnce, GUIDE_PACE } from "../../guide/pace";
 import { doThis, say, show, shownOf } from "../../guide/say";
@@ -89,11 +92,26 @@ type Said = { kind: "ai"; text: string } | { kind: "ok"; text: string };
 
 @Component({
   selector: "profile-assistant",
-  imports: [Assistant, ProgressLine, ReadingCard, ScopeTool, UiText],
+  imports: [
+    Assistant,
+    AssistantConversation,
+    NgTemplateOutlet,
+    ProgressLine,
+    ReadingCard,
+    ScopeTool,
+    UiText,
+  ],
   templateUrl: "./profile-assistant.html",
   host: { class: "flex min-h-0 min-w-0 flex-1 flex-col" },
 })
 export class ProfileAssistant {
+  /**
+   * Whether the conversation holds nothing to draw: not opened, or refused. The reading
+   * card is still the profile's to show, so the column draws its opening without stored
+   * words rather than nothing at all.
+   */
+  protected readonly nothingStored = computed(() => this.core.entries().length === 0);
+
   public readonly questions = input<Question[]>([]);
 
   /** The region the person pressed themselves, if any. Nothing is pressed to begin with. */
@@ -115,28 +133,30 @@ export class ProfileAssistant {
     facts: 0,
   });
 
-  /** The opening's first sentence, and how much of it has landed. */
-  protected readonly opening = computed(
-    () =>
-      `I read your ${this.readLine()}. Every fact on the right carries the document it came from, and I wrote nothing that is not in them.`,
-  );
+  /**
+   * The stored conversation this column belongs to (agent-consolidation `SL2`, `ID176`),
+   * provided by the screen. Its first entry is the opening the API wrote.
+   */
+  private readonly core = inject(AssistantCore);
+
+  /** The words of one part of the opening, or nothing when the opening has no such part. */
+  private readonly openingPart = (at: number): string => {
+    const part = this.core.entries()[0]?.parts[at];
+    return part !== undefined && "text" in part && typeof part.text === "string" ? part.text : "";
+  };
+
+  /** The opening's first sentence, as stored, and how much of it has landed. */
+  protected readonly opening = computed(() => this.openingPart(0));
 
   protected readonly openingShown = computed(() => shownOf(this.opening(), this.told()));
 
-  /** The sentence after the card, and how much of it has landed. */
-  protected readonly tail =
-    "Some facts say what you did but not what your part was, or two documents disagree. I ask only those. Everything else I could tell from your documents.";
+  /** The sentence after the card, as stored, and how much of it has landed. */
+  protected readonly tail = computed(() => this.openingPart(1));
 
-  protected readonly tailShown = computed(() => shownOf(this.tail, this.toldTail()));
+  protected readonly tailShown = computed(() => shownOf(this.tail(), this.toldTail()));
 
   /** The opener — `First, Java.` — and how much of it has landed. */
   protected readonly openerShown = computed(() => shownOf(this.opener(), this.spoken()));
-
-  /** `1 document` or `4 documents`: a count a person reads, not a count with an `s`. */
-  protected readonly readLine = computed(() => {
-    const documents = this.reading().documents;
-    return `${documents} document${documents === 1 ? "" : "s"}`;
-  });
 
   public readonly answered = output<{ questionId: string; optionId?: string; words?: string }>();
 
@@ -333,12 +353,22 @@ export class ProfileAssistant {
        * about something it has already said. Everything lands at once instead, and the
        * tool still opens.
        */
-      const pace = this.reduced() || !this.brandNew() ? atOnce : this.pace;
+      if (!this.brandNew()) {
+        // Everything at once, and nothing performed: every word whole, the card shown,
+        // the tool open.
+        this.told.set(Number.POSITIVE_INFINITY);
+        this.card.set(true);
+        this.toldTail.set(Number.POSITIVE_INFINITY);
+        this.toolLetOpen.set(true);
+        this.spoken.set(Number.POSITIVE_INFINITY);
+        return;
+      }
+      const pace = this.reduced() ? atOnce : this.pace;
       guide(
         [
           say("opening", this.opening(), this.told, pace),
           show("card", this.card, pace),
-          say("tail", this.tail, this.toldTail, pace),
+          say("tail", this.tail(), this.toldTail, pace),
           doThis("tool", () => this.toolLetOpen.set(true), pace),
           say("opener", this.opener(), this.spoken, pace),
         ],
@@ -348,15 +378,14 @@ export class ProfileAssistant {
   }
 
   /**
-   * Whether this column has nothing in it yet: nothing said after the opening, nobody
-   * returning, no question answered or put off. Only then is the opening performed.
+   * Whether the conversation holds its opening and nothing after it (`ID176`). Only then
+   * is the opening performed; a conversation with more in it is resumed, shown at once.
+   *
+   * A fact of the stored data, not of the visit: a person coming back to a conversation
+   * that still holds only its opening sees it performed again, which is `G3`'s rule.
    */
   private brandNew(): boolean {
-    return (
-      !this.returning() &&
-      this.stream().length === 0 &&
-      this.answeredCount() + this.deferred() === 0
-    );
+    return this.core.entries().length === 1;
   }
 
   /** What a person asked for when they asked for less motion (`G6`). */
