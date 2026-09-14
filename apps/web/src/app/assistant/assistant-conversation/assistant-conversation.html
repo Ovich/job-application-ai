@@ -92,6 +92,62 @@
   </div>
 }
 
+<!--
+  What the agent is doing now (agent-consolidation S7.5, H27): a short phrase beside three
+  dots that pulse, on the assistant's side, until the reply's words, an entry or the end
+  arrive. Streamed and never stored.
+-->
+@if (activity(); as doing) {
+  <div data-entry data-msg="assistant" class="grid w-full grid-cols-[30px_1fr] gap-3">
+    <div
+      data-part="avatar"
+      aria-hidden="true"
+      class="mt-0.5 grid size-[30px] place-items-center rounded-full bg-primary font-semibold text-label text-primary-foreground"
+    >
+      A
+    </div>
+    <div class="flex min-w-0 items-center gap-2" role="status" aria-live="polite">
+      <svg
+        data-part="activity-indicator"
+        aria-hidden="true"
+        width="24"
+        height="8"
+        viewBox="0 0 24 8"
+        class="shrink-0 text-muted-foreground"
+      >
+        <circle cx="4" cy="4" r="2.5" fill="currentColor">
+          <animate
+            attributeName="opacity"
+            values="0.25;1;0.25"
+            dur="1.2s"
+            begin="0s"
+            repeatCount="indefinite"
+          />
+        </circle>
+        <circle cx="12" cy="4" r="2.5" fill="currentColor">
+          <animate
+            attributeName="opacity"
+            values="0.25;1;0.25"
+            dur="1.2s"
+            begin="0.2s"
+            repeatCount="indefinite"
+          />
+        </circle>
+        <circle cx="20" cy="4" r="2.5" fill="currentColor">
+          <animate
+            attributeName="opacity"
+            values="0.25;1;0.25"
+            dur="1.2s"
+            begin="0.4s"
+            repeatCount="indefinite"
+          />
+        </circle>
+      </svg>
+      <p data-part="activity" uiText variant="body" tone="muted">{{ doing }}</p>
+    </div>
+  </div>
+}
+
 @if (failure(); as said) {
   <p data-part="failure" uiText variant="body" tone="muted" role="status">{{ said }}</p>
 }

@@ -53,6 +53,9 @@ export class AssistantConversation {
   /** What went wrong, in one sentence. */
   protected readonly failure = this.core.failure;
 
+  /** What the agent is doing now, drawn beside an animated indicator until its words land. */
+  protected readonly activity = this.core.activity;
+
   /** The concrete assistant's own drawing of the opening, when it gives one. */
   protected readonly opening = contentChild(TemplateRef);
 

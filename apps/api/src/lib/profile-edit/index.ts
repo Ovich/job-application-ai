@@ -376,6 +376,22 @@ export const apply = async (
   return { before, after };
 };
 
+/** One operation, said in a few words while it is done (`ID210`). */
+const operationPhrase = (said: Operation): string => {
+  switch (said.op) {
+    case "set":
+      return `Changing the ${said.field}`;
+    case "replace_line":
+      return "Rewriting a line";
+    case "add_line":
+      return "Adding a line";
+    case "remove_line":
+      return "Removing a line";
+    case "remove_child":
+      return "Removing an item under it";
+  }
+};
+
 /** The capability as the agent is offered it (`ID187`): one tool any definition lists. */
 export const profileEditTool: AgentTool<Edit, Applied> = {
   name: "edit_profile",
@@ -383,4 +399,10 @@ export const profileEditTool: AgentTool<Edit, Applied> = {
     "Change one item of the person's profile: set a field, replace, add or remove a line, or remove an item under it. The operations apply all together or not at all; the answer is the item before and after, or why the edit was refused.",
   input: edit,
   run: (tx, person, input) => apply(tx, person, input.itemId, input.operations),
+  summarise: (input) => {
+    const [first] = input.operations;
+    return input.operations.length === 1 && first !== undefined
+      ? operationPhrase(first)
+      : `Making ${input.operations.length} changes`;
+  },
 };

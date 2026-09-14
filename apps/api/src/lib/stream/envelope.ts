@@ -69,6 +69,12 @@ const entryLeaf = z.object({
   }),
 });
 
+/**
+ * What the agent is doing now, in a few words (`ID210`, spec `H27`): shown while a step
+ * runs, never stored, gone once the reply's words land.
+ */
+const statusLeaf = z.object({ kind: z.literal("status"), text: z.string() });
+
 /** A message's stream is over, every entry of it committed. */
 const doneLeaf = z.object({ kind: z.literal("done") });
 
@@ -90,6 +96,7 @@ export const leafSchema = z.discriminatedUnion("kind", [
   documentLeaf,
   runLeaf,
   entryLeaf,
+  statusLeaf,
   doneLeaf,
   errorLeaf,
 ]);

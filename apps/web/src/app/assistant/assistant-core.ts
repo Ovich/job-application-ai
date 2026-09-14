@@ -12,6 +12,7 @@ export type Entry = Conversation["entries"][number];
 /** What a message's stream says, as far as the core reads it (`ID170`). */
 type Leaf =
   | { kind: "entry"; entry: Entry }
+  | { kind: "status"; text: string }
   | { kind: "text"; text: string }
   | { kind: "done" }
   | { kind: "error"; message: string };
@@ -49,6 +50,14 @@ export class AssistantCore {
 
   /** One sentence saying what went wrong, or `null` while nothing has. */
   public readonly failure = this.refused.asReadonly();
+
+  private readonly doing = signal<string | null>(null);
+
+  /**
+   * What the agent is doing now, in a few words, or `null` (`ID210`, spec `H27`): set by a
+   * status frame, cleared by the reply's first words, an entry or the stream's end.
+   */
+  public readonly activity = this.doing.asReadonly();
 
   /** Opens this assistant's conversation, about a subject or none, creating it if absent. */
   public async open(subject?: string): Promise<void> {
@@ -101,6 +110,7 @@ export class AssistantCore {
       }
       for await (const frame of framesOf(answer.body)) {
         const leaf = frame.leaf as Leaf;
+        this.doing.set(leaf.kind === "status" ? leaf.text : null);
         if (leaf.kind === "entry") this.held.update((entries) => [...entries, leaf.entry]);
         if (leaf.kind === "text") this.streamed.update((so) => (so ?? "") + leaf.text);
         if (leaf.kind === "error") this.refused.set(leaf.message);
@@ -110,6 +120,7 @@ export class AssistantCore {
       this.refused.set("the message could not be sent");
     } finally {
       this.streamed.set(null);
+      this.doing.set(null);
       this.posting = false;
     }
   }
