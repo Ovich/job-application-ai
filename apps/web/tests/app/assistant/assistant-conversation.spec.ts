@@ -270,6 +270,81 @@ describe("the person's words read from the left, in a bubble on the right (S8.3b
   });
 });
 
+/**
+ * The person's bubbles look the same in light and dark (agent-consolidation `S8.6`,
+ * `ID232`): the bubble takes the send button's fixed blue with white text, and no line
+ * inside it names a colour the theme swaps. Read from the utilities that colour it; the
+ * look itself is checked on dev in both schemes.
+ */
+describe("the person's bubbles keep their colours in either theme (S8.6, ID232)", () => {
+  /** A colour utility bound to a token the dark palette redefines. */
+  const THEME_COLOUR =
+    /^(text|bg)-(foreground|background|muted|muted-foreground|card|primary|primary-foreground|accent|accent-foreground)(\/\d+)?$/;
+
+  const themeColoursIn = (element: Element | null | undefined): string[] =>
+    [element, ...Array.from(element?.querySelectorAll("*") ?? [])]
+      .flatMap((each) => Array.from(each?.classList ?? []))
+      .filter((each) => THEME_COLOUR.test(each));
+
+  const personEntry = (element: HTMLElement) =>
+    element.querySelector("[data-entry][data-msg=person]");
+
+  it("draws a text bubble in the send blue with white text, and nothing in it follows the theme", async () => {
+    const element = await rendered([
+      entryOf(1, [{ kind: "text", text: "I read your 2 documents.", scripted: true }]),
+      entryOf(2, [{ kind: "text", text: "Shorten the second line." }], "person"),
+    ]);
+
+    const bubble = Array.from(personEntry(element)?.querySelectorAll("p") ?? []).find(
+      (each) => textOf(each) === "Shorten the second line.",
+    );
+    expect(bubble?.classList.contains("bg-send")).toBe(true);
+    expect(bubble?.classList.contains("text-white")).toBe(true);
+    expect(themeColoursIn(bubble)).toEqual([]);
+  });
+
+  it("draws an answered part the same way, in its place in the conversation", async () => {
+    TestBed.overrideProvider(ASSISTANT_PARTS, {
+      useValue: [{ kind: "question_answered", component: QuestionAnsweredPart }],
+    });
+    const element = await rendered([
+      entryOf(1, [{ kind: "text", text: "I read your 2 documents.", scripted: true }]),
+      entryOf(
+        2,
+        [
+          {
+            kind: "question_answered",
+            lead: "Which was it?",
+            where: "What you work with · DevOps and cloud",
+            options: [{ id: "q1-1", label: "Ran the cluster", hint: "nodes, upgrades, access" }],
+            picked: "q1-1",
+            words: "three clusters",
+          },
+        ],
+        "person",
+      ),
+    ]);
+
+    const bubble = personEntry(element)?.querySelector("[data-part=answered]");
+    expect(bubble?.classList.contains("bg-send")).toBe(true);
+    expect(bubble?.classList.contains("text-white")).toBe(true);
+    expect(themeColoursIn(bubble)).toEqual([]);
+  });
+
+  it("leaves the assistant's own lines on the theme's colours", async () => {
+    const element = await rendered([
+      entryOf(1, [{ kind: "text", text: "I read your 2 documents.", scripted: true }]),
+      entryOf(2, [{ kind: "text", text: "I shortened it." }]),
+    ]);
+
+    const line = Array.from(
+      element.querySelectorAll("[data-entry][data-msg=assistant] p") ?? [],
+    ).find((each) => textOf(each) === "I shortened it.");
+    expect(line?.classList.contains("text-foreground")).toBe(true);
+    expect(line?.classList.contains("text-white")).toBe(false);
+  });
+});
+
 describe("who writes what (S4.7)", () => {
   beforeEach(async () => {
     signedInAs({ name: "Stefan Teofanovic", email: "stefan@example.com", providers: ["google"] });

@@ -61,6 +61,58 @@ describe("an answer, the whole exchange (S7.6)", () => {
   });
 });
 
+/**
+ * The person's bubble keeps its colours in either theme (agent-consolidation `S8.6`,
+ * `ID232`): the answered part is the send blue with white text and every line in it takes
+ * the bubble's colour; the skipped part, which has no bubble, stays on the theme's tokens.
+ */
+describe("the parts' colours in either theme (S8.6, ID232)", () => {
+  /** A colour utility bound to a token the dark palette redefines. */
+  const THEME_COLOUR =
+    /^(text|bg)-(foreground|background|muted|muted-foreground|card|primary|primary-foreground|accent|accent-foreground)(\/\d+)?$/;
+
+  const rendered = async (component: Type<unknown>, part: Part): Promise<HTMLElement> => {
+    const fixture = TestBed.createComponent(component);
+    fixture.componentRef.setInput("part", part);
+    await fixture.whenStable();
+    return fixture.nativeElement as HTMLElement;
+  };
+
+  const coloursOf = (element: Element | null | undefined): string[] =>
+    Array.from(element?.classList ?? []).filter((each) => THEME_COLOUR.test(each));
+
+  it("draws an answer in the send blue with white text, and no line in it follows the theme", async () => {
+    const element = await rendered(QuestionAnsweredPart, {
+      kind: "question_answered",
+      ...asked,
+      picked: "q1-2",
+      words: "three clusters, one on bare metal",
+    });
+
+    const bubble = element.querySelector("[data-part=answered]");
+    expect(bubble?.classList.contains("bg-send")).toBe(true);
+    expect(bubble?.classList.contains("text-white")).toBe(true);
+    expect(coloursOf(bubble)).toEqual([]);
+    const lines = ["asked", "where", "picked", "words"].map((name) =>
+      element.querySelector(`[data-part=${name}]`),
+    );
+    for (const line of lines) {
+      expect(line).not.toBeNull();
+      expect(coloursOf(line)).toEqual([]);
+    }
+  });
+
+  it("leaves a skip, drawn without a bubble, on the theme's tokens", async () => {
+    const element = await rendered(QuestionSkippedPart, { kind: "question_skipped", ...asked });
+
+    const skipped = element.querySelector("[data-part=skipped]");
+    expect(skipped?.classList.contains("bg-send")).toBe(false);
+    for (const line of Array.from(skipped?.querySelectorAll("p") ?? [])) {
+      expect(coloursOf(line)).toEqual(["text-muted-foreground"]);
+    }
+  });
+});
+
 describe("a skip, the whole exchange (S7.6)", () => {
   it("shows the question as asked, where it is, and that it was skipped", async () => {
     const said = await drawn(QuestionSkippedPart, { kind: "question_skipped", ...asked });
