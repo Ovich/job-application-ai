@@ -584,3 +584,115 @@ describe("a press anywhere away closes the tool (S8.8, ID236)", () => {
     expect(textOf(at("scope-tool [data-part=lead]"))).toBe(kubernetes.lead);
   });
 });
+
+/**
+ * A conversation with history opens on its latest exchange (agent-consolidation `S8.9`,
+ * `ID237`): once drawn, the assistant's column is kept at its end while it settles, until
+ * the person scrolls or presses in it.
+ *
+ * jsdom lays nothing out and has no `ResizeObserver`, so the column is given a height and a
+ * content height here and the observers are stood in for, to say the column changed size.
+ */
+describe("a conversation with history opens on its latest exchange (S8.9, ID237)", () => {
+  let told: (() => void)[] = [];
+  let platformObserver: typeof ResizeObserver;
+
+  beforeEach(() => {
+    told = [];
+    platformObserver = globalThis.ResizeObserver;
+    globalThis.ResizeObserver = class {
+      constructor(callback: () => void) {
+        told.push(callback);
+      }
+      observe(): void {}
+      unobserve(): void {}
+      disconnect(): void {}
+    } as unknown as typeof ResizeObserver;
+  });
+
+  afterEach(() => {
+    globalThis.ResizeObserver = platformObserver;
+  });
+
+  /** The column's size changed, as every observer would report it. */
+  const resized = (): void => {
+    for (const callback of told) callback();
+  };
+
+  /** A stored history longer than the column: the opening and five messages after it. */
+  const aHistory = () => [
+    entryOf(1, [
+      { kind: "text", text: sentence, scripted: true },
+      { kind: "text", text: tail, scripted: true },
+    ]),
+    ...[2, 3, 4, 5, 6].map((position) =>
+      entryOf(
+        position,
+        [{ kind: "text", text: `Message ${position}.` }],
+        position % 2 === 0 ? "person" : "assistant",
+      ),
+    ),
+  ];
+
+  /** The conversation's scrolling column, given a height and a content height to scroll. */
+  const laidOut = (column: HTMLElement, size: { client: number; content: number }): void => {
+    let top = 0;
+    Object.defineProperty(column, "clientHeight", { get: () => size.client, configurable: true });
+    Object.defineProperty(column, "scrollHeight", { get: () => size.content, configurable: true });
+    Object.defineProperty(column, "scrollTop", {
+      get: () => top,
+      set: (to: number) => {
+        top = to;
+      },
+      configurable: true,
+    });
+  };
+
+  const opening = async () => {
+    profileIs(aProfile([kubernetes, docker]));
+    conversationIs(aHistory());
+    const screen = await opened();
+    await screen.eventually(() => expect(screen.active()).toEqual(everythingActive));
+    const column = screen.at("profile-assistant assistant > div") as HTMLElement;
+    expect(column).not.toBeNull();
+    return { ...screen, column };
+  };
+
+  it("keeps the column at its end when its content grows after the first render", async () => {
+    const { column } = await opening();
+    const size = { client: 300, content: 2000 };
+    laidOut(column, size);
+    column.scrollTop = 1700;
+
+    size.content = 2600;
+    resized();
+
+    expect(column.scrollTop).toBeGreaterThanOrEqual(2600 - 300);
+  });
+
+  it("takes the column to its end when it gets its size after the first render, as the chat shown below 1024 px does", async () => {
+    const { column } = await opening();
+    const size = { client: 0, content: 0 };
+    laidOut(column, size);
+
+    size.client = 300;
+    size.content = 2000;
+    resized();
+
+    expect(column.scrollTop).toBeGreaterThanOrEqual(2000 - 300);
+  });
+
+  it.each(["wheel", "pointerdown"])("stops keeping it once the person uses it: %s", async (use) => {
+    const { column } = await opening();
+    const size = { client: 300, content: 2000 };
+    laidOut(column, size);
+    column.scrollTop = 1700;
+
+    column.dispatchEvent(new Event(use, { bubbles: true }));
+    column.scrollTop = 400;
+    size.content = 2600;
+    resized();
+
+    expect(column.scrollTop).toBe(400);
+  });
+});
