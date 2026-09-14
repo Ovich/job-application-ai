@@ -109,9 +109,7 @@ describe("a recorded tool call, Anthropic's envelope", () => {
   it("answers whole with a text block, then a tool_use block holding the input, and stop_reason tool_use", async () => {
     const cases = withCases(recorded);
     try {
-      const body = anthropicWhole.parse(
-        await (await ask("/messages", { max_tokens: 100 })).json(),
-      );
+      const body = anthropicWhole.parse(await (await ask("/messages", { max_tokens: 100 })).json());
 
       expect(body.stop_reason).toBe("tool_use");
       expect(body.content).toEqual([
