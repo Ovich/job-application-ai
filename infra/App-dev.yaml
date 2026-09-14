@@ -30,8 +30,9 @@ Parameters:
       The ARN of the Cert-dev certificate, read from that stack's output in us-east-1.
     AllowedPattern: ^arn:aws:acm:us-east-1:\d{12}:certificate/.+$
 
-  # Switching the AI from the mock to a provider is these two values on a deploy, and no
-  # code (goal 9, ID195). Both default to the mock, so a deploy that names neither is the
+  # Switching the AI from the mock to a provider is the address, the key's entry and the
+  # model on a deploy, plus the deploy role's grant on that entry, and no code (goal 9,
+  # ID195, ID234). All default to the mock, so a deploy that names none is the
   # environment as it has always been.
   AiBaseUrl:
     Type: String
@@ -51,6 +52,15 @@ Parameters:
     Description: >-
       Name of the Secrets Manager entry whose SecretString is the AI provider's key, or
       empty for the mock, which needs none.
+
+  # Without it the function falls back to the schema's mock-model, and a provider reached
+  # by address and key alone would be asked for a model it does not have (ID234).
+  AiModel:
+    Type: String
+    Default: mock-model
+    Description: >-
+      The model the reading and the assistants ask for. The default is the name the mock
+      answers to.
 
 Conditions:
   HasAiKey: !Not [!Equals [!Ref AiKeyEntry, ""]]
@@ -187,6 +197,8 @@ Resources:
           # which is a laptop's own port and is precisely what a deployed function must
           # never fall back to: it did, and every document came back unread.
           AI_BASE_URL: !Ref AiBaseUrl
+          # The model asked for, from the AiModel parameter (ID234).
+          AI_MODEL: !Ref AiModel
           # The provider's key, only when AiKeyEntry names an entry, and then only as a
           # dynamic reference resolved while the stack applies (ID214). Absent otherwise,
           # so the schema's throwaway stands and the mock ignores it.
