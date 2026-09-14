@@ -4,13 +4,18 @@ import { RouterTestingHarness } from "@angular/router/testing";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { routes } from "../../../src/app/app.routes";
 import {
+  type Entry,
   emptyProfile,
+  entryOf,
+  intakeRequests,
   itemOf,
+  messagesPosted,
   type Profile,
   profileIs,
   type Question,
   questionOf,
   resetIntake,
+  theReply,
 } from "../../support/intake";
 import { reset, signedInAs } from "../../support/session";
 
@@ -127,6 +132,16 @@ const opened = async () => {
   return { harness, page, at, all, region, press, type, saveIt, columnIsAt, eventually };
 };
 
+/** Every request the screen made to the rule route, which a clarification no longer calls. */
+const ruleRequests = () => intakeRequests().filter((each) => each.address.endsWith("/rule"));
+
+/** The person's entry the API committed for the message, then the reply's end. */
+const theyWrote = (parts: Entry["parts"]): void => {
+  theReply.says({ kind: "entry", entry: entryOf(2, parts, "person") });
+  theReply.says({ kind: "done" });
+  theReply.ends();
+};
+
 /** The one fixed sentence, verbatim from the mockup. It is a decision, not a suggestion. */
 const theSentence = "Tell me what I should know about it, in your own words.";
 
@@ -141,7 +156,7 @@ describe("a click on a region with no question waiting (criteria 1 and 3)", () =
     expect(all("[data-action=alt]")).toHaveLength(0);
     expect(at("[data-action=skip]")).toBeNull();
     expect(textOf(at("scope-tool [data-part=foot]"))).toContain(
-      "What you write is kept as your rule for it.",
+      "What you write goes into the conversation, about this.",
     );
     expect(at("[data-part=composer]")).not.toBeNull();
     expect((at("[data-part=composer]") as HTMLInputElement).placeholder).toBe(
@@ -233,19 +248,33 @@ describe("a click on a line (the person, 2026-09-13)", () => {
     expect(textOf(at("profile-assistant"))).not.toContain("Ran the migration programme");
   });
 
-  it("keeps what is written as a rule on the line's post, about the line", async () => {
+  it("posts what is written as a message about the line, and writes no rule (S8.7)", async () => {
     profileIs(aProfile());
-    const { region, press, type, saveIt, eventually } = await opened();
+    const { at, region, press, type, saveIt, eventually } = await opened();
 
     await press("line-migration");
     await type("I coordinated it, others ran it");
     await saveIt();
 
     await eventually(() =>
-      expect(textOf(region("post-heig")?.querySelector("[data-part=rule]"))).toBe(
-        "✓ Ran the migration programme: I coordinated it, others ran it",
-      ),
+      expect(messagesPosted()).toEqual([
+        {
+          address: "/api/conversations/profile/messages",
+          text: "I coordinated it, others ran it",
+          about: { itemId: "post-heig", lineId: "line-migration" },
+        },
+      ]),
     );
+    expect(ruleRequests()).toEqual([]);
+    const where = "R&D Collaborator in Software Engineering · row 1";
+    theyWrote([
+      { kind: "about", itemId: "post-heig", lineId: "line-migration", where },
+      { kind: "text", text: "I coordinated it, others ran it" },
+    ]);
+    await eventually(() =>
+      expect(textOf(at("profile-assistant [data-msg=person] [data-part=about]"))).toBe(where),
+    );
+    expect(region("post-heig")?.querySelector("[data-part=rule]")).toBeNull();
   });
 });
 
@@ -267,22 +296,43 @@ describe("the same sentence wherever it is opened (criterion 2)", () => {
   });
 });
 
-describe("what the person writes becomes that item's rule (criterion 4)", () => {
+/**
+ * What the person writes about an item is a message naming it (agent-consolidation `S8.7`,
+ * `ID233`): posted through the core with what it is about, never to the rule route, and
+ * drawn with its where above the person's bubble, in the bubble's fixed colours (`ID232`).
+ */
+describe("what the person writes about an item is a message naming it (S8.7)", () => {
   it.each([
     ["chip-k8s", "Kubernetes", "I shipped to a cluster somebody else ran"],
     ["project-opendidac", "Opendidac", "I wrote the back end, never the teaching content"],
     ["post-heig", "R&D Collaborator in Software Engineering", "It was a part-time post"],
-  ])("keeps it on %s and shows it as the check line under it", async (id, title, words) => {
+  ])("posts it about %s, writes no rule, and draws it with its where", async (id, title, words) => {
     profileIs(aProfile());
-    const { region, press, type, saveIt, eventually } = await opened();
+    const { at, region, press, type, saveIt, eventually } = await opened();
 
     await press(id);
     await type(words);
     await saveIt();
 
     await eventually(() =>
-      expect(textOf(region(id)?.querySelector("[data-part=rule]"))).toBe(`✓ ${title}: ${words}`),
+      expect(messagesPosted()).toEqual([
+        { address: "/api/conversations/profile/messages", text: words, about: { itemId: id } },
+      ]),
     );
+    expect(ruleRequests()).toEqual([]);
+    theyWrote([
+      { kind: "about", itemId: id, where: title },
+      { kind: "text", text: words },
+    ]);
+    await eventually(() =>
+      expect(textOf(at("profile-assistant [data-msg=person]"))).toContain(words),
+    );
+    const about = at("profile-assistant [data-msg=person] [data-part=about]");
+    expect(textOf(about)).toBe(title);
+    expect(about?.classList.contains("bg-send")).toBe(true);
+    expect(about?.classList.contains("text-white")).toBe(true);
+    expect(textOf(at("profile-assistant"))).not.toContain("This part cannot be shown here.");
+    expect(region(id)?.querySelector("[data-part=rule]")).toBeNull();
   });
 });
 

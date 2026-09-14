@@ -47,8 +47,8 @@ import { ScopeTool } from "../scope-tool/scope-tool";
  *
  * **A region the person pressed takes precedence over the order** (`US8`). If a question
  * is still open on that very region, that is the question the tool asks; if none is, the
- * tool opens in the shape that proposes nothing and what is written becomes that item's
- * rule. Which of the two it is, this class decides and the tool renders.
+ * tool opens in the shape that proposes nothing and what is written is a message about
+ * that item (`S8.7`). Which of the two it is, this class decides and the tool renders.
  *
  * **Returning is not the end of a run** (`US9`). Days later the assistant greets the
  * person and activates the first question still waiting: the finished run's opening is
@@ -93,7 +93,7 @@ const scope = "Adjusting scope";
  * person, 2026-09-13).
  */
 const whatScopeMeans =
-  "What you say next is kept as your rule about this item. Nothing is sent to anyone, and every CV respects it.";
+  "What you say next goes into the conversation, about this item. Nothing is sent to anyone.";
 
 /** What the assistant says once a decision is kept (`ID219`). Performed, never stored. */
 const noted = "Noted.";
@@ -642,8 +642,8 @@ export class ProfileAssistant {
 
   /**
    * Save: the row that was picked, with the words that were typed if any (`US6`) — or,
-   * in the tool the person opened themselves, the words alone, which become that item's
-   * rule and nothing else (`US8`).
+   * in the tool the person opened themselves, the words alone, posted as a message about
+   * that item or line (`US8`, agent-consolidation `S8.7`).
    *
    * **Words with no pick are a free message** (agent-consolidation `SL3`, `US2`, `US3`):
    * posted into the conversation, with nothing open or with a question open, which then

@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import type * as schema from "@app/db";
 import {
+  aboutPart,
   conversation,
   conversationEntry,
   type Part,
@@ -145,6 +146,13 @@ export const entries = async (of: Conversation): Promise<Entry[]> =>
  */
 const personSays = (part: Part): string[] => {
   if (part.kind === "text" && typeof part["text"] === "string") return [part["text"]];
+  // What the words after it are about, with the ids a tool call targets (`S8.7`, `ID233`).
+  const about = aboutPart.safeParse(part);
+  if (about.success) {
+    const { where, itemId, lineId } = about.data;
+    const line = lineId === undefined ? "" : `, lineId ${lineId}`;
+    return [`About "${where}" (itemId ${itemId}${line}):`];
+  }
   const answered = questionAnsweredPart.safeParse(part);
   if (answered.success) {
     const { lead, where, options, picked, words } = answered.data;

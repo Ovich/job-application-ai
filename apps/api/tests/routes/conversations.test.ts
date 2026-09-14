@@ -417,6 +417,113 @@ describe("a free message (US2, SL3)", () => {
     expect(mine).not.toContain("The first person's words.");
   });
 
+  /**
+   * What the person writes about an item is a message naming it (agent-consolidation `S8.7`,
+   * `ID233`, `ID163`): the entry holds an `about` part whose `where` the server composes from
+   * the item, then the words.
+   */
+  describe("about an item (S8.7, ID233)", () => {
+    type Item = { id: string; title: string; lines: { id: string }[] };
+
+    /** A person with a reading behind them, and one of their items with at least two lines. */
+    const aPersonWithAnItem = async (email: string) => {
+      const person = await signedIn(email);
+      await documentsFor(
+        person.id,
+        [theSet.cvFrench.filename, theSet.cvWord2022.filename, theSet.cv2025.filename],
+        objects.storage as ReturnType<typeof localStorageIn>,
+      );
+      await (
+        await app.request("/api/intake/read", {
+          method: "POST",
+          headers: { cookie: person.cookie },
+        })
+      ).text();
+      const profile = (await (
+        await app.request("/api/intake/profile", { headers: { cookie: person.cookie } })
+      ).json()) as { experience: Item[] };
+      const item = profile.experience.find((each) => each.lines.length >= 2);
+      if (item === undefined) throw new Error("the reading made no post with two lines");
+      // The reading asked the model itself; only what the message asks is this case's.
+      forgetRequests();
+      return { person, item };
+    };
+
+    const postAbout = async (cookie: string, body: unknown) => {
+      const response = await routes.request("/api/conversations/profile/messages", {
+        method: "POST",
+        headers: { "content-type": "application/json", cookie },
+        body: JSON.stringify(body),
+      });
+      const text = await response.text();
+      return { status: response.status, leaves: response.ok ? leavesOf(text) : [] };
+    };
+
+    it("stores the person's entry as the item's where, composed on the server, then the words", async () => {
+      const { person, item } = await aPersonWithAnItem("about-an-item@example.com");
+
+      const { status, leaves } = await postAbout(person.cookie, {
+        text: "  I only ran the migration.  ",
+        about: { itemId: item.id, where: "written by the browser" },
+      });
+
+      expect(status).toBe(200);
+      const mine = [
+        { kind: "about", itemId: item.id, where: item.title },
+        { kind: "text", text: "I only ran the migration." },
+      ];
+      expect(leaves[0]?.entry).toMatchObject({ author: "person", parts: mine });
+      expect(shapeOf(leaves).at(-1)).toBe("done");
+      const { body } = await get("/api/conversations/profile", person.cookie);
+      expect(body.entries.find((entry) => entry.author === "person")?.parts).toEqual(mine);
+      expect(JSON.stringify(body)).not.toContain("written by the browser");
+    });
+
+    it("names a line of the item as the item's title and its row", async () => {
+      const { person, item } = await aPersonWithAnItem("about-a-line@example.com");
+      const second = item.lines[1]?.id ?? "";
+
+      const { status, leaves } = await postAbout(person.cookie, {
+        text: "Somebody else wrote this.",
+        about: { itemId: item.id, lineId: second },
+      });
+
+      expect(status).toBe(200);
+      expect(leaves[0]?.entry?.parts[0]).toEqual({
+        kind: "about",
+        itemId: item.id,
+        lineId: second,
+        where: `${item.title} · row 2`,
+      });
+    });
+
+    it("answers 404 for another person's item, and writes nothing", async () => {
+      const { item } = await aPersonWithAnItem("about-the-owner@example.com");
+      const other = await signedIn("about-somebody-else@example.com");
+
+      const { status } = await postAbout(other.cookie, {
+        text: "Not mine to say.",
+        about: { itemId: item.id },
+      });
+
+      expect(status).toBe(404);
+      expect(requestsSent()).toEqual([]);
+      expect((await get("/api/conversations/profile", other.cookie)).body.entries).toHaveLength(1);
+    });
+
+    it("answers 404 for a line that is not the item's, and writes nothing", async () => {
+      const { person, item } = await aPersonWithAnItem("about-a-stranger-line@example.com");
+
+      const { status } = await postAbout(person.cookie, {
+        text: "Which line?",
+        about: { itemId: item.id, lineId: "line-of-nobody" },
+      });
+
+      expect(status).toBe(404);
+      expect(requestsSent()).toEqual([]);
+    });
+  });
+
   it("leaves the profile exactly as it was", async () => {
     const person = await signedIn("message-profile-unchanged@example.com");
     await documentsFor(

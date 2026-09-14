@@ -463,8 +463,11 @@ export type ReplyLeaf =
   | { kind: "done" }
   | { kind: "error"; message: string };
 
-/** Every message a screen posted, in order: where to, and the words. */
-let posted: { address: string; text: string }[] = [];
+/** What a message's words are about, when the screen said (agent-consolidation `S8.7`). */
+type About = { itemId: string; lineId?: string };
+
+/** Every message a screen posted, in order: where to, the words, and what they are about. */
+let posted: { address: string; text: string; about?: About }[] = [];
 
 /** The frames the case has said and the open reply has not carried yet. */
 let pending: string[] = [];
@@ -487,7 +490,7 @@ const flush = (): void => {
 };
 
 /** Every message posted to the conversations route, in order. */
-export const messagesPosted = (): { address: string; text: string }[] => posted;
+export const messagesPosted = (): { address: string; text: string; about?: About }[] => posted;
 
 /**
  * The reply to the message being posted, written by the case a leaf at a time, as the
@@ -524,8 +527,15 @@ alsoAnswering((address, init) => {
   const path = new URL(address, "http://localhost").pathname;
   if (!/^\/api\/conversations\/[^/]+\/messages$/.test(path)) return undefined;
   requests.push({ method: init?.method ?? "GET", address: path });
-  const said = (typeof init?.body === "string" ? JSON.parse(init.body) : {}) as { text?: string };
-  posted.push({ address: path, text: said.text ?? "" });
+  const said = (typeof init?.body === "string" ? JSON.parse(init.body) : {}) as {
+    text?: string;
+    about?: About;
+  };
+  posted.push({
+    address: path,
+    text: said.text ?? "",
+    ...(said.about === undefined ? {} : { about: said.about }),
+  });
   // A case may say the whole reply, its end included, before the request arrives: the
   // stream then carries what is pending and closes at once.
   return new Response(

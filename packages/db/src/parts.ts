@@ -83,12 +83,26 @@ export const questionSkippedPart = z.object({
   options: z.array(offeredOption),
 });
 
+/**
+ * What the person's words are about (agent-consolidation `S8.7`, `ID233`): the item, and
+ * the line when they wrote about one, with `where` composed on the server from the item's
+ * title (`<title> · row <n>` for a line), never taken from the browser. It precedes the
+ * `text` part of the same entry.
+ */
+export const aboutPart = z.object({
+  kind: z.literal("about"),
+  itemId: z.string().min(1),
+  lineId: z.string().min(1).optional(),
+  where: z.string(),
+});
+
 export const part = z.discriminatedUnion("kind", [
   textPart,
   toolUsePart,
   toolResultPart,
   questionAnsweredPart,
   questionSkippedPart,
+  aboutPart,
 ]);
 
 /** A part as it is read: one the catalogue knows, or one from a catalogue it does not. */
