@@ -525,7 +525,8 @@ alsoAnswering((address, init) => {
   requests.push({ method: init?.method ?? "GET", address: path });
   const said = (typeof init?.body === "string" ? JSON.parse(init.body) : {}) as { text?: string };
   posted.push({ address: path, text: said.text ?? "" });
-  replyEnded = false;
+  // A case may say the whole reply, its end included, before the request arrives: the
+  // stream then carries what is pending and closes at once.
   return new Response(
     new ReadableStream<Uint8Array>({
       start(controller) {
