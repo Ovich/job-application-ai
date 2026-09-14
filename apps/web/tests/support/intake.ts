@@ -321,6 +321,7 @@ export const resetIntake = (): void => {
   held = null;
   ruleCount = 1;
   conversation = null;
+  resetReplies();
 };
 
 const json = (body: unknown, status = 200): Response =>
@@ -453,6 +454,88 @@ export const conversationIs = (entries: Entry[]): void => {
 export const conversationRefused = (status: number, body: unknown): void => {
   conversation = { status, body };
 };
+
+/** One leaf of a message's stream, as the API's envelope carries it. */
+export type ReplyLeaf =
+  | { kind: "entry"; entry: Entry }
+  | { kind: "text"; text: string }
+  | { kind: "done" }
+  | { kind: "error"; message: string };
+
+/** Every message a screen posted, in order: where to, and the words. */
+let posted: { address: string; text: string }[] = [];
+
+/** The frames the case has said and the open reply has not carried yet. */
+let pending: string[] = [];
+
+/** The reply stream being read, or `null` before a message is posted. */
+let reply: ReadableStreamDefaultController<Uint8Array> | null = null;
+
+let replyEnded = false;
+
+let replySeq = 0;
+
+const flush = (): void => {
+  if (reply === null) return;
+  for (const frame of pending) reply.enqueue(new TextEncoder().encode(frame));
+  pending = [];
+  if (replyEnded) {
+    reply.close();
+    reply = null;
+  }
+};
+
+/** Every message posted to the conversations route, in order. */
+export const messagesPosted = (): { address: string; text: string }[] => posted;
+
+/**
+ * The reply to the message being posted, written by the case a leaf at a time, as the
+ * API streams it. An `entry` leaf is kept in the conversation too, because the API
+ * commits an entry before its frame: a reload reads what the stream said.
+ */
+export const theReply = {
+  says: (leaf: ReplyLeaf): void => {
+    if (leaf.kind === "entry" && conversation !== null) {
+      const body = conversation.body as { id: string; entries: Entry[] };
+      conversation = { ...conversation, body: { ...body, entries: [...body.entries, leaf.entry] } };
+    }
+    replySeq += 1;
+    pending.push(
+      `id: ${replySeq}\ndata: ${JSON.stringify({ seq: replySeq, version: 1, leaf })}\n\n`,
+    );
+    flush();
+  },
+  ends: (): void => {
+    replyEnded = true;
+    flush();
+  },
+};
+
+export const resetReplies = (): void => {
+  posted = [];
+  pending = [];
+  reply = null;
+  replyEnded = false;
+  replySeq = 0;
+};
+
+alsoAnswering((address, init) => {
+  const path = new URL(address, "http://localhost").pathname;
+  if (!/^\/api\/conversations\/[^/]+\/messages$/.test(path)) return undefined;
+  requests.push({ method: init?.method ?? "GET", address: path });
+  const said = (typeof init?.body === "string" ? JSON.parse(init.body) : {}) as { text?: string };
+  posted.push({ address: path, text: said.text ?? "" });
+  replyEnded = false;
+  return new Response(
+    new ReadableStream<Uint8Array>({
+      start(controller) {
+        reply = controller;
+        flush();
+      },
+    }),
+    { status: 200, headers: { "content-type": "text/event-stream" } },
+  );
+});
 
 alsoAnswering((address, init) => {
   const path = new URL(address, "http://localhost").pathname;
