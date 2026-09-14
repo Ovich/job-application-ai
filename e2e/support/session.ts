@@ -1,6 +1,12 @@
 import { createHmac, randomUUID } from "node:crypto";
 import * as schema from "@app/db";
-import { session as sessionRows, user as userRows } from "@app/db";
+import {
+  document as documentRows,
+  profileItem as profileItemRows,
+  provenance as provenanceRows,
+  session as sessionRows,
+  user as userRows,
+} from "@app/db";
 import type { Browser, BrowserContext } from "@playwright/test";
 import { type BetterAuthPlugin, betterAuth } from "better-auth";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
@@ -208,6 +214,60 @@ export const signedIn = async (
   const { cookies } = await test.login({ userId: saved.id });
   await context.addCookies(cookies);
   return context;
+};
+
+/**
+ * What a reading leaves, written for `who` at that address (`ID212`): one document, one
+ * profile item, and the provenance citing the document from the item, so the profile
+ * assistant's opening counts one cited document and a conversation can be opened.
+ *
+ * The deployed suite cannot read a document (`ID138`), and the assistant opens only on a
+ * profile that cites one (`ID202`), so the rows are written as the reading would have
+ * written them. The document is a typed LinkedIn address, the one source with no storage
+ * key, so deleting the account never reaches a bucket. Nothing is cleaned up here:
+ * `forget` deletes the user, and the schema's cascade takes these rows with it.
+ */
+export const givenAReading = async (who: Person, at: Where = "local"): Promise<void> => {
+  let db: ReturnType<typeof drizzle<typeof schema>>;
+  if (at === "deployed") {
+    db = deployedDb();
+  } else {
+    local ??= openLocal();
+    db = drizzle(local.connection, { schema });
+  }
+  const [person] = await db
+    .select({ id: userRows.id })
+    .from(userRows)
+    .where(eq(userRows.email, who.email));
+  if (person === undefined) {
+    throw new Error(`nobody is signed in as ${who.email} at the ${at} address to give a reading`);
+  }
+  const address = "https://www.linkedin.com/in/end-to-end";
+  const documentId = randomUUID();
+  const itemId = randomUUID();
+  await db.insert(documentRows).values({
+    id: documentId,
+    userId: person.id,
+    filename: address,
+    mediaType: "text/uri-list",
+    source: "linkedin_address",
+    address,
+    status: "read",
+    readAt: new Date(),
+  });
+  await db.insert(profileItemRows).values({
+    id: itemId,
+    userId: person.id,
+    kind: "summary",
+    title: "Platform engineer",
+    position: 1,
+  });
+  await db.insert(provenanceRows).values({
+    id: randomUUID(),
+    documentId,
+    itemId,
+    said: "Platform engineer",
+  });
 };
 
 /** Removes whoever this file made and the run did not delete, then lets the database go. */
