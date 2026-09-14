@@ -193,6 +193,9 @@ importers:
       drizzle-orm:
         specifier: 0.45.2
         version: 0.45.2(@electric-sql/pglite@0.5.8)(kysely@0.29.5)(postgres@3.4.9)
+      zod:
+        specifier: 4.5.4
+        version: 4.5.4
     devDependencies:
       '@electric-sql/pglite':
         specifier: 0.5.8

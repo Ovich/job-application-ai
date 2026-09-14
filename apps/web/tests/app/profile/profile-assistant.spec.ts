@@ -1,18 +1,39 @@
 import { TestBed } from "@angular/core/testing";
-import { describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { AssistantCore } from "../../../src/app/assistant/assistant-core";
+import { provideAssistant } from "../../../src/app/assistant/provide-assistant";
 import { ProfileAssistant } from "../../../src/app/profile/profile-assistant/profile-assistant";
-import { type Question, questionOf } from "../../support/intake";
+import {
+  conversationIs,
+  entryOf,
+  type Question,
+  questionOf,
+  resetIntake,
+} from "../../support/intake";
+import { reset } from "../../support/session";
 
 /**
  * Seam C: `profile/profile-assistant`, rendered (criteria 4, 8).
  *
- * Behind it: nothing but the questions, which arrive as an input the way the viewer
- * hands them over. What is asserted is the text a person reads and what leaves as an
- * output; nothing here reaches the network.
+ * Behind it: the questions, which arrive as an input the way the viewer hands them over,
+ * and since agent-consolidation `SL2` the conversation, held by the `AssistantCore` the
+ * screen provides and answered by the RPC client stood in for per case. What is asserted
+ * is the text a person reads and what leaves as an output.
  *
  * Not past it: the tool's own contents, which are seam D's, and the sheet's placement,
  * which is seam E's.
  */
+
+beforeEach(() => {
+  reset();
+  resetIntake();
+  TestBed.configureTestingModule({ providers: provideAssistant({ name: "profile", parts: [] }) });
+});
+
+afterEach(() => {
+  reset();
+  resetIntake();
+});
 
 const textOf = (element: Element | null | undefined): string =>
   (element?.textContent ?? "").replace(/\s+/g, " ").trim();
@@ -151,6 +172,55 @@ describe("what leaves the column (criteria 6, 8)", () => {
     await fixture.whenStable();
 
     expect(skipped).toEqual([{ questionId: "q1" }]);
+  });
+});
+
+/**
+ * The opening is the conversation's first entry (agent-consolidation `SL2`, `S2.3`,
+ * `US8`). Its words here are not the words this column would compose from its inputs —
+ * seven documents against an input of five — so what is drawn can only be what is stored.
+ */
+describe("the opening, as the conversation stored it (S2.3, US8)", () => {
+  const sentence =
+    "I read your 7 documents. Every fact on the right carries the document it came from, and I wrote nothing that is not in them.";
+  const tail = "Some facts say what you did but not what your part was. I ask only those.";
+  const opening = entryOf(1, [
+    { kind: "text", text: sentence, scripted: true },
+    { kind: "text", text: tail, scripted: true },
+    { kind: "text", text: "First, Kubernetes.", scripted: true },
+  ]);
+
+  it("performs the opening when it is the conversation's one entry", async () => {
+    conversationIs([opening]);
+    await TestBed.inject(AssistantCore).open();
+
+    const { fixture, element, at } = await rendered(three);
+
+    await vi.waitFor(() => {
+      fixture.detectChanges();
+      expect(element.getAttribute("data-guide")).toBe("done");
+    });
+    expect(textOf(at("[data-part=opening]"))).toBe(sentence);
+    expect(textOf(at("[data-part=tail]"))).toBe(tail);
+  });
+
+  it("shows every entry at once, and performs nothing, when the opening is not alone", async () => {
+    conversationIs([
+      opening,
+      entryOf(2, [{ kind: "text", text: "I ran the services, not the cluster." }], "person"),
+    ]);
+    await TestBed.inject(AssistantCore).open();
+
+    const { fixture, element, at } = await rendered(three);
+
+    await vi.waitFor(() => {
+      fixture.detectChanges();
+      expect(at("scope-tool")).not.toBeNull();
+    });
+    expect(element.hasAttribute("data-guide")).toBe(false);
+    expect(textOf(at("[data-part=opening]"))).toBe(sentence);
+    expect(textOf(element)).toContain("I ran the services, not the cluster.");
+    expect(textOf(element).split(sentence)).toHaveLength(2);
   });
 });
 

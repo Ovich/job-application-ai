@@ -9,7 +9,11 @@
   class="-mt-10 grid h-full min-h-0 flex-1 overflow-hidden lg:grid-cols-[minmax(440px,42%)_minmax(0,1fr)]"
 >
   <section aria-label="Assistant" [class]="assistantClass()">
-    @if (profile(); as loaded) {
+    <!--
+      Once the conversation has answered, so the assistant decides whether to perform the
+      opening from what is stored rather than from nothing yet (agent-consolidation SL2).
+    -->
+    @if (profile() !== null && conversationAnswered()) {
       <profile-assistant
         [questions]="questions()"
         [on]="pressed()"

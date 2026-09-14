@@ -320,6 +320,7 @@ export const resetIntake = (): void => {
   dropping = null;
   held = null;
   ruleCount = 1;
+  conversation = null;
 };
 
 const json = (body: unknown, status = 200): Response =>
@@ -384,6 +385,90 @@ const uploadIn = (body: unknown): { filename?: string; address?: string } => {
   // and what it asserts is what the screen does with the route's answer.
   return dropping === null ? {} : { filename: dropping };
 };
+
+/**
+ * One entry of a conversation, as `GET /api/conversations/:assistant` answers it. A part
+ * is anything with a kind, because a stored part of a kind the screen does not know is
+ * still answered whole.
+ */
+export type Entry = {
+  id: string;
+  position: number;
+  author: "person" | "assistant" | "tool";
+  parts: { kind: string; [key: string]: unknown }[];
+  createdAt: string;
+};
+
+/** An entry with everything but its position and parts filled in. */
+export const entryOf = (
+  position: number,
+  parts: Entry["parts"],
+  author: Entry["author"] = "assistant",
+): Entry => ({
+  id: `entry-${position}`,
+  position,
+  author,
+  parts,
+  createdAt: "2026-09-14T09:00:00.000Z",
+});
+
+/** Words the product wrote, as the profile assistant stores them (`ID200`). */
+const scripted = (text: string) => ({ kind: "text", text, scripted: true });
+
+/**
+ * The opening the API writes for this profile, composed the way the profile assistant
+ * composes it: the sentence, the tail and the first waiting question's opener, or the one
+ * sentence for a person with nothing read. Kept in step with it so a screen that draws
+ * what it is answered draws what a person would read.
+ */
+const openingOf = (given: Profile): Entry => {
+  if (given.documents === 0) {
+    return entryOf(1, [
+      scripted("I have not read any of your documents yet. Hand them over and I will read them."),
+    ]);
+  }
+  const waiting = given.questions.find((question) => question.state === "waiting");
+  const moved = given.questions.some((question) => question.state !== "waiting");
+  return entryOf(1, [
+    scripted(
+      `I read your ${given.documents} document${given.documents === 1 ? "" : "s"}. Every fact on the right carries the document it came from, and I wrote nothing that is not in them.`,
+    ),
+    scripted(
+      "Some facts say what you did but not what your part was, or two documents disagree. I ask only those. Everything else I could tell from your documents.",
+    ),
+    ...(waiting === undefined
+      ? []
+      : [scripted(`${moved ? "Next" : "First"}, ${waiting.itemTitle}.`)]),
+  ]);
+};
+
+/**
+ * What the conversations route answers, once a case or the first request has said so.
+ * Created on the first request and then kept, as the API keeps it: a second request
+ * reads the same conversation and adds nothing.
+ */
+let conversation: { status: number; body: unknown } | null = null;
+
+/** The conversation holds exactly these entries. */
+export const conversationIs = (entries: Entry[]): void => {
+  conversation = { status: 200, body: { id: "conversation-1", entries } };
+};
+
+/** The conversations route refuses, with the status and the body the route would send. */
+export const conversationRefused = (status: number, body: unknown): void => {
+  conversation = { status, body };
+};
+
+alsoAnswering((address, init) => {
+  const path = new URL(address, "http://localhost").pathname;
+  if (!path.startsWith("/api/conversations/")) return undefined;
+  requests.push({ method: init?.method ?? "GET", address: path });
+  conversation ??= {
+    status: 200,
+    body: { id: "conversation-1", entries: [openingOf(profile)] },
+  };
+  return json(conversation.body, conversation.status);
+});
 
 alsoAnswering((address, init) => {
   const path = new URL(address, "http://localhost").pathname;

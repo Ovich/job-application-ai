@@ -158,7 +158,7 @@ const standIn = vi.fn(async (input: RequestInfo | URL, init?: RequestInit): Prom
 
 vi.stubGlobal("fetch", standIn);
 
-/** `get-session` answers `who`; `list-accounts` their providers, in the order linked. */
+/** `get-session` answers `who`;`list-accounts` their providers, in the order linked. */
 export const signedInAs = (identity: Identity): void => {
   who = identity;
 };

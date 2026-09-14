@@ -5,7 +5,16 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { routes } from "../../../src/app/app.routes";
 import type { RegionRef } from "../../../src/app/profile/profile-region/profile-region";
 import { ProfileSheet } from "../../../src/app/profile/profile-sheet/profile-sheet";
-import { emptyProfile, itemOf, type Profile, profileIs, resetIntake } from "../../support/intake";
+import {
+  conversationIs,
+  emptyProfile,
+  entryOf,
+  intakeRequests,
+  itemOf,
+  type Profile,
+  profileIs,
+  resetIntake,
+} from "../../support/intake";
 import { reset, signedInAs } from "../../support/session";
 
 /**
@@ -427,6 +436,28 @@ describe("every item, line, project and chip is a region (criterion 10)", () => 
     (fixture.nativeElement.querySelector('[data-region][data-id="line-2"]') as HTMLElement).click();
 
     expect(chosen).toEqual([{ kind: "line", id: "line-2" }]);
+  });
+});
+
+describe("the assistant's conversation (agent-consolidation SL2, S2.3)", () => {
+  it("opens the profile's conversation and draws what it holds", async () => {
+    profileIs(aFullProfile());
+    conversationIs([
+      entryOf(1, [
+        { kind: "text", text: "Words only the stored conversation holds.", scripted: true },
+      ]),
+    ]);
+    const { page, eventually } = await opened();
+
+    await eventually(() =>
+      expect(textOf(page()?.querySelector("profile-assistant"))).toContain(
+        "Words only the stored conversation holds.",
+      ),
+    );
+    expect(intakeRequests()).toContainEqual({
+      method: "GET",
+      address: "/api/conversations/profile",
+    });
   });
 });
 

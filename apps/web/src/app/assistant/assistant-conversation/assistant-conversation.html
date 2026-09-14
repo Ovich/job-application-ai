@@ -1,0 +1,31 @@
+<!--
+  Every entry, in order. Entry 1 is the concrete assistant's to draw when it gave a
+  template for it; everything else is drawn here, a part at a time.
+-->
+@for (entry of entries(); track entry.id; let first = $first) {
+  @if (first && opening(); as drawn) {
+    <ng-container [ngTemplateOutlet]="drawn" />
+  } @else {
+    <div data-entry [attr.data-msg]="entry.author" class="grid grid-cols-[30px_1fr] gap-3">
+      <div
+        aria-hidden="true"
+        class="mt-0.5 grid size-[30px] place-items-center rounded-full bg-primary font-semibold text-label text-primary-foreground"
+      >
+        {{ entry.author === "person" ? "Y" : "A" }}
+      </div>
+      <div class="flex flex-col gap-2">
+        @for (part of entry.parts; track $index) {
+          @if (part.kind === "text") {
+            <p uiText variant="body">{{ textOf(part) }}</p>
+          } @else if (componentFor(part.kind); as component) {
+            <ng-container *ngComponentOutlet="component; inputs: { part }" />
+          } @else {
+            <p data-part="placeholder" uiText variant="body" tone="muted">
+              This part cannot be shown here.
+            </p>
+          }
+        }
+      </div>
+    </div>
+  }
+}

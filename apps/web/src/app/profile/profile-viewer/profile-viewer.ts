@@ -10,6 +10,8 @@ import {
 } from "@angular/core";
 import { Router } from "@angular/router";
 import type { InferResponseType } from "hono/client";
+import { AssistantCore } from "../../assistant/assistant-core";
+import { provideAssistant } from "../../assistant/provide-assistant";
 import { AppDocuments } from "../../intake/documents/documents";
 import { api } from "../../lib/api";
 import { UiModal } from "../../ui/modal/modal";
@@ -49,6 +51,9 @@ type Item = Answer["experience"][number];
   selector: "profile-viewer",
   imports: [AppDocuments, ProfileAssistant, ProfileBar, ProfileSheet, UiModal, UiSpinner, UiText],
   templateUrl: "./profile-viewer.html",
+  // The profile's assistant, for this screen alone (`ID186`, `ID165`): its own
+  // conversation, subject none, and no part of its own to draw before `SL4`.
+  providers: provideAssistant({ name: "profile", parts: [] }),
   // The layout every assistant screen holds to (the person, 2026-09-12): this fills the
   // page rather than growing past it, so the window never scrolls and each column
   // decides for itself what moves inside it.
@@ -56,6 +61,17 @@ type Item = Answer["experience"][number];
 })
 export class ProfileViewer {
   private readonly router = inject(Router);
+
+  private readonly core = inject(AssistantCore);
+
+  /**
+   * Whether the conversation has answered, with its entries or with a refusal. The
+   * assistant's column waits for it, because whether the opening is performed is decided
+   * from what is stored, once, on its first render (`G3`).
+   */
+  protected readonly conversationAnswered = computed(
+    () => this.core.entries().length > 0 || this.core.failure() !== null,
+  );
 
   protected readonly profile = signal<Answer | null>(null);
 
@@ -208,6 +224,9 @@ export class ProfileViewer {
 
   constructor() {
     void this.load();
+    // The profile's conversation, opened with the opening the API writes the first time
+    // (agent-consolidation SL2). The core holds it; the assistant's column draws it.
+    void this.core.open();
 
     /**
      * No document and no profile: there is nothing to read here, and a page saying so is
