@@ -49,7 +49,7 @@ const devSql = (args: string[], env: Record<string, string>): Promise<Ran> =>
     );
   });
 
-/** The two values `.env.deployed` would hold, pointed at the local container. */
+/** The two values `dev.env` would hold, pointed at the local container. */
 const toLocal = {
   DEPLOYED_DATABASE_URL: localDatabase,
   DEPLOYED_BETTER_AUTH_SECRET: "local_dev_only_not_a_real_secret_00000000",
