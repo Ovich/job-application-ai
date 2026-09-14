@@ -1,4 +1,11 @@
-<!-- One short line on the person's side: what they put off, and nothing more. -->
-<p data-part="skipped" uiText variant="caption" tone="muted" class="text-right">
-  Skipped for now: {{ lead() }}
-</p>
+<!--
+  The whole exchange, at a glance (S7.6): on the person's side, the question as it was
+  asked, where it sits, and that it was put off.
+-->
+<div data-part="skipped" class="flex flex-col items-end gap-0.5 text-right">
+  <p uiText variant="caption" tone="muted">Skipped for now</p>
+  <p data-part="asked" uiText variant="body" tone="muted">{{ lead() }}</p>
+  @if (where() !== "") {
+    <p data-part="where" uiText variant="caption" tone="muted">{{ where() }}</p>
+  }
+</div>

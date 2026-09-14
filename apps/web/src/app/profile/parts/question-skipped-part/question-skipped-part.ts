@@ -20,6 +20,14 @@ type Part = Entry["parts"][number];
 export class QuestionSkippedPart {
   public readonly part = input.required<Part>();
 
+  /** Where the question sits in the profile (`S7.6`). */
+  protected readonly where = computed(() => {
+    const part = this.part();
+    if (part.kind !== "question_skipped") return "";
+    const where = part["where"];
+    return typeof where === "string" ? where : "";
+  });
+
   /** The question as it was asked. */
   protected readonly lead = computed(() => {
     const part = this.part();

@@ -32,6 +32,18 @@ export class QuestionAnsweredPart {
     return typeof label === "string" ? label : null;
   });
 
+  /** The question as it was asked, and where it sits in the profile (`S7.6`). */
+  protected readonly asked = computed(() => {
+    const part = this.part();
+    if (part.kind !== "question_answered") return { lead: "", where: "" };
+    const lead = part["lead"];
+    const where = part["where"];
+    return {
+      lead: typeof lead === "string" ? lead : "",
+      where: typeof where === "string" ? where : "",
+    };
+  });
+
   /** The person's own words, or nothing. */
   protected readonly words = computed(() => {
     const part = this.part();
