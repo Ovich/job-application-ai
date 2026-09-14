@@ -77,7 +77,15 @@ export default defineConfig({
       // so the stored objects go with them. `profile` stays local; `dev-sql` never runs here.
       testMatch:
         /(health(-stream)?|auth|entry-route|conversation|intake|intake-questions)\.spec\.ts$/,
-      use: { baseURL: "https://dev.job-application.app" },
+      // Nothing recorded, named rather than left to the defaults (agent-consolidation SL9,
+      // ID231): a trace carries the signed session cookie and every request's body, and a
+      // video or a screenshot what a person's screens on dev showed.
+      use: {
+        baseURL: "https://dev.job-application.app",
+        trace: "off",
+        video: "off",
+        screenshot: "off",
+      },
       // One worker, and the reason is the environment rather than the tests. Nothing
       // here writes any more — the health route only reads — but the specs share one
       // development environment and one measurement is a measurement of time: a
