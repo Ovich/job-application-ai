@@ -5,5 +5,11 @@
     "types": ["node"]
   },
   "files": [],
-  "include": ["*.config.ts", "e2e/**/*.ts", "infra/tests/**/*.ts", "tests/**/*.ts"]
+  "include": [
+    "*.config.ts",
+    "e2e/**/*.ts",
+    "infra/tests/**/*.ts",
+    "scripts/**/*.ts",
+    "tests/**/*.ts"
+  ]
 }
