@@ -321,7 +321,7 @@ describe("a free message (US2, SL3)", () => {
     // conversation as messages (`ID162`).
     const [sent] = requestsSent();
     expect(sent?.headers["x-jobapp-case"]).toBe(`profile.message:${body.id}#1`);
-    expect((sent?.body as { messages: unknown[] }).messages).toEqual([
+    expect((sent?.body as { messages: unknown[] } | undefined)?.messages).toEqual([
       { role: "assistant", content: `Hello, ${person.id}.` },
       { role: "user", content: "I ran the services, not the cluster." },
     ]);
