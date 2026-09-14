@@ -115,7 +115,9 @@ test("the assistant asks, the answers become rules, and a reload still has them"
   await page.goto("/documents");
   await page.locator("input[type=file]").setInputFiles(three);
   await page.getByRole("button", { name: "Read my documents" }).click();
-  await expect(page.locator("[data-row=document]").filter({ hasText: "read" })).toHaveCount(3, {
+  await expect(
+    page.locator("[data-row=document]").filter({ has: page.getByText("read", { exact: true }) }),
+  ).toHaveCount(3, {
     timeout: 60_000,
   });
 
@@ -232,7 +234,9 @@ test("a chip clicked, a rule written on it, and somebody else's deletion beside 
   await page.goto("/documents");
   await page.locator("input[type=file]").setInputFiles(three);
   await page.getByRole("button", { name: "Read my documents" }).click();
-  await expect(page.locator("[data-row=document]").filter({ hasText: "read" })).toHaveCount(3, {
+  await expect(
+    page.locator("[data-row=document]").filter({ has: page.getByText("read", { exact: true }) }),
+  ).toHaveCount(3, {
     timeout: 60_000,
   });
 

@@ -90,14 +90,18 @@ test("documents dropped are read, and leaving loses nothing", async ({ browser }
   // is what happens to them afterwards.
   await expect(page.getByText("Put it together")).toBeVisible();
   await expect(page.getByText("You can leave this page.")).toBeVisible();
-  await expect(page.locator("[data-row=document]").filter({ hasText: "read" })).toHaveCount(2, {
+  await expect(
+    page.locator("[data-row=document]").filter({ has: page.getByText("read", { exact: true }) }),
+  ).toHaveCount(2, {
     timeout: 30_000,
   });
 
   // Leaving and coming back: the rows are the run, so nothing is lost and nothing is
   // replayed. This is the resume, and it is a read of the list route.
   await page.reload();
-  await expect(page.locator("[data-row=document]").filter({ hasText: "read" })).toHaveCount(2);
+  await expect(
+    page.locator("[data-row=document]").filter({ has: page.getByText("read", { exact: true }) }),
+  ).toHaveCount(2);
 });
 
 test("a typed LinkedIn address alone is accepted, with no file at all", async ({
@@ -125,7 +129,9 @@ test("a typed LinkedIn address alone is accepted, with no file at all", async ({
   await page.getByRole("button", { name: "Read my documents" }).click();
 
   await expect(page.getByText("linkedin.com/in/someone")).toBeVisible();
-  await expect(page.locator("[data-row=document]").filter({ hasText: "read" })).toHaveCount(1, {
+  await expect(
+    page.locator("[data-row=document]").filter({ has: page.getByText("read", { exact: true }) }),
+  ).toHaveCount(1, {
     timeout: 30_000,
   });
 });

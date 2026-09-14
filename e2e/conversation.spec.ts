@@ -80,7 +80,9 @@ test("the opening lands on a first visit, and a reload shows it once", async ({
   await page.goto("/documents");
   await page.locator("input[type=file]").setInputFiles([`${documents}2026-08-30_cv_EN.pdf`]);
   await page.getByRole("button", { name: "Read my documents" }).click();
-  await expect(page.locator("[data-row=document]").filter({ hasText: "read" })).toHaveCount(1, {
+  await expect(
+    page.locator("[data-row=document]").filter({ has: page.getByText("read", { exact: true }) }),
+  ).toHaveCount(1, {
     timeout: 30_000,
   });
 
@@ -130,7 +132,9 @@ test("a pick, then a free message and its streamed reply, stay in order after th
   await page.goto("/documents");
   await page.locator("input[type=file]").setInputFiles([`${documents}2026-08-30_cv_EN.pdf`]);
   await page.getByRole("button", { name: "Read my documents" }).click();
-  await expect(page.locator("[data-row=document]").filter({ hasText: "read" })).toHaveCount(1, {
+  await expect(
+    page.locator("[data-row=document]").filter({ has: page.getByText("read", { exact: true }) }),
+  ).toHaveCount(1, {
     timeout: 30_000,
   });
 
