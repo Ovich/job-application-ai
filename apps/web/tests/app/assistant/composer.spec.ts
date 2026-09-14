@@ -68,6 +68,21 @@ describe("the composer on one line", () => {
     expect(sent).toEqual(["save"]);
   });
 
+  it("commits on Shift+Enter, like Enter, on one line and on many", async () => {
+    const { at, type, enter, sent } = await rendered();
+
+    await type("I only ever wrote the Dockerfiles");
+    await enter({ shiftKey: true });
+    expect(sent).toEqual(["save"]);
+
+    await enter({ altKey: true });
+    expect(at("textarea[data-part=composer]")).not.toBeNull();
+    await type("I only ever wrote the Dockerfiles\nand the compose file");
+    await enter({ shiftKey: true });
+
+    expect(sent).toEqual(["save", "save"]);
+  });
+
   it("commits nothing on Enter when there is nothing to commit", async () => {
     const { enter, sent } = await rendered();
 
@@ -110,6 +125,42 @@ describe("the composer on many lines", () => {
     expect(textOf(at("[data-part=bar] [data-part=where]"))).toBe(aTool.where);
     // Moved, not copied: the line between the tool and the bar is gone.
     expect(at(":scope > [data-part=where]")).toBeNull();
+  });
+
+  it("breaks the line at the caret on Alt+Enter, not at the end", async () => {
+    const { field, type, enter } = await rendered();
+
+    await type("First thought and a second");
+    field().setSelectionRange(13, 13);
+    await enter({ altKey: true });
+
+    expect(field().value).toBe("First thought\n and a second");
+    expect(field().selectionStart).toBe(14);
+  });
+
+  // Read through the `rows` attribute, the height a person sees.
+  it("keeps one empty row under the last line, two rows at least, and stops at eight", async () => {
+    const { field, type, enter } = await rendered();
+    const rows = () => Number(field().getAttribute("rows"));
+    const lines = (count: number) =>
+      Array.from({ length: count }, (_, index) => `line ${index + 1}`).join("\n");
+
+    await type("First thought");
+    await enter({ altKey: true });
+    await type("First thought");
+    expect(rows()).toBe(2);
+
+    await type(lines(3));
+    expect(rows()).toBe(4);
+
+    await type(lines(7));
+    expect(rows()).toBe(8);
+
+    await type(lines(8));
+    expect(rows()).toBe(8);
+
+    await type(lines(12));
+    expect(rows()).toBe(8);
   });
 
   it("still commits on Enter, without breaking the line", async () => {
