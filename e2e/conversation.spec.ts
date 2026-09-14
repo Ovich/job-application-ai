@@ -241,7 +241,7 @@ test("a pick, then a free message and its streamed reply, stay in order after th
   expect(stored.entries.length - 1).toBeGreaterThan(typedAt);
 
   // A second person, with a reading of their own, finds none of the first's.
-  const second = { name: "Ben Seeker", email: `conversation-second-${run}@example.com` };
+  const second = { name: "Ben Seeker", email: `conversation-screen-second-${run}@example.com` };
   const theirs = await signedInAt(browser, second, testInfo);
   await givenAReading(second, at);
   const theirPage = await theirs.newPage();
