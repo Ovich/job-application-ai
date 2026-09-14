@@ -200,25 +200,32 @@ describe("recorded answers of two steps (S4.5)", () => {
     expect(entriesOf(ran.said)).toEqual(stored.slice(2));
 
     // Step 2 is handed the model's own message back, and the tool's answer to it (S4.3),
-    // and the profile as it now stands, read fresh (ID193).
+    // and the profile as it now stands, read fresh (ID193). The call's arguments and the
+    // tool's answer are compared as JSON values: the entry's parts are a `jsonb` column,
+    // which keeps every value and not the order of an object's keys.
     expect(requestsSent()).toHaveLength(2);
     expect(requestsSent()[1]?.headers["x-jobapp-case"]).toBe(stepOf(conversation, 2));
-    expect(bodyOf(1).messages).toContainEqual({
-      role: "assistant",
-      content: "I will shorten the second line.",
-      tool_calls: [
-        {
-          id: "call_1",
-          type: "function",
-          function: { name: "edit_profile", arguments: JSON.stringify(input) },
-        },
-      ],
-    });
-    expect(bodyOf(1).messages).toContainEqual({
-      role: "tool",
-      tool_call_id: "call_1",
-      content: JSON.stringify({ before, after }),
-    });
+    const asked = bodyOf(1).messages.find((message) => message.tool_calls !== undefined) as
+      | {
+          role: string;
+          content: unknown;
+          tool_calls: { id: string; type: string; function: { name: string; arguments: string } }[];
+        }
+      | undefined;
+    expect(Object.keys(asked ?? {}).sort()).toEqual(["content", "role", "tool_calls"]);
+    expect(asked?.role).toBe("assistant");
+    expect(asked?.content).toBe("I will shorten the second line.");
+    expect(
+      asked?.tool_calls.map((call) => ({
+        ...call,
+        function: { ...call.function, arguments: JSON.parse(call.function.arguments) },
+      })),
+    ).toEqual([
+      { id: "call_1", type: "function", function: { name: "edit_profile", arguments: input } },
+    ]);
+    const answered = bodyOf(1).messages.find((message) => message.role === "tool");
+    expect(answered?.tool_call_id).toBe("call_1");
+    expect(JSON.parse(String(answered?.content))).toEqual({ before, after });
     expect(String(bodyOf(0).messages[1]?.content)).not.toContain("Shipped the developer platform.");
     expect(String(bodyOf(1).messages[1]?.content)).toContain("Shipped the developer platform.");
   });
