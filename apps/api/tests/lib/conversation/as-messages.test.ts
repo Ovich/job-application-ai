@@ -247,6 +247,51 @@ describe("the person's tool use, as the model reads it (S7.2)", () => {
   });
 });
 
+/**
+ * What the person writes about an item (agent-consolidation `S8.7`, `ID233`): one user
+ * message naming where it is and both ids, then the words, so a tool call can target the
+ * item and the line.
+ */
+describe("a message about an item, as the model reads it (S8.7)", () => {
+  it("serialises the about part and the words as one user message naming where and the ids", () => {
+    expect(
+      asMessages([
+        entry("person", [
+          {
+            kind: "about",
+            itemId: "item-nexplore",
+            lineId: "line-2",
+            where: "Platform engineer · row 2",
+          },
+          { kind: "text", text: "Somebody else wrote this." },
+        ]),
+      ]),
+    ).toEqual([
+      {
+        role: "user",
+        content:
+          'About "Platform engineer · row 2" (itemId item-nexplore, lineId line-2):\n\nSomebody else wrote this.',
+      },
+    ]);
+  });
+
+  it("names the item alone when the message is about the item", () => {
+    expect(
+      asMessages([
+        entry("person", [
+          { kind: "about", itemId: "item-nexplore", where: "Platform engineer" },
+          { kind: "text", text: "It was part-time." },
+        ]),
+      ]),
+    ).toEqual([
+      {
+        role: "user",
+        content: 'About "Platform engineer" (itemId item-nexplore):\n\nIt was part-time.',
+      },
+    ]);
+  });
+});
+
 describe("the catalogue's tool parts (ID161)", () => {
   it("refuses a tool_result that carries neither before and after nor a refusal", () => {
     expect(() =>
