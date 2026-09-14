@@ -1,6 +1,13 @@
 import { fileURLToPath } from "node:url";
-import { expect, type Page, test } from "@playwright/test";
-import { forget, signedIn } from "./support/session";
+import {
+  type Browser,
+  type BrowserContext,
+  expect,
+  type Page,
+  type TestInfo,
+  test,
+} from "@playwright/test";
+import { deletedThroughApp, forget, type Person, signedIn, type Where } from "./support/session";
 
 /**
  * The person's path through the questions, walked for real (criterion 11, `US5`, `US6`,
@@ -12,7 +19,9 @@ import { forget, signedIn } from "./support/session";
  * called, into a database a run really wrote, and read back after a reload that kept
  * nothing in the page.
  *
- * The `local` project alone collects it, as `intake` and `profile` are, until `SL6`.
+ * Both projects collect it (agent-consolidation `SL9`, `ID224`), as `intake`: deployed, the
+ * documents land in dev's bucket, and every person made here is deleted through the
+ * account deletion route after the file, so their objects go with them.
  */
 
 const documents = fileURLToPath(new URL("../apps/api/tests/fixtures/documents/", import.meta.url));
@@ -28,7 +37,27 @@ const three = [
   `${documents}CV-2025.pdf`,
 ];
 
-const who = { name: "Stefan Teofanovic", email: "questions-end-to-end@example.com" };
+/** A suffix of this run's own: the deployed environment is shared, and an address is unique. */
+const run = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+
+const who = { name: "Stefan Teofanovic", email: `questions-end-to-end-${run}@example.com` };
+
+/** Which address this run is against, and so which database the fixture writes to. */
+const addressOf = (project: string): Where => (project === "deployed" ? "deployed" : "local");
+
+/** Everyone this file signed in and did not delete through the page, by their context. */
+const signedInHere: BrowserContext[] = [];
+
+/** `person` signed in at this project's address, kept for the deletion after the file. */
+const signedInAt = async (
+  browser: Browser,
+  person: Person,
+  testInfo: TestInfo,
+): Promise<BrowserContext> => {
+  const context = await signedIn(browser, person, addressOf(testInfo.project.name));
+  signedInHere.push(context);
+  return context;
+};
 
 /**
  * The conversation's newest line is read, not hidden under the tool (agent-consolidation
@@ -58,25 +87,37 @@ const waitingLineInView = async (page: Page): Promise<void> => {
     .toBe("in view above the dock");
 };
 
-test.afterAll(async () => {
-  await forget();
+// biome-ignore lint/correctness/noEmptyPattern: Playwright reads the fixtures a hook asks for off its destructuring pattern, so the argument has to be destructured even when it needs none of them.
+test.afterAll(async ({}, testInfo) => {
+  const at = addressOf(testInfo.project.name);
+  const statuses: number[] = [];
+  for (const context of signedInHere.splice(0)) {
+    if (at === "deployed") {
+      statuses.push((await deletedThroughApp(context, at)).status());
+    }
+    await context.close();
+  }
+  await forget(at);
+  expect(statuses.every((status) => status === 200)).toBe(true);
 });
 
 test("the assistant asks, the answers become rules, and a reload still has them", async ({
   browser,
-}) => {
+}, testInfo) => {
   // The wait below reads documents through the paced double and carries a timeout of
   // its own. A test may not outlive its own budget, so the budget has to be the
   // larger of the two: at Playwright's default 30s the wait was cut off at half its
   // allowance, and only on a runner slow enough to need it.
   test.setTimeout(120_000);
-  const context = await signedIn(browser, who);
+  const context = await signedInAt(browser, who, testInfo);
   const page = await context.newPage();
 
   await page.goto("/documents");
   await page.locator("input[type=file]").setInputFiles(three);
   await page.getByRole("button", { name: "Read my documents" }).click();
-  await expect(page.locator("[data-row=document]").filter({ hasText: "read" })).toHaveCount(3, {
+  await expect(
+    page.locator("[data-row=document]").filter({ has: page.getByText("read", { exact: true }) }),
+  ).toHaveCount(3, {
     timeout: 60_000,
   });
 
@@ -163,8 +204,6 @@ test("the assistant asks, the answers become rules, and a reload still has them"
   );
   await expect(page.locator("[data-part=rule]").filter({ hasText: ownWords })).toHaveCount(1);
   await expect(count).toHaveText(/^2 of \d+ answered, 1 for the builder$/);
-
-  await context.close();
 });
 
 /**
@@ -175,26 +214,29 @@ test("the assistant asks, the answers become rules, and a reload still has them"
  * spoken about in the person's own words, a reload that keeps nothing in the page, and
  * somebody else deleting their account through the gate while this profile is open.
  *
- * The `local` project alone collects it, as `intake` and `profile` are, until `SL6`.
+ * Both projects collect it, as the case above.
  */
 test("a chip clicked, a rule written on it, and somebody else's deletion beside it", async ({
   browser,
-}) => {
+}, testInfo) => {
   // The wait below reads documents through the paced double and carries a timeout of
   // its own. A test may not outlive its own budget, so the budget has to be the
   // larger of the two: at Playwright's default 30s the wait was cut off at half its
   // allowance, and only on a runner slow enough to need it.
   test.setTimeout(120_000);
-  const context = await signedIn(browser, {
-    name: "Stefan Teofanovic",
-    email: "clarification-end-to-end@example.com",
-  });
+  const context = await signedInAt(
+    browser,
+    { name: "Stefan Teofanovic", email: `clarification-end-to-end-${run}@example.com` },
+    testInfo,
+  );
   const page = await context.newPage();
 
   await page.goto("/documents");
   await page.locator("input[type=file]").setInputFiles(three);
   await page.getByRole("button", { name: "Read my documents" }).click();
-  await expect(page.locator("[data-row=document]").filter({ hasText: "read" })).toHaveCount(3, {
+  await expect(
+    page.locator("[data-row=document]").filter({ has: page.getByText("read", { exact: true }) }),
+  ).toHaveCount(3, {
     timeout: 60_000,
   });
 
@@ -246,10 +288,12 @@ test("a chip clicked, a rule written on it, and somebody else's deletion beside 
   await expect(page.locator("body")).not.toContainText("That is all I needed.");
 
   // Somebody else deletes their account through the gate, and this profile is untouched.
-  const other = await signedIn(browser, {
-    name: "Ben Seeker",
-    email: `deleting-beside-${Date.now()}@example.com`,
-  });
+  // Not kept for the deletion after the file: this person deletes their own account below.
+  const other = await signedIn(
+    browser,
+    { name: "Ben Seeker", email: `deleting-beside-${run}@example.com` },
+    addressOf(testInfo.project.name),
+  );
   const theirPage = await other.newPage();
   // `/documents`, not `/profile`, for the reason `auth.spec` already gives: this person has
   // handed nothing over, so the viewer sends them to the drop zone, and a redirect that
@@ -271,5 +315,4 @@ test("a chip clicked, a rule written on it, and somebody else's deletion beside 
   await expect(page.locator("[data-part=rule]").filter({ hasText: ownWords })).toHaveCount(1);
 
   await other.close();
-  await context.close();
 });

@@ -7,13 +7,14 @@ import {
   session as sessionRows,
   user as userRows,
 } from "@app/db";
-import type { Browser, BrowserContext } from "@playwright/test";
+import type { APIResponse, Browser, BrowserContext } from "@playwright/test";
 import { type BetterAuthPlugin, betterAuth } from "better-auth";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
 import { type TestHelpers, testUtils } from "better-auth/plugins";
 import { eq } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/postgres-js";
 import postgres from "postgres";
+import { payloadHashOf } from "./api";
 import { deployedSecrets } from "./config";
 
 /**
@@ -214,6 +215,28 @@ export const signedIn = async (
   const { cookies } = await test.login({ userId: saved.id });
   await context.addCookies(cookies);
   return context;
+};
+
+/**
+ * The person on `context` deletes their own account through the library's own route, as
+ * the web app's client reaches it (`ID224`, `ID229`): the page's origin, which the library
+ * demands of a request carrying a session cookie, and the payload hash the deployed origin
+ * demands of a body. Through the app rather than the rows, so the objects a person uploaded
+ * go with them. The answer is the caller's to judge.
+ */
+export const deletedThroughApp = async (
+  context: BrowserContext,
+  at: Where = "local",
+): Promise<APIResponse> => {
+  const body = "{}";
+  return context.request.post("/api/auth/delete-user", {
+    headers: {
+      origin: new URL(appUrl[at]).origin,
+      "content-type": "application/json",
+      "x-amz-content-sha256": await payloadHashOf(body),
+    },
+    data: body,
+  });
 };
 
 /**

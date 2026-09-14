@@ -1,6 +1,6 @@
 import { fileURLToPath } from "node:url";
-import { expect, test } from "@playwright/test";
-import { forget, signedIn } from "./support/session";
+import { type Browser, type BrowserContext, expect, type TestInfo, test } from "@playwright/test";
+import { deletedThroughApp, forget, type Person, signedIn, type Where } from "./support/session";
 
 /**
  * The first half of the person's path, walked for real (criterion 12, `US1`, `US3`).
@@ -9,14 +9,14 @@ import { forget, signedIn } from "./support/session";
  * — the viewer, the questions, the rules — arrives with the slices that build them.
  *
  * This is the one crossing where the browser does the dropping itself: a real file
- * picker, a real multipart body through the dev server's proxy, a real object in the
- * storage directory, and a real stream read frame by frame. Every seam above it stands
- * something in; nothing is stood in for here except the person's sign-in, which no test
- * may drive through a provider's own page.
+ * picker, a real multipart body, a real object in storage, and a real stream read frame
+ * by frame. Every seam above it stands something in; nothing is stood in for here except
+ * the person's sign-in, which no test may drive through a provider's own page.
  *
- * The `local` project alone collects it. The deployed environment's storage has never
- * been exercised and its AI values are SL6's, so the `deployed` project's `testMatch`
- * stays as it is until that slice.
+ * Both projects collect it (agent-consolidation `SL9`, `ID224`). Locally the objects land
+ * in the dev server's storage directory; deployed they land in dev's bucket, and dev's
+ * function reads them from the recorded readings it bundles. There, every person made
+ * here is deleted through the account deletion route, so their objects go with them.
  */
 
 const documents = fileURLToPath(new URL("../apps/api/tests/fixtures/documents/", import.meta.url));
@@ -24,21 +24,51 @@ const documents = fileURLToPath(new URL("../apps/api/tests/fixtures/documents/",
 /** Two of the person's own CVs: the same career, one month, two languages. */
 const twoCvs = [`${documents}2026-08-30_cv_FR.pdf`, `${documents}2026-08-30_cv_EN.pdf`];
 
-const who = { name: "Stefan Teofanovic", email: "intake-end-to-end@example.com" };
+/** A suffix of this run's own: the deployed environment is shared, and an address is unique. */
+const run = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 
-// Once, at the end: `forget` lets the local database go with it, so a per-test call
-// would leave the next sign-in with no connection at all (`support/session.ts`).
-test.afterAll(async () => {
-  await forget();
+const who = { name: "Stefan Teofanovic", email: `intake-end-to-end-${run}@example.com` };
+
+/** Which address this run is against, and so which database the fixture writes to. */
+const addressOf = (project: string): Where => (project === "deployed" ? "deployed" : "local");
+
+/** Everyone this file signed in, by the context carrying their session. */
+const signedInHere: BrowserContext[] = [];
+
+/** `who` signed in at this project's address, kept for the deletion after the file. */
+const signedInAt = async (
+  browser: Browser,
+  person: Person,
+  testInfo: TestInfo,
+): Promise<BrowserContext> => {
+  const context = await signedIn(browser, person, addressOf(testInfo.project.name));
+  signedInHere.push(context);
+  return context;
+};
+
+// Once, at the end: `forget` lets the database go with it, so a per-test call would leave
+// the next sign-in with no connection at all (`support/session.ts`).
+// biome-ignore lint/correctness/noEmptyPattern: Playwright reads the fixtures a hook asks for off its destructuring pattern, so the argument has to be destructured even when it needs none of them.
+test.afterAll(async ({}, testInfo) => {
+  const at = addressOf(testInfo.project.name);
+  const statuses: number[] = [];
+  for (const context of signedInHere.splice(0)) {
+    if (at === "deployed") {
+      statuses.push((await deletedThroughApp(context, at)).status());
+    }
+    await context.close();
+  }
+  await forget(at);
+  expect(statuses.every((status) => status === 200)).toBe(true);
 });
 
-test("documents dropped are read, and leaving loses nothing", async ({ browser }) => {
+test("documents dropped are read, and leaving loses nothing", async ({ browser }, testInfo) => {
   // The wait below reads documents through the paced double and carries a timeout of
   // its own. A test may not outlive its own budget, so the budget has to be the
   // larger of the two: at Playwright's default 30s the wait was cut off at half its
   // allowance, and only on a runner slow enough to need it.
   test.setTimeout(90_000);
-  const context = await signedIn(browser, who);
+  const context = await signedInAt(browser, who, testInfo);
   const page = await context.newPage();
 
   await page.goto("/documents");
@@ -60,25 +90,33 @@ test("documents dropped are read, and leaving loses nothing", async ({ browser }
   // is what happens to them afterwards.
   await expect(page.getByText("Put it together")).toBeVisible();
   await expect(page.getByText("You can leave this page.")).toBeVisible();
-  await expect(page.locator("[data-row=document]").filter({ hasText: "read" })).toHaveCount(2, {
+  await expect(
+    page.locator("[data-row=document]").filter({ has: page.getByText("read", { exact: true }) }),
+  ).toHaveCount(2, {
     timeout: 30_000,
   });
 
   // Leaving and coming back: the rows are the run, so nothing is lost and nothing is
   // replayed. This is the resume, and it is a read of the list route.
   await page.reload();
-  await expect(page.locator("[data-row=document]").filter({ hasText: "read" })).toHaveCount(2);
-
-  await context.close();
+  await expect(
+    page.locator("[data-row=document]").filter({ has: page.getByText("read", { exact: true }) }),
+  ).toHaveCount(2);
 });
 
-test("a typed LinkedIn address alone is accepted, with no file at all", async ({ browser }) => {
+test("a typed LinkedIn address alone is accepted, with no file at all", async ({
+  browser,
+}, testInfo) => {
   // The wait below reads documents through the paced double and carries a timeout of
   // its own. A test may not outlive its own budget, so the budget has to be the
   // larger of the two: at Playwright's default 30s the wait was cut off at half its
   // allowance, and only on a runner slow enough to need it.
   test.setTimeout(90_000);
-  const context = await signedIn(browser, { ...who, email: "intake-address-only@example.com" });
+  const context = await signedInAt(
+    browser,
+    { ...who, email: `intake-address-only-${run}@example.com` },
+    testInfo,
+  );
   const page = await context.newPage();
 
   await page.goto("/documents");
@@ -91,9 +129,9 @@ test("a typed LinkedIn address alone is accepted, with no file at all", async ({
   await page.getByRole("button", { name: "Read my documents" }).click();
 
   await expect(page.getByText("linkedin.com/in/someone")).toBeVisible();
-  await expect(page.locator("[data-row=document]").filter({ hasText: "read" })).toHaveCount(1, {
+  await expect(
+    page.locator("[data-row=document]").filter({ has: page.getByText("read", { exact: true }) }),
+  ).toHaveCount(1, {
     timeout: 30_000,
   });
-
-  await context.close();
 });

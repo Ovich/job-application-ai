@@ -12,6 +12,8 @@
     "dev": "pnpm run dev:db && pnpm run dev:migrate && pnpm -r --parallel run dev",
     "dev:db": "docker compose up --detach --wait",
     "dev:migrate": "pnpm --filter @app/db db:migrate",
+    "dev:access": "node scripts/dev-access.ts",
+    "dev:sql": "node scripts/dev-sql.ts",
     "check": "pnpm run check:format && pnpm run check:lint && pnpm run check:types && pnpm run test",
     "check:format": "prettier --check .",
     "check:lint": "biome check .",
