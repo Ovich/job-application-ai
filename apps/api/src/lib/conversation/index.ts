@@ -1,6 +1,13 @@
 import { randomUUID } from "node:crypto";
 import type * as schema from "@app/db";
-import { conversation, conversationEntry, type Part, parts as partsOf } from "@app/db";
+import {
+  conversation,
+  conversationEntry,
+  type Part,
+  parts as partsOf,
+  toolResultPart,
+  toolUsePart,
+} from "@app/db";
 import { and, asc, type ExtractTablesWithRelations, eq, isNull, max } from "drizzle-orm";
 import type { PgQueryResultHKT, PgTransaction } from "drizzle-orm/pg-core";
 import type { Message } from "../ai";
@@ -130,20 +137,52 @@ export const entries = async (of: Conversation): Promise<Entry[]> =>
     .orderBy(asc(conversationEntry.position));
 
 /**
- * The conversation as the model reads it (`ID162`): an entry's `text` parts, joined, one
- * message per entry — the person's as `user`, everything else as `assistant`. Only `text`
- * here; `SL4` adds the tool parts and `SL5` the question parts. An entry with no text is
- * left out rather than sent empty.
+ * The conversation as the model reads it (`ID162`), in the protocol's own messages.
+ *
+ * The person's entry is a `user` message of its `text` parts, joined. An assistant's
+ * entry is one `assistant` message: its text, and its `tool_use` parts as the calls, the
+ * input written back as the arguments string the model sent. A `tool` entry is one
+ * `tool` message per `tool_result`, answering its call's id with the before and after, or
+ * the refusal. An entry with nothing to say is left out rather than sent empty; a part of
+ * a kind this does not know is left out of the message. `SL5` adds the question parts.
  */
 export const asMessages = (said: Entry[]): Message[] =>
-  said.flatMap((entry) => {
+  said.flatMap((entry): Message[] => {
+    if (entry.author === "tool") {
+      return entry.parts.flatMap((part): Message[] => {
+        const read = toolResultPart.safeParse(part);
+        if (!read.success) return [];
+        const { id, before, after, refused } = read.data;
+        return [
+          {
+            role: "tool",
+            tool_call_id: id,
+            content: JSON.stringify(refused === undefined ? { before, after } : { refused }),
+          },
+        ];
+      });
+    }
+
     const text = entry.parts
       .flatMap((part) =>
         part.kind === "text" && typeof part["text"] === "string" ? [part["text"]] : [],
       )
       .join("\n\n");
-    if (text === "") return [];
-    return [{ role: entry.author === "person" ? "user" : "assistant", content: text }];
+    if (entry.author === "person") return text === "" ? [] : [{ role: "user", content: text }];
+
+    const calls = entry.parts.flatMap((part) => {
+      const read = toolUsePart.safeParse(part);
+      if (!read.success) return [];
+      return [
+        {
+          id: read.data.id,
+          type: "function" as const,
+          function: { name: read.data.name, arguments: JSON.stringify(read.data.input ?? {}) },
+        },
+      ];
+    });
+    if (calls.length === 0) return text === "" ? [] : [{ role: "assistant", content: text }];
+    return [{ role: "assistant", content: text === "" ? null : text, tool_calls: calls }];
   });
 
 /** One entry written after the last, in the caller's transaction. */
