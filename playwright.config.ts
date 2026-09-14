@@ -69,11 +69,14 @@ export default defineConfig({
       // one address can answer, the way `health-stream` already does.
       //
       // `conversation` is the first product spec it collects (agent-consolidation SL6,
-      // ID178): its routes' cases give the person a reading straight into the database
-      // (ID212) and then ask only the API, so nothing in them needs a document read on
-      // dev. `intake`, `profile` and `intake-questions` still read real documents through
-      // the page, which the deployed suite cannot do (ID138), so they stay local.
-      testMatch: /(health(-stream)?|auth|entry-route|conversation)\.spec\.ts$/,
+      // ID178). From that plan's SL9 (ID224, ID225) it walks the screens as the local
+      // project does: `intake`, `intake-questions` and `conversation`'s screen cases drop
+      // the fixture documents into dev's storage and dev's function reads them from the
+      // recorded readings it bundles, so the reason they stayed local (ID138) is gone. A
+      // spec that drops documents deletes its people through the account deletion route,
+      // so the stored objects go with them. `profile` stays local; `dev-sql` never runs here.
+      testMatch:
+        /(health(-stream)?|auth|entry-route|conversation|intake|intake-questions)\.spec\.ts$/,
       use: { baseURL: "https://dev.job-application.app" },
       // One worker, and the reason is the environment rather than the tests. Nothing
       // here writes any more — the health route only reads — but the specs share one
