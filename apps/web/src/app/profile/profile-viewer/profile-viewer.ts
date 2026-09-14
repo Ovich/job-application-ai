@@ -75,6 +75,17 @@ export class ProfileViewer {
 
   protected readonly profile = signal<Answer | null>(null);
 
+  /** Whether a reading has made a profile, which is when the assistant exists (`ID202`). */
+  protected readonly read = computed(() => (this.profile()?.documents ?? 0) > 0);
+
+  /** Two columns once there is an assistant; the sheet alone before. */
+  protected readonly gridClass = computed(() =>
+    [
+      "-mt-10 grid h-full min-h-0 flex-1 overflow-hidden",
+      this.read() ? "lg:grid-cols-[minmax(440px,42%)_minmax(0,1fr)]" : "",
+    ].join(" "),
+  );
+
   /** Whether the drop zone is open over the profile (`ID160`). */
   protected readonly adding = signal(false);
 
@@ -224,9 +235,19 @@ export class ProfileViewer {
 
   constructor() {
     void this.load();
-    // The profile's conversation, opened with the opening the API writes the first time
-    // (agent-consolidation SL2). The core holds it; the assistant's column draws it.
-    void this.core.open();
+
+    /**
+     * The profile's conversation, opened with the opening the API writes the first time
+     * (agent-consolidation SL2), **once a reading has made a profile** (`ID202`: no
+     * assistant during the intake). An effect, so a reading that lands through the drop
+     * zone over this page opens it too.
+     */
+    let opened = false;
+    effect(() => {
+      if (opened || !this.read()) return;
+      opened = true;
+      void this.core.open();
+    });
 
     /**
      * No document and no profile: there is nothing to read here, and a page saying so is

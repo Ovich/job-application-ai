@@ -1,7 +1,7 @@
 import { createFactory } from "hono/factory";
 import { validator } from "hono/validator";
 import { z } from "zod";
-import type { AssistantDefinition } from "../lib/agent";
+import { type AssistantDefinition, NotYet } from "../lib/agent";
 import { entries, open } from "../lib/conversation";
 import { asking, refused } from "../lib/session";
 
@@ -41,12 +41,18 @@ export const openConversation = (definitions: AssistantDefinition[]) =>
       const definition = definitions.find((each) => each.name === c.req.param("assistant"));
       if (definition === undefined) return c.json({ error: "no such assistant" }, 404);
 
-      const conversation = await open(
-        person,
-        definition.name,
-        c.req.valid("query").subject ?? null,
-        (tx) => definition.opening(tx, person.id),
-      );
-      return c.json({ id: conversation.id, entries: await entries(conversation) }, 200);
+      try {
+        const conversation = await open(
+          person,
+          definition.name,
+          c.req.valid("query").subject ?? null,
+          (tx) => definition.opening(tx, person.id),
+        );
+        return c.json({ id: conversation.id, entries: await entries(conversation) }, 200);
+      } catch (thrown) {
+        // Nothing to open on yet (`ID202`): the transaction rolled back, nothing is kept.
+        if (thrown instanceof NotYet) return c.json({ error: thrown.message }, 409);
+        throw thrown;
+      }
     },
   );

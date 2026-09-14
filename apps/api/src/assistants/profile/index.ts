@@ -1,6 +1,6 @@
 import { document, profileItem, provenance, question } from "@app/db";
 import { and, asc, countDistinct, eq } from "drizzle-orm";
-import type { AssistantDefinition } from "../../lib/agent";
+import { type AssistantDefinition, NotYet } from "../../lib/agent";
 
 /**
  * The profile assistant (`ID188`, `ID165`): the concrete assistant of the intake, as a
@@ -24,10 +24,6 @@ const sentence = (documents: number): string =>
 const tail =
   "Some facts say what you did but not what your part was, or two documents disagree. I ask only those. Everything else I could tell from your documents.";
 
-/** The form for a person with nothing read yet: the conversation is theirs, not a reading's. */
-const nothingRead =
-  "I have not read any of your documents yet. Hand them over and I will read them.";
-
 /** Words the product wrote, and says so (`ID200`). */
 const scripted = (text: string) => ({ kind: "text" as const, text, scripted: true as const });
 
@@ -47,7 +43,9 @@ export const profileAssistant: AssistantDefinition = {
       .innerJoin(document, eq(provenance.documentId, document.id))
       .where(eq(document.userId, person));
     const documents = cited?.documents ?? 0;
-    if (documents === 0) return [scripted(nothingRead)];
+    // No assistant during the profile intake (`ID202`): before a reading there is no
+    // conversation, so nothing is stored that was never true.
+    if (documents === 0) throw new NotYet("nothing read yet");
 
     const asked = await tx
       .select({ title: profileItem.title, state: question.state })
