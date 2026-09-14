@@ -61,6 +61,16 @@ const rendered = async (questions: Question[], reading = { documents: 5, facts: 
   const fixture = TestBed.createComponent(ProfileAssistant);
   fixture.componentRef.setInput("questions", questions);
   fixture.componentRef.setInput("reading", reading);
+  // The viewer's part, stood in (`ID215`): an activation is handled as a press on the
+  // question's item, which is what hands the column its `on`.
+  fixture.componentInstance.activate.subscribe(({ itemId }) => {
+    const question = questions.find((each) => each.itemId === itemId);
+    fixture.componentRef.setInput("on", {
+      itemId,
+      where: question?.itemTitle ?? "",
+      lineId: null,
+    });
+  });
   await fixture.whenStable();
   const element = fixture.nativeElement as HTMLElement;
   return { fixture, element, at: (selector: string) => element.querySelector(selector) };
