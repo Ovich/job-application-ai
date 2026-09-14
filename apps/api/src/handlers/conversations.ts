@@ -46,22 +46,24 @@ const couldNotAnswer = "The assistant could not answer this time. Your message i
 
 /**
  * The person's conversation with the definition's assistant, opened with its opening if
- * absent, or the answer that refuses it: 401 signed out, 404 no such assistant, 409
- * nothing to open on yet (`ID202`).
+ * absent, or what is missing: the person (401), the assistant (404), or a reading to open
+ * on (409, `ID202`). The handlers write the refusal themselves, so each answer keeps its
+ * type on `AppType`.
  */
 const conversationFor = async (
   c: Context,
   definitions: AssistantDefinition[],
   subject: string | undefined,
 ): Promise<
-  | { refusal: Response }
+  | { missing: "person" | "assistant" }
+  | { notYet: string }
   | { person: Asking; definition: AssistantDefinition; conversation: Conversation }
 > => {
   const person = await asking(c);
-  if (person === null) return { refusal: refused(c) };
+  if (person === null) return { missing: "person" };
 
   const definition = definitions.find((each) => each.name === c.req.param("assistant"));
-  if (definition === undefined) return { refusal: c.json({ error: "no such assistant" }, 404) };
+  if (definition === undefined) return { missing: "assistant" };
 
   try {
     const conversation = await open(person, definition.name, subject ?? null, (tx) =>
@@ -70,7 +72,7 @@ const conversationFor = async (
     return { person, definition, conversation };
   } catch (thrown) {
     // Nothing to open on yet (`ID202`): the transaction rolled back, nothing is kept.
-    if (thrown instanceof NotYet) return { refusal: c.json({ error: thrown.message }, 409) };
+    if (thrown instanceof NotYet) return { notYet: thrown.message };
     throw thrown;
   }
 };
@@ -91,7 +93,9 @@ export const openConversation = (definitions: AssistantDefinition[]) =>
     }),
     async (c) => {
       const found = await conversationFor(c, definitions, c.req.valid("query").subject);
-      if ("refusal" in found) return found.refusal;
+      if ("missing" in found && found.missing === "person") return refused(c);
+      if ("missing" in found) return c.json({ error: "no such assistant" }, 404);
+      if ("notYet" in found) return c.json({ error: found.notYet }, 409);
       const { conversation } = found;
       return c.json({ id: conversation.id, entries: await entries(conversation) }, 200);
     },
@@ -120,7 +124,9 @@ export const postMessage = (definitions: AssistantDefinition[]) =>
     async (c) => {
       const { text, subject } = c.req.valid("json");
       const found = await conversationFor(c, definitions, subject);
-      if ("refusal" in found) return found.refusal;
+      if ("missing" in found && found.missing === "person") return refused(c);
+      if ("missing" in found) return c.json({ error: "no such assistant" }, 404);
+      if ("notYet" in found) return c.json({ error: found.notYet }, 409);
       const { definition, conversation } = found;
 
       const mine = await db.transaction((tx) =>
