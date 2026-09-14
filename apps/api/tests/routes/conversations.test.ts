@@ -302,7 +302,7 @@ describe("a free message (US2, SL3)", () => {
 
     expect(status).toBe(200);
     expect(type).toContain("text/event-stream");
-    expect(shapeOf(leaves)).toEqual(["entry", "text", "entry", "done"]);
+    expect(shapeOf(leaves)).toEqual(["entry", "status", "text", "entry", "done"]);
     expect(leaves[0]?.entry).toMatchObject({
       position: 2,
       author: "person",
@@ -353,10 +353,27 @@ describe("a free message (US2, SL3)", () => {
     );
 
     expect(status).toBe(200);
-    expect(shapeOf(leaves)).toEqual(["entry", "text", "error"]);
+    expect(shapeOf(leaves)).toEqual(["entry", "status", "text", "error"]);
     expect(leaves.at(-1)?.message).toEqual(expect.any(String));
     const { body } = await get("/api/conversations/profile", person.cookie);
     expect(body.entries.map((entry) => entry.author)).toEqual(["assistant", "person"]);
+  });
+
+  /** What the agent is doing, streamed and never stored (`S7.5`, `ID210`, spec `H27`). */
+  it("streams the step's phrase as a status leaf before the reply's words, and stores none of it", async () => {
+    const person = await signedIn("message-status@example.com");
+
+    const { leaves } = await post(
+      "/api/conversations/profile/messages",
+      "Which document did you read first?",
+      person.cookie,
+    );
+
+    const status = leaves.findIndex((leaf) => leaf.kind === "status");
+    expect(leaves[status]).toEqual({ kind: "status", text: "Reading your profile" });
+    expect(status).toBeLessThan(leaves.findIndex((leaf) => leaf.kind === "text"));
+    const { body } = await get("/api/conversations/profile", person.cookie);
+    expect(JSON.stringify(body)).not.toContain("Reading your profile");
   });
 
   it("answers 401 to nobody signed in", async () => {

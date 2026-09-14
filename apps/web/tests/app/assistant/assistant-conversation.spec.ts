@@ -83,6 +83,79 @@ const sideOf = (entry: Element | null | undefined) => {
 const avatarOf = (entry: Element | null | undefined): string =>
   textOf(entry?.querySelector("[data-part=avatar]"));
 
+/**
+ * What the agent is doing, while it does it (`S7.5`, `ID210`, spec `H27`): a status leaf
+ * draws its phrase beside an animated indicator on the assistant's side, a later one
+ * replaces it, and the reply's first words, an entry or the end take it away.
+ */
+describe("what the agent is doing (S7.5, H27)", () => {
+  const replying = async () => {
+    conversationIs([
+      entryOf(1, [{ kind: "text", text: "I read your 2 documents.", scripted: true }]),
+    ]);
+    const core = TestBed.inject(AssistantCore);
+    await core.open();
+    const fixture = TestBed.createComponent(AssistantConversation);
+    const element = fixture.nativeElement as HTMLElement;
+    const posting = core.post("Shorten the second line.");
+    theReply.says({
+      kind: "entry",
+      entry: entryOf(2, [{ kind: "text", text: "Shorten the second line." }], "person"),
+    });
+    const activity = () => element.querySelector("[data-part=activity]");
+    const settled = async (assert: () => void) =>
+      vi.waitFor(async () => {
+        await fixture.whenStable();
+        assert();
+      });
+    return { element, posting, activity, settled };
+  };
+
+  it("draws the phrase beside an animated indicator on the assistant's side", async () => {
+    const { posting, activity, settled } = await replying();
+
+    theReply.says({ kind: "status", text: "Reading your profile" });
+
+    await settled(() => expect(textOf(activity())).toBe("Reading your profile"));
+    const row = activity()?.closest("[data-entry]");
+    expect(sideOf(row)).toEqual({ right: false, width: "full" });
+    expect(row?.querySelector("svg[data-part=activity-indicator] animate")).not.toBeNull();
+
+    theReply.ends();
+    await posting;
+  });
+
+  it("replaces the phrase when a second status arrives", async () => {
+    const { posting, activity, settled } = await replying();
+
+    theReply.says({ kind: "status", text: "Reading your profile" });
+    await settled(() => expect(textOf(activity())).toBe("Reading your profile"));
+    theReply.says({ kind: "status", text: "Rewriting a line" });
+
+    await settled(() => expect(textOf(activity())).toBe("Rewriting a line"));
+    expect(document.querySelectorAll("[data-part=activity]").length).toBeLessThanOrEqual(1);
+
+    theReply.ends();
+    await posting;
+  });
+
+  it.each([
+    ["the reply's first words", { kind: "text", text: "I will" }],
+    ["an entry", { kind: "entry", entry: entryOf(3, [{ kind: "text", text: "Done." }]) }],
+    ["the end", { kind: "done" }],
+  ] as const)("takes the indicator away at %s", async (_, leaf) => {
+    const { posting, activity, settled } = await replying();
+    theReply.says({ kind: "status", text: "Reading your profile" });
+    await settled(() => expect(activity()).not.toBeNull());
+
+    theReply.says(leaf as Parameters<typeof theReply.says>[0]);
+
+    await settled(() => expect(activity()).toBeNull());
+    theReply.ends();
+    await posting;
+  });
+});
+
 describe("who writes what (S4.7)", () => {
   beforeEach(async () => {
     signedInAs({ name: "Stefan Teofanovic", email: "stefan@example.com", providers: ["google"] });

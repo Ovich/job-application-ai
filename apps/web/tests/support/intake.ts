@@ -458,6 +458,7 @@ export const conversationRefused = (status: number, body: unknown): void => {
 /** One leaf of a message's stream, as the API's envelope carries it. */
 export type ReplyLeaf =
   | { kind: "entry"; entry: Entry }
+  | { kind: "status"; text: string }
   | { kind: "text"; text: string }
   | { kind: "done" }
   | { kind: "error"; message: string };
