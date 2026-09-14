@@ -17,7 +17,7 @@ import { localStorageIn } from "../support/storage";
  * back through the route.
  */
 
-const objects = vi.hoisted(() => ({ storage: undefined as unknown }));
+const objects = vi.hoisted(() => ({ storage: undefined as unknown, failing: false }));
 
 vi.mock("../../src/lib/db", async () => ({
   db: (await import("../support/database")).testDb,
@@ -34,17 +34,27 @@ vi.mock("../../src/lib/ai", async (importOriginal) => {
   const real = await importOriginal<typeof import("../../src/lib/ai")>();
   const { aiThroughTheApp } = await import("../support/ai");
   const ai = aiThroughTheApp();
-  return { ...real, ask: ai.ask, askStreaming: ai.askStreaming, askFor: ai.askFor };
+  // A call that fails mid-stream, when a case says so: one piece, then the throw.
+  async function* askStreaming(...asked: Parameters<typeof ai.askStreaming>) {
+    if (!objects.failing) {
+      yield* ai.askStreaming(...asked);
+      return;
+    }
+    yield "No pre";
+    throw new Error("the model went away mid-stream");
+  }
+  return { ...real, ask: ai.ask, askStreaming, askFor: ai.askFor };
 });
 
 const { app } = await import("../../src/app");
 const { conversationsOf } = await import("../../src/routes/conversations");
 const { cookiesSetBy, signInThrough, signedInAs } = await import("../support/sign-in");
 const { documentsFor, theSet } = await import("../support/documents");
-const { forgetRequests } = await import("../support/ai");
+const { forgetRequests, requestsSent } = await import("../support/ai");
 
 beforeEach(() => {
   objects.storage = localStorageIn();
+  objects.failing = false;
   forgetRequests();
 });
 
@@ -227,5 +237,177 @@ describe("before any reading (S3.0, ID202)", () => {
     expect(body.entries[0]?.parts[0]?.text).toBe(
       "I read your 1 document. Every fact on the right carries the document it came from, and I wrote nothing that is not in them.",
     );
+  });
+});
+
+/**
+ * Seam B: a free message, `POST /:assistant/messages` (`SL3`, `US2`, `ID163`, `ID169`,
+ * `ID170`). What is read is the stream a browser reads, and then the conversation through
+ * `GET`: no table is read here.
+ */
+type Leaf = { kind: string; text?: string; message?: string; entry?: Answer["entries"][number] };
+
+/** The leaves of an event stream, in order: every `data:` line, parsed. */
+const leavesOf = (body: string): Leaf[] =>
+  body
+    .split("\n\n")
+    .map((block) => block.split("\n").find((line) => line.startsWith("data: ")))
+    .filter((line): line is string => line !== undefined)
+    .map((line) => (JSON.parse(line.slice("data: ".length)) as { leaf: Leaf }).leaf);
+
+/** The kinds in order, a run of the same kind said once: `entry, text, entry, done`. */
+const shapeOf = (leaves: Leaf[]): string[] =>
+  leaves.map((leaf) => leaf.kind).filter((kind, at, all) => all[at - 1] !== kind);
+
+const post = async (
+  path: string,
+  text: string,
+  cookie?: string,
+  through: { request: typeof routes.request } = routes,
+) => {
+  const response = await through.request(path, {
+    method: "POST",
+    headers: { "content-type": "application/json", ...(cookie === undefined ? {} : { cookie }) },
+    body: JSON.stringify({ text }),
+  });
+  const body = await response.text();
+  return {
+    status: response.status,
+    type: response.headers.get("content-type") ?? "",
+    leaves: response.ok ? leavesOf(body) : [],
+  };
+};
+
+describe("a free message (US2, SL3)", () => {
+  it("writes the person's entry, streams the reply, writes it, and GET holds all three in order", async () => {
+    const person = await signedIn("message-on-a-miss@example.com");
+
+    const { status, type, leaves } = await post(
+      "/api/conversations/profile/messages",
+      "  I ran the services, not the cluster.  ",
+      person.cookie,
+    );
+
+    expect(status).toBe(200);
+    expect(type).toContain("text/event-stream");
+    expect(shapeOf(leaves)).toEqual(["entry", "text", "entry", "done"]);
+    expect(leaves[0]?.entry).toMatchObject({
+      position: 2,
+      author: "person",
+      parts: [{ kind: "text", text: "I ran the services, not the cluster." }],
+    });
+    expect(
+      leaves
+        .filter((leaf) => leaf.kind === "text")
+        .map((leaf) => leaf.text)
+        .join(""),
+    ).toBe("No pre generated text");
+    expect(leaves.at(-2)?.entry).toMatchObject({
+      position: 3,
+      author: "assistant",
+      parts: [{ kind: "text", text: "No pre generated text" }],
+    });
+
+    const { body } = await get("/api/conversations/profile", person.cookie);
+    expect(
+      body.entries.map((entry) => [entry.position, entry.author, entry.parts[0]?.text]),
+    ).toEqual([
+      [1, "assistant", `Hello, ${person.id}.`],
+      [2, "person", "I ran the services, not the cluster."],
+      [3, "assistant", "No pre generated text"],
+    ]);
+
+    // Step 1 of this conversation's message, named per step (`ID182`), asked with the
+    // conversation as messages (`ID162`).
+    const [sent] = requestsSent();
+    expect(sent?.headers["x-jobapp-case"]).toBe(`profile.message:${body.id}#1`);
+    expect((sent?.body as { messages: unknown[] }).messages).toEqual([
+      { role: "assistant", content: `Hello, ${person.id}.` },
+      { role: "user", content: "I ran the services, not the cluster." },
+    ]);
+  });
+
+  it("keeps the person's entry, writes no half reply, and ends on an error frame when the call fails mid-stream", async () => {
+    const person = await signedIn("message-fails@example.com");
+    objects.failing = true;
+
+    const { status, leaves } = await post(
+      "/api/conversations/profile/messages",
+      "Something.",
+      person.cookie,
+    );
+
+    expect(status).toBe(200);
+    expect(shapeOf(leaves)).toEqual(["entry", "text", "error"]);
+    expect(leaves.at(-1)?.message).toEqual(expect.any(String));
+    const { body } = await get("/api/conversations/profile", person.cookie);
+    expect(body.entries.map((entry) => entry.author)).toEqual(["assistant", "person"]);
+  });
+
+  it("answers 401 to nobody signed in", async () => {
+    const { status } = await post("/api/conversations/profile/messages", "Hello.");
+
+    expect(status).toBe(401);
+    expect(requestsSent()).toEqual([]);
+  });
+
+  it("answers 404 for an assistant no definition names, and writes nothing", async () => {
+    const person = await signedIn("message-unknown@example.com");
+
+    const { status } = await post("/api/conversations/unknown/messages", "Hello.", person.cookie);
+
+    expect(status).toBe(404);
+    expect((await get("/api/conversations/profile", person.cookie)).body.entries).toHaveLength(1);
+  });
+
+  it("answers 400 to empty text, and writes nothing", async () => {
+    const person = await signedIn("message-empty@example.com");
+
+    const { status } = await post("/api/conversations/profile/messages", "   ", person.cookie);
+
+    expect(status).toBe(400);
+    expect(requestsSent()).toEqual([]);
+    expect((await get("/api/conversations/profile", person.cookie)).body.entries).toHaveLength(1);
+  });
+
+  it("puts a second person's message in their own conversation, and leaves the first's alone (US5)", async () => {
+    const first = await signedIn("message-first@example.com");
+    const second = await signedIn("message-second@example.com");
+    await post("/api/conversations/profile/messages", "The first person's words.", first.cookie);
+
+    await post("/api/conversations/profile/messages", "The second person's words.", second.cookie);
+
+    const theirs = JSON.stringify((await get("/api/conversations/profile", first.cookie)).body);
+    const mine = JSON.stringify((await get("/api/conversations/profile", second.cookie)).body);
+    expect(theirs).toContain("The first person's words.");
+    expect(theirs).not.toContain("The second person's words.");
+    expect(mine).toContain("The second person's words.");
+    expect(mine).not.toContain("The first person's words.");
+  });
+
+  it("leaves the profile exactly as it was", async () => {
+    const person = await signedIn("message-profile-unchanged@example.com");
+    await documentsFor(
+      person.id,
+      [theSet.cvFrench.filename],
+      objects.storage as ReturnType<typeof localStorageIn>,
+    );
+    await (
+      await app.request("/api/intake/read", { method: "POST", headers: { cookie: person.cookie } })
+    ).text();
+    const profile = async () =>
+      (await app.request("/api/intake/profile", { headers: { cookie: person.cookie } })).json();
+    const before = await profile();
+
+    const { status, leaves } = await post(
+      "/api/conversations/profile/messages",
+      "Drop the diploma.",
+      person.cookie,
+      app,
+    );
+
+    expect(status).toBe(200);
+    expect(shapeOf(leaves).at(-1)).toBe("done");
+    expect(await profile()).toEqual(before);
   });
 });
