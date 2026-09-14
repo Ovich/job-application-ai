@@ -1,6 +1,23 @@
+import { readFileSync } from "node:fs";
 import { defineConfig } from "vitest/config";
 
 export default defineConfig({
+  /*
+   * A `.md` file imported as text (`with { type: "text" }`) is its content as a string,
+   * as esbuild reads it for the deployed bundle (`apps/api/src/text.d.ts`). Vite reads the
+   * attribute not at all, and would otherwise run the file as a module.
+   */
+  plugins: [
+    {
+      name: "text-import",
+      enforce: "pre",
+      load(id) {
+        const path = id.split("?")[0] ?? id;
+        if (!path.endsWith(".md")) return null;
+        return `export default ${JSON.stringify(readFileSync(path, "utf8"))};`;
+      },
+    },
+  ],
   test: {
     /*
      * Tests live in `tests/`, mirroring the source tree they cover.

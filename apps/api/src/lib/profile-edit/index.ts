@@ -213,6 +213,25 @@ const shapeOf = async (tx: Tx, person: string, itemId: string): Promise<ItemShap
   return { ...item, block: await blockOf(tx, item.kind, itemId), lines, children };
 };
 
+/**
+ * Every item of the person's profile as it stands, in the shape an edit reads it and in
+ * the profile's order (`ID193`): what the agent is shown, so an edit can name each item
+ * and each line it changes by its id.
+ */
+export const itemsOf = async (tx: Tx, person: string): Promise<ItemShape[]> => {
+  const ids = await tx
+    .select({ id: profileItem.id })
+    .from(profileItem)
+    .where(eq(profileItem.userId, person))
+    .orderBy(asc(profileItem.position), asc(profileItem.id));
+  const items: ItemShape[] = [];
+  for (const { id } of ids) {
+    const item = await shapeOf(tx, person, id);
+    if (item !== undefined) items.push(item);
+  }
+  return items;
+};
+
 /** Said when an operation names a line or a child the item no longer has. */
 const stale = "no longer exists on this item; the profile may have changed, so reload it";
 

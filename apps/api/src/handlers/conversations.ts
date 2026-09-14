@@ -3,16 +3,9 @@ import { createFactory } from "hono/factory";
 import { stream } from "hono/streaming";
 import { validator } from "hono/validator";
 import { z } from "zod";
-import { type AssistantDefinition, NotYet } from "../lib/agent";
-import { askStreaming } from "../lib/ai";
-import {
-  append,
-  asMessages,
-  type Conversation,
-  type Entry,
-  entries,
-  open,
-} from "../lib/conversation";
+import { type AssistantDefinition, NotYet, run } from "../lib/agent";
+import { ask, askFor, askStreaming, askWithTools } from "../lib/ai";
+import { append, type Conversation, type Entry, entries, open } from "../lib/conversation";
 import { db } from "../lib/db";
 import { type Asking, asking, refused } from "../lib/session";
 import { createEnvelope } from "../lib/stream";
@@ -111,8 +104,10 @@ export const openConversation = (definitions: AssistantDefinition[]) =>
  * writes no half reply, and ends on an error frame. A tab closed mid-reply is the same
  * failure, and intended.
  *
- * One step, asked once (`ID182`): `<assistant>.message:<conversation id>#1`. The prompt,
- * the tools and the loop are `SL4`'s.
+ * The reply is `lib/agent`'s loop (`ID187`): each step's text streams on as it arrives,
+ * and each of its entries once the step has committed. Step `n` is asked as
+ * `<assistant>.message:<conversation id>#<n>` (`ID182`); what earlier steps committed
+ * stays when a later one fails.
  */
 export const postMessage = (definitions: AssistantDefinition[]) =>
   factory.createHandlers(
@@ -127,7 +122,7 @@ export const postMessage = (definitions: AssistantDefinition[]) =>
       if ("missing" in found && found.missing === "person") return refused(c);
       if ("missing" in found) return c.json({ error: "no such assistant" }, 404);
       if ("notYet" in found) return c.json({ error: found.notYet }, 409);
-      const { definition, conversation } = found;
+      const { person, definition, conversation } = found;
 
       const mine = await db.transaction((tx) =>
         append(tx, conversation, "person", [{ kind: "text", text }]),
@@ -149,20 +144,13 @@ export const postMessage = (definitions: AssistantDefinition[]) =>
 
         try {
           await envelope.send({ kind: "entry", entry: onTheWire(mine) });
-          let reply = "";
-          const pieces = askStreaming(asMessages(await entries(conversation)), {
-            feature: definition.name,
-            step: "message",
-            input: `${conversation.id}#1`,
-          });
-          for await (const piece of pieces) {
-            reply += piece;
-            await envelope.send({ kind: "text", text: piece });
+          // `lib/ai` as the value the loop asks, gathered here where it is imported.
+          const ai = { ask, askStreaming, askFor, askWithTools };
+          for await (const ran of run(definition, conversation, person.id, ai)) {
+            await envelope.send(
+              ran.kind === "text" ? ran : { kind: "entry", entry: onTheWire(ran.entry) },
+            );
           }
-          const theirs = await db.transaction((tx) =>
-            append(tx, conversation, "assistant", [{ kind: "text", text: reply }]),
-          );
-          await envelope.send({ kind: "entry", entry: onTheWire(theirs) });
           await envelope.send({ kind: "done" });
         } catch {
           await envelope.send({ kind: "error", message: couldNotAnswer });

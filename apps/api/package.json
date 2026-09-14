@@ -7,7 +7,7 @@
     ".": "./src/app.ts"
   },
   "scripts": {
-    "dev": "tsx watch --env-file-if-exists=.env src/local.ts",
+    "dev": "tsx watch --import ./dev/text-import.mjs --env-file-if-exists=.env src/local.ts",
     "generate:auth-schema": "better-auth generate --config src/lib/auth/index.ts --output ../../packages/db/src/auth-schema.ts --yes",
     "check:types": "tsc -p tsconfig.json --noEmit"
   },
