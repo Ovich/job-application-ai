@@ -577,8 +577,22 @@ alsoAnswering((address, init) => {
       words?: string;
       skip?: boolean;
     };
+    // The person's entry, written with the state as the API writes it (agent-consolidation
+    // `S7.1`): a screen that reads the conversation again finds the answer or the skip.
+    const asked = {
+      lead: question.lead,
+      where: question.where,
+      options: question.options.map(({ id: option, label, hint }) => ({ id: option, label, hint })),
+    };
+    const recorded = (part: Entry["parts"][number]): void => {
+      if (conversation === null || conversation.status !== 200) return;
+      const body = conversation.body as { id: string; entries: Entry[] };
+      const next = entryOf(body.entries.length + 1, [part], "person");
+      conversation = { ...conversation, body: { ...body, entries: [...body.entries, next] } };
+    };
     if (said.skip === true) {
       questionBecomes(question.id, "skipped");
+      recorded({ kind: "question_skipped", ...asked });
       return json({ skipped: question.id });
     }
     const picked = question.options.find((option) => option.id === said.optionId)?.rule ?? null;
@@ -591,6 +605,12 @@ alsoAnswering((address, init) => {
           ? picked
           : `${picked} — ${words}`;
     questionBecomes(question.id, "answered");
+    recorded({
+      kind: "question_answered",
+      ...asked,
+      picked: said.optionId ?? null,
+      words: words === "" ? null : words,
+    });
     ruleLandsOn(question.itemId, {
       id: `rule-${profile.questions.indexOf(question) + 1}`,
       text,
