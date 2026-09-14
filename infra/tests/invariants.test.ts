@@ -446,6 +446,17 @@ describe("what the function signs people in with (ID60, ID71)", () => {
     );
   });
 
+  /**
+   * The model is configuration too (`ID234`): with no `AI_MODEL` the function falls back
+   * to the schema's `mock-model`, and a provider switched to by address and key alone
+   * would be asked for a model it does not have.
+   */
+  it("asks for the model the AiModel parameter names, mock-model unless it says otherwise", () => {
+    const { AiModel } = readYamlTemplate(infra("App-dev.yaml")).Parameters ?? {};
+    expect(AiModel).toMatchObject({ Type: "String", Default: "mock-model" });
+    expect(at("App-dev", "Api", "Properties.Environment.Variables.AI_MODEL.Ref")).toBe("AiModel");
+  });
+
   it("lets the deploy role read the two secrets it is named for, and no others", () => {
     const policy = leaves(resource("Deploy", "DeployRolePolicy") as unknown as Json);
     const allowed = [...policy]
