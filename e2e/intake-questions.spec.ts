@@ -257,6 +257,13 @@ test("a chip clicked, words about it in the conversation, and somebody else's de
   const label = (await plain.textContent())?.trim() ?? "";
   expect(label).not.toBe("");
 
+  // A press away closes the question the assistant activated and opens nothing on the chip
+  // it landed on (agent-consolidation `S8.8`, `ID236`): no tool, and the sheet undimmed.
+  await plain.click();
+  await expect(page.locator("scope-tool")).toHaveCount(0);
+  await expect(page.locator("profile-sheet article")).not.toHaveAttribute("data-focused", "true");
+
+  // A second press opens the chip's own tool.
   await plain.click();
 
   // The tool proposes nothing at all, and only the prefix says what is in scope.

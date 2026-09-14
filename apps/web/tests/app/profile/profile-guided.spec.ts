@@ -8,6 +8,7 @@ import {
   conversationIs,
   emptyProfile,
   entryOf,
+  intakeRequests,
   itemOf,
   type Profile,
   profileIs,
@@ -483,5 +484,103 @@ describe("between tools (S8.3, ID217, ID219)", () => {
     expect(textOf(at("scope-tool [data-part=lead]"))).toBe(kubernetes.lead);
     expect(all("[data-action=alt]")[0]?.getAttribute("aria-pressed")).toBe("true");
     expect(active()).toEqual(everythingActive);
+  });
+});
+
+/**
+ * A press away closes the tool (agent-consolidation `S8.8`, `ID236`): anywhere outside the
+ * dock, the composer and the lifted region, whoever opened the tool, and that press opens
+ * nothing. Escape closes it the same way. A close decides nothing.
+ */
+describe("a press anywhere away closes the tool (S8.8, ID236)", () => {
+  /** A pointer press as a browser delivers it: the pointer going down, then the click. */
+  const pressOn = (element: Element | null | undefined): void => {
+    element?.dispatchEvent(new Event("pointerdown", { bubbles: true }));
+    (element as HTMLElement | null | undefined)?.click();
+  };
+
+  /** What a closed tool leaves: no label, no path, no choices, no lift, no dimming, no waiting line. */
+  const putDown = {
+    label: false,
+    path: false,
+    choices: false,
+    lifted: false,
+    dimmed: false,
+    waiting: false,
+  };
+
+  it("closes on a press on another region and opens nothing there; a second press opens that region's tool", async () => {
+    profileIs(aProfile([kubernetes, docker]));
+    const { at, region, active, eventually } = await opened();
+    await eventually(() => expect(active()).toEqual(everythingActive));
+
+    pressOn(region("chip-docker"));
+
+    await eventually(() => expect(active()).toMatchObject(putDown));
+    expect(at("scope-tool")).toBeNull();
+
+    pressOn(region("chip-docker"));
+
+    await eventually(() => expect(textOf(at("scope-tool [data-part=lead]"))).toBe(docker.lead));
+    expect(active()).toEqual(everythingActive);
+  });
+
+  it("closes on a press on the assistant's column outside the dock", async () => {
+    profileIs(aProfile([kubernetes, docker]));
+    const { at, active, eventually } = await opened();
+    await eventually(() => expect(active()).toEqual(everythingActive));
+
+    pressOn(at("[data-part=opener]"));
+
+    await eventually(() => expect(active()).toMatchObject(putDown));
+    expect(at("scope-tool")).toBeNull();
+  });
+
+  it("closes a tool the person opened on a press on the page's bar", async () => {
+    profileIs(aProfile([kubernetes, docker]));
+    const { at, region, active, eventually } = await opened();
+    await eventually(() => expect(active()).toEqual(everythingActive));
+    pressOn(region("chip-docker"));
+    await eventually(() => expect(active()).toMatchObject(putDown));
+    pressOn(region("chip-docker"));
+    await eventually(() => expect(textOf(at("scope-tool [data-part=lead]"))).toBe(docker.lead));
+
+    pressOn(at("profile-bar"));
+
+    await eventually(() => expect(active()).toMatchObject(putDown));
+    expect(at("scope-tool")).toBeNull();
+  });
+
+  it("closes on Escape, records no decision, and a press on the question's item reopens it", async () => {
+    profileIs(aProfile([kubernetes, docker]));
+    const { at, region, active, state, eventually } = await opened();
+    await eventually(() => expect(active()).toEqual(everythingActive));
+    const activated = state();
+
+    document.body.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+
+    await eventually(() => expect(active()).toMatchObject(putDown));
+    expect(at("scope-tool")).toBeNull();
+    expect(intakeRequests().filter((each) => each.address.endsWith("/answer"))).toEqual([]);
+
+    pressOn(region("chip-k8s"));
+
+    await eventually(() => expect(state()).toEqual(activated));
+  });
+
+  it("keeps the tool on a press on a row of the tool, in the composer and on the lifted region", async () => {
+    profileIs(aProfile([kubernetes, docker]));
+    const { at, all, region, active, eventually } = await opened();
+    await eventually(() => expect(active()).toEqual(everythingActive));
+
+    pressOn(all("[data-action=alt]")[1]);
+    pressOn(at("[data-part=composer]"));
+    pressOn(region("chip-k8s"));
+
+    await eventually(() =>
+      expect(all("[data-action=alt]")[1]?.getAttribute("aria-pressed")).toBe("true"),
+    );
+    expect(active()).toEqual(everythingActive);
+    expect(textOf(at("scope-tool [data-part=lead]"))).toBe(kubernetes.lead);
   });
 });
