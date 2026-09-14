@@ -44,7 +44,9 @@ test("the opening lands on a first visit, and a reload shows it once", async ({ 
   await expect(page.locator("profile-assistant")).toHaveAttribute("data-guide", "done");
   const landed = (await opening.textContent())?.trim() ?? "";
 
-  const first = (await (await page.request.get("/api/conversations/profile")).json()) as Conversation;
+  const first = (await (
+    await page.request.get("/api/conversations/profile")
+  ).json()) as Conversation;
   expect(first.entries).toHaveLength(1);
 
   await page.reload();
@@ -52,7 +54,9 @@ test("the opening lands on a first visit, and a reload shows it once", async ({ 
   await expect(opening).toHaveText(landed);
   await expect(page.getByText(landed, { exact: true })).toHaveCount(1);
 
-  const again = (await (await page.request.get("/api/conversations/profile")).json()) as Conversation;
+  const again = (await (
+    await page.request.get("/api/conversations/profile")
+  ).json()) as Conversation;
   expect(again.id).toBe(first.id);
   expect(again.entries).toHaveLength(1);
 });

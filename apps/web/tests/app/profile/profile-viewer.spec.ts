@@ -443,7 +443,9 @@ describe("the assistant's conversation (agent-consolidation SL2, S2.3)", () => {
   it("opens the profile's conversation and draws what it holds", async () => {
     profileIs(aFullProfile());
     conversationIs([
-      entryOf(1, [{ kind: "text", text: "Words only the stored conversation holds.", scripted: true }]),
+      entryOf(1, [
+        { kind: "text", text: "Words only the stored conversation holds.", scripted: true },
+      ]),
     ]);
     const { page, eventually } = await opened();
 
