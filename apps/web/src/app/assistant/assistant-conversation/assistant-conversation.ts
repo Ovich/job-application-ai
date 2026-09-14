@@ -1,5 +1,7 @@
 import { NgComponentOutlet, NgTemplateOutlet } from "@angular/common";
-import { Component, contentChild, inject, TemplateRef, type Type } from "@angular/core";
+import { Component, computed, contentChild, inject, TemplateRef, type Type } from "@angular/core";
+import { CurrentUser } from "../../auth/current-user";
+import { initialsOf } from "../../auth/session";
 import { UiText } from "../../ui/typography/text/text";
 import { AssistantCore, type Entry } from "../assistant-core";
 import { ASSISTANT_PARTS } from "../provide-assistant";
@@ -22,8 +24,13 @@ type Part = Entry["parts"][number];
  * opening is still drawn once, in its place. With none given, entry 1 is drawn like
  * every other.
  *
- * No inputs and no outputs: it reads the core and the parts it is given by injection,
- * and holds no call of its own.
+ * **Who wrote an entry is where it sits** (`S4.7`, spec `H26`): what the assistant writes,
+ * its streaming reply and its records included, takes the column's full width behind its
+ * avatar; what the person writes, and the parts of their own tool use, sits on the right at
+ * most 70% wide, the components library's `.me` bubble, behind their initials.
+ *
+ * No inputs and no outputs: it reads the core, the person signed in and the parts it is
+ * given by injection, and holds no call of its own.
  */
 @Component({
   selector: "assistant-conversation",
@@ -33,6 +40,8 @@ type Part = Entry["parts"][number];
 })
 export class AssistantConversation {
   private readonly core = inject(AssistantCore);
+
+  private readonly currentUser = inject(CurrentUser);
 
   private readonly provided = inject(ASSISTANT_PARTS, { optional: true }) ?? [];
 
@@ -46,6 +55,12 @@ export class AssistantConversation {
 
   /** The concrete assistant's own drawing of the opening, when it gives one. */
   protected readonly opening = contentChild(TemplateRef);
+
+  /**
+   * The person's avatar on what they write (`S4.7`): their initials, as the account button
+   * shows them.
+   */
+  protected readonly initials = computed(() => initialsOf(this.currentUser.person()?.name ?? ""));
 
   /** The words of a `text` part. */
   protected textOf(part: Part): string {
