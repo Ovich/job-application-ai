@@ -101,9 +101,12 @@ const everyCase = (): Map<string, RecordedCase> => {
   return held;
 };
 
-/** The cases this module answers, sorted, for the 404's body and for a test's own listing. */
+/** The cases this module answers, sorted, for a test's own listing. */
 export const casesHeld = (): string[] => [...everyCase().keys()].sort();
 
-/** The case asked for, or nothing. Nothing is a 404; it is never a call and never a guess. */
+/**
+ * The case asked for, or nothing. Nothing is the placeholder answer (`ID166`); it is
+ * never a call and never a guess.
+ */
 export const caseNamed = (name: string | null | undefined): RecordedCase | undefined =>
   name === null || name === undefined ? undefined : everyCase().get(name);
