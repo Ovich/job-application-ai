@@ -29,6 +29,13 @@
       "when": 1789229551095,
       "tag": "0003_the_questions_and_the_rules",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1789381066489,
+      "tag": "0004_a_conversation_and_its_entries",
+      "breakpoints": true
     }
   ]
 }

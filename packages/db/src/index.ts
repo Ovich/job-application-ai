@@ -18,4 +18,5 @@
  * package is a name that was not reused.
  */
 export * from "./auth-schema";
+export * from "./parts";
 export * from "./schema";

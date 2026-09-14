@@ -4,6 +4,7 @@ import {
   boolean,
   check,
   integer,
+  jsonb,
   pgEnum,
   pgTable,
   text,
@@ -11,6 +12,7 @@ import {
   unique,
 } from "drizzle-orm/pg-core";
 import { user } from "./auth-schema";
+import type { Part } from "./parts";
 
 /**
  * The database schema: every table the product has, and the single source of truth for
@@ -346,3 +348,61 @@ export type QuestionKind = (typeof questionKind.enumValues)[number];
 export type QuestionState = (typeof questionState.enumValues)[number];
 export type RuleKind = (typeof ruleKind.enumValues)[number];
 export type RuleSource = (typeof ruleSource.enumValues)[number];
+
+/**
+ * A conversation: one person's history with one assistant, about an optional subject
+ * (`ID160`, the spec's *The conversation*). Every assistant's entries live in these two
+ * tables, and each assistant reads only its own.
+ *
+ * The unique constraint is what makes "coming back to the same subject opens the same
+ * conversation" the database's answer, and `nulls not distinct` is what makes it hold
+ * for an assistant with no subject: without it two `null` subjects are two values, and
+ * two opens racing would each write a conversation.
+ */
+export const conversationAuthor = pgEnum("conversation_author", ["person", "assistant", "tool"]);
+
+export const conversation = pgTable(
+  "conversation",
+  {
+    id: text("id").primaryKey(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    assistant: text("assistant").notNull(),
+    subject: text("subject"),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+  },
+  (table) => [
+    unique("conversation_user_assistant_subject")
+      .on(table.userId, table.assistant, table.subject)
+      .nullsNotDistinct(),
+  ],
+);
+
+/**
+ * One turn of a conversation: who wrote it, where it sits, and its parts.
+ *
+ * **`parts` is the schema's one document column** (`ID160`, within foundation `F16`'s
+ * boundary, which amends `F8` for it alone): written once, read whole, never filtered
+ * or joined on. A part's shape differs by kind and grows by slice, and a table per kind
+ * would be a migration per part for rows nothing ever queries into.
+ */
+export const conversationEntry = pgTable(
+  "conversation_entry",
+  {
+    id: text("id").primaryKey(),
+    conversationId: text("conversation_id")
+      .notNull()
+      .references(() => conversation.id, { onDelete: "cascade" }),
+    position: integer("position").notNull(),
+    author: conversationAuthor("author").notNull(),
+    parts: jsonb("parts").$type<Part[]>().notNull(),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+  },
+  (table) => [unique("conversation_entry_position").on(table.conversationId, table.position)],
+);
+
+/** The row shapes of a conversation, named once, inferred as the rest are. */
+export type ConversationRow = typeof conversation.$inferSelect;
+export type ConversationEntryRow = typeof conversationEntry.$inferSelect;
+export type ConversationAuthor = (typeof conversationAuthor.enumValues)[number];
