@@ -444,6 +444,8 @@ describe("a free message (US2, SL3)", () => {
       ).json()) as { experience: Item[] };
       const item = profile.experience.find((each) => each.lines.length >= 2);
       if (item === undefined) throw new Error("the reading made no post with two lines");
+      // The reading asked the model itself; only what the message asks is this case's.
+      forgetRequests();
       return { person, item };
     };
 
