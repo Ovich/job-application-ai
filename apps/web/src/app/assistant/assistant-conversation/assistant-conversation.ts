@@ -38,6 +38,12 @@ export class AssistantConversation {
 
   protected readonly entries = this.core.entries;
 
+  /** The reply streaming now, drawn as a stored reply is drawn once it has landed. */
+  protected readonly replying = this.core.replying;
+
+  /** What went wrong, in one sentence. */
+  protected readonly failure = this.core.failure;
+
   /** The concrete assistant's own drawing of the opening, when it gives one. */
   protected readonly opening = contentChild(TemplateRef);
 
