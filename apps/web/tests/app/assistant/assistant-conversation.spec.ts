@@ -1,10 +1,11 @@
 import { TestBed } from "@angular/core/testing";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { AssistantConversation } from "../../../src/app/assistant/assistant-conversation/assistant-conversation";
 import { AssistantCore } from "../../../src/app/assistant/assistant-core";
 import { provideAssistant } from "../../../src/app/assistant/provide-assistant";
-import { conversationIs, type Entry, entryOf, resetIntake } from "../../support/intake";
-import { reset } from "../../support/session";
+import { CurrentUser } from "../../../src/app/auth/current-user";
+import { conversationIs, type Entry, entryOf, resetIntake, theReply } from "../../support/intake";
+import { reset, signedInAs } from "../../support/session";
 
 /**
  * Seam W: `AssistantConversation`, rendered with the core a screen provides (`S2.3`,
@@ -61,5 +62,80 @@ describe("drawing the entries", () => {
     expect(textOf(element)).toContain("Here is what I would change.");
     expect(textOf(element)).toContain("This part cannot be shown here.");
     expect(textOf(element)).not.toContain("Ran the services");
+  });
+});
+
+/**
+ * Which side an entry sits on, as a person sees it (`S4.7`, spec `H26`): pushed to the right
+ * edge or not, and how wide it may grow. The test runtime lays nothing out, so the side is
+ * read from the utilities that place it.
+ */
+const sideOf = (entry: Element | null | undefined) => {
+  const classes = Array.from(entry?.classList ?? []);
+  return {
+    right: classes.includes("ml-auto"),
+    width:
+      classes.find((each) => each.startsWith("max-w-")) ??
+      (classes.includes("w-full") ? "full" : "none"),
+  };
+};
+
+const avatarOf = (entry: Element | null | undefined): string =>
+  textOf(entry?.querySelector("[data-part=avatar]"));
+
+describe("who writes what (S4.7)", () => {
+  beforeEach(async () => {
+    signedInAs({ name: "Stefan Teofanovic", email: "stefan@example.com", providers: ["google"] });
+    await TestBed.inject(CurrentUser).refresh();
+  });
+
+  it("draws what the assistant writes full width, behind its own avatar", async () => {
+    const element = await rendered([
+      entryOf(1, [{ kind: "text", text: "I read your 2 documents.", scripted: true }]),
+      entryOf(2, [{ kind: "text", text: "I shortened it." }]),
+    ]);
+
+    const entry = element.querySelectorAll("[data-entry]")[1];
+    expect(sideOf(entry)).toEqual({ right: false, width: "full" });
+    expect(avatarOf(entry)).toBe("A");
+  });
+
+  it("draws what the person writes on the right, at most 70% wide, behind their initials", async () => {
+    const element = await rendered([
+      entryOf(1, [{ kind: "text", text: "I read your 2 documents.", scripted: true }]),
+      entryOf(2, [{ kind: "text", text: "Shorten the second line." }], "person"),
+    ]);
+
+    const entry = element.querySelectorAll("[data-entry]")[1];
+    expect(sideOf(entry)).toEqual({ right: true, width: "max-w-[70%]" });
+    expect(avatarOf(entry)).toBe("ST");
+  });
+
+  it("draws the reply as it streams full width, as the assistant's", async () => {
+    conversationIs([
+      entryOf(1, [{ kind: "text", text: "I read your 2 documents.", scripted: true }]),
+    ]);
+    const core = TestBed.inject(AssistantCore);
+    await core.open();
+    const fixture = TestBed.createComponent(AssistantConversation);
+    const element = fixture.nativeElement as HTMLElement;
+    const posting = core.post("Shorten the second line.");
+    theReply.says({
+      kind: "entry",
+      entry: entryOf(2, [{ kind: "text", text: "Shorten the second line." }], "person"),
+    });
+    theReply.says({ kind: "text", text: "I will shorten" });
+
+    await vi.waitFor(async () => {
+      await fixture.whenStable();
+      expect(element.querySelector("[data-part=replying]")).not.toBeNull();
+    });
+    const replying = element.querySelector("[data-part=replying]")?.closest("[data-entry]");
+    expect(sideOf(replying)).toEqual({ right: false, width: "full" });
+    const person = element.querySelectorAll("[data-entry]")[1];
+    expect(sideOf(person)).toEqual({ right: true, width: "max-w-[70%]" });
+
+    theReply.ends();
+    await posting;
   });
 });
