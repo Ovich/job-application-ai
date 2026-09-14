@@ -1,8 +1,14 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { app } from "../../../src/app";
 import { casesHeld } from "../../../src/lib/mock";
 import { withCases } from "../../support/ai";
-import { anthropicWhole, openAiWhole } from "../../support/envelopes";
+import {
+  anthropicEvent,
+  anthropicWhole,
+  framesOf,
+  openAiChunk,
+  openAiWhole,
+} from "../../support/envelopes";
 
 /**
  * Seam B: the mock's router, reached the way HTTP reaches it, through the application's
@@ -75,32 +81,35 @@ describe("a recorded case, whole", () => {
 });
 
 /**
- * A miss is a failure, never a call and never an invented answer (ID113). The body has
- * to say enough to fix it without opening the loader: the case that was asked for, and
- * the cases that are there.
+ * A miss answers the placeholder `No pre generated text`, whole or streamed, in either
+ * envelope (`ID166`, amending `ID113`): never a guess at another case, and never a call.
+ * A structured call still fails on it, because the placeholder is not JSON. What the
+ * answer no longer says, the log does: one line naming the case asked for (`ID198`).
  */
-describe("a case nobody recorded", () => {
-  it("answers 404, naming the case asked for and listing the cases held", async () => {
-    const cases = withCases(recorded);
-    try {
-      const answer = await askFor(
-        "/chat/completions",
-        { model: "m", messages: [] },
-        { "X-Jobapp-Case": "intake.read:no-such-document" },
-      );
+describe("a case nobody recorded (ID166)", () => {
+  const placeholder = "No pre generated text";
+  const missed = { "X-Jobapp-Case": "intake.read:no-such-document" };
 
-      expect(answer.status).toBe(404);
-      const body = (await answer.json()) as { error: string; case: string; held: string[] };
-      expect(body.case).toBe("intake.read:no-such-document");
-      expect(body.held).toEqual([cvFr]);
-      expect(body.error).toMatch(/intake\.read:no-such-document/);
+  it("answers the placeholder in the OpenAI envelope, and logs the case asked for", async () => {
+    const cases = withCases(recorded);
+    const logged = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      const answer = await askFor("/chat/completions", { model: "m", messages: [] }, missed);
+
+      expect(answer.status).toBe(200);
+      const body = openAiWhole.parse(await answer.json());
+      expect(body.choices[0]?.message.content).toBe(placeholder);
+      expect(logged).toHaveBeenCalledTimes(1);
+      expect(String(logged.mock.calls[0]?.[0])).toMatch(/intake\.read:no-such-document/);
     } finally {
+      logged.mockRestore();
       cases.dispose();
     }
   });
 
-  it("answers 404 when no case is named at all, rather than choosing one", async () => {
+  it("answers the placeholder when no case is named at all, rather than choosing one", async () => {
     const cases = withCases(recorded);
+    const logged = vi.spyOn(console, "warn").mockImplementation(() => {});
     try {
       const answer = await app.request("/mock/v1/chat/completions", {
         method: "POST",
@@ -108,9 +117,67 @@ describe("a case nobody recorded", () => {
         body: JSON.stringify({ model: "m", messages: [] }),
       });
 
-      expect(answer.status).toBe(404);
-      expect((await answer.json()) as { case: unknown }).toMatchObject({ case: null });
+      expect(answer.status).toBe(200);
+      expect(openAiWhole.parse(await answer.json()).choices[0]?.message.content).toBe(placeholder);
     } finally {
+      logged.mockRestore();
+      cases.dispose();
+    }
+  });
+
+  it("answers the placeholder in Anthropic's envelope", async () => {
+    const cases = withCases(recorded);
+    const logged = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      const answer = await askFor(
+        "/messages",
+        { model: "m", messages: [], max_tokens: 100 },
+        missed,
+      );
+
+      expect(answer.status).toBe(200);
+      expect(anthropicWhole.parse(await answer.json()).content[0]?.text).toBe(placeholder);
+    } finally {
+      logged.mockRestore();
+      cases.dispose();
+    }
+  });
+
+  it("streams the placeholder in both envelopes, the pieces joined equal to it", async () => {
+    const cases = withCases(recorded);
+    const logged = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      const streamed = { "X-Jobapp-Mock-Pace": "tps=1000;chunk=1", ...missed };
+      const openAi = await askFor(
+        "/chat/completions",
+        { model: "m", messages: [], stream: true },
+        streamed,
+      );
+      const anthropic = await askFor(
+        "/messages",
+        { model: "m", messages: [], max_tokens: 100, stream: true },
+        streamed,
+      );
+
+      expect(openAi.status).toBe(200);
+      expect(anthropic.status).toBe(200);
+      const chunks = framesOf(await openAi.text());
+      expect(chunks.at(-1)).toEqual({ data: "[DONE]" });
+      expect(
+        chunks
+          .slice(0, -1)
+          .map((frame) => openAiChunk.parse(JSON.parse(frame.data)).choices[0]?.delta.content ?? "")
+          .join(""),
+      ).toBe(placeholder);
+      expect(
+        framesOf(await anthropic.text())
+          .map((frame) => anthropicEvent.parse(JSON.parse(frame.data)))
+          .filter((event) => event.type === "content_block_delta")
+          .map((event) => event.delta.text)
+          .join(""),
+      ).toBe(placeholder);
+    } finally {
+      logged.mockRestore();
       cases.dispose();
     }
   });
