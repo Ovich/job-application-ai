@@ -102,15 +102,22 @@ export class AssistantCore {
    * the stream ends, done or error.
    *
    * **A post while one is on its way is refused and sends nothing.**
+   *
+   * With `about`, the words are about an item of the profile or one of its lines
+   * (agent-consolidation `S8.7`, `ID233`): the API names where it is and stores it with them.
    */
-  public async post(text: string): Promise<void> {
+  public async post(text: string, about?: { itemId: string; lineId?: string }): Promise<void> {
     if (this.posting) return;
     this.posting = true;
     this.refused.set(null);
     try {
       const answer = await api.conversations[":assistant"].messages.$post({
         param: { assistant: this.assistant.name },
-        json: { text, ...(this.subject === undefined ? {} : { subject: this.subject }) },
+        json: {
+          text,
+          ...(this.subject === undefined ? {} : { subject: this.subject }),
+          ...(about === undefined ? {} : { about }),
+        },
       });
       if (!answer.ok || answer.body === null) {
         const said = (await answer.json().catch(() => ({}))) as { error?: string };

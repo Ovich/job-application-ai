@@ -17,6 +17,7 @@ import { api } from "../../lib/api";
 import { UiModal } from "../../ui/modal/modal";
 import { UiSpinner } from "../../ui/spinner/spinner";
 import { UiText } from "../../ui/typography/text/text";
+import { AboutPart } from "../parts/about-part/about-part";
 import { ProfileEditPart } from "../parts/profile-edit-part/profile-edit-part";
 import { QuestionAnsweredPart } from "../parts/question-answered-part/question-answered-part";
 import { QuestionSkippedPart } from "../parts/question-skipped-part/question-skipped-part";
@@ -64,6 +65,7 @@ type Item = Answer["experience"][number];
       { kind: "tool_result", component: ProfileEditPart },
       { kind: "question_answered", component: QuestionAnsweredPart },
       { kind: "question_skipped", component: QuestionSkippedPart },
+      { kind: "about", component: AboutPart },
     ],
   }),
   // The layout every assistant screen holds to (the person, 2026-09-12): this fills the
@@ -373,9 +375,10 @@ export class ProfileViewer {
   }
 
   /**
-   * What the person wrote about an item nobody asked about, kept as that item's rule
-   * (`US8`), and the profile read back so the check line shown is the one the database
-   * agrees with. The sheet is left where they opened it: this ending is not the run's.
+   * What the person wrote about an item nobody asked about, or one of its lines: a message
+   * naming it (agent-consolidation `S8.7`, `ID233`), posted through the conversation, whose
+   * reply streams as for any message. No rule is written. The tool closes at once, and the
+   * sheet is left where they opened it: this ending is not the run's.
    */
   protected async clarified(said: {
     itemId: string;
@@ -383,12 +386,11 @@ export class ProfileViewer {
     lineId?: string;
   }): Promise<void> {
     this.viaQuestion = false;
-    await api.intake.items[":id"].rule.$post({
-      param: { id: said.itemId },
-      json: { words: said.words, ...(said.lineId === undefined ? {} : { lineId: said.lineId }) },
-    });
     this.selected.set(null);
-    await this.load();
+    await this.core.post(said.words, {
+      itemId: said.itemId,
+      ...(said.lineId === undefined ? {} : { lineId: said.lineId }),
+    });
   }
 
   /** The person-opened tool, closed with nothing written and nothing moved. */
