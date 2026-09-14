@@ -1,5 +1,5 @@
 import { Hono } from "hono";
-import { openConversation } from "../handlers/conversations";
+import { openConversation, postMessage } from "../handlers/conversations";
 import type { AssistantDefinition } from "../lib/agent";
 
 /**
@@ -7,8 +7,9 @@ import type { AssistantDefinition } from "../lib/agent";
  * proves is written where it is done, in `apps/api/src/handlers/conversations.ts`.
  *
  * Built from the registry of assistant definitions the composition root holds
- * (`ID186`), so `app.ts` decides which assistants exist and this file names none. The
- * POST that adds a message arrives with `SL3`.
+ * (`ID186`), so `app.ts` decides which assistants exist and this file names none.
  */
 export const conversationsOf = (definitions: AssistantDefinition[]) =>
-  new Hono().get("/:assistant", ...openConversation(definitions));
+  new Hono()
+    .get("/:assistant", ...openConversation(definitions))
+    .post("/:assistant/messages", ...postMessage(definitions));

@@ -54,6 +54,28 @@ const runLeaf = z.object({
 });
 
 /**
+ * One entry of a conversation, committed before its frame is sent (`ID170`, `ID196`), as
+ * `GET /api/conversations/:assistant` answers it. A frame a reader holds is an entry the
+ * database already carries, as the `document` leaf's rule has it.
+ */
+const entryLeaf = z.object({
+  kind: z.literal("entry"),
+  entry: z.object({
+    id: z.string(),
+    position: z.number().int().positive(),
+    author: z.enum(["person", "assistant", "tool"]),
+    parts: z.array(z.object({ kind: z.string() }).catchall(z.unknown())),
+    createdAt: z.string(),
+  }),
+});
+
+/** A message's stream is over, every entry of it committed. */
+const doneLeaf = z.object({ kind: z.literal("done") });
+
+/** A message's stream ended on a failure: one sentence, and nothing half written. */
+const errorLeaf = z.object({ kind: z.literal("error"), message: z.string() });
+
+/**
  * Everything a stream may carry. A discriminated union, so an unknown kind is rejected
  * by the discriminator and a known kind with a missing field by its own shape.
  *
@@ -63,7 +85,14 @@ const runLeaf = z.object({
  * that shape written against a real pipeline. The catalogue version does not move for
  * them: adding a leaf is backwards compatible and changing one is not.
  */
-export const leafSchema = z.discriminatedUnion("kind", [textLeaf, documentLeaf, runLeaf]);
+export const leafSchema = z.discriminatedUnion("kind", [
+  textLeaf,
+  documentLeaf,
+  runLeaf,
+  entryLeaf,
+  doneLeaf,
+  errorLeaf,
+]);
 
 /** One thing a stream can say. Inferred from the catalogue, never listed twice. */
 export type Leaf = z.infer<typeof leafSchema>;
