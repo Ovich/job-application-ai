@@ -162,8 +162,8 @@ describe("the API bundle the deploy ships", () => {
   }, 180_000);
 
   it("ships the mock's answer documents beside the bundle", () => {
-    // The deployed function is given no `AI_BASE_URL`, so it answers itself and reads
-    // these at run time. The zip holds what the step put in `dist/lambda/`, and nothing
+    // The deployed function's `AI_BASE_URL` is its own mock by default, which it answers
+    // in process, reading these at run time. The zip holds what the step put in `dist/lambda/`, and nothing
     // else puts them there.
     expect(existsSync(join(root, "apps/api/src/lib/mock/documents"))).toBe(true);
     expect(bundleStep()).toContain("apps/api/src/lib/mock/documents");
