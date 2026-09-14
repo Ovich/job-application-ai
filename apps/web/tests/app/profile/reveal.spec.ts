@@ -99,6 +99,40 @@ describe("the reveal (criterion 10, rule 4)", () => {
     expect(column.column.scrollTop).toBe(theMiddle);
   });
 
+  it("keeps easing on a fresh column when the observer's first callback lands mid-animation (S8.5, ID230)", async () => {
+    revealInColumn(column.column, column.regionAt(1));
+    vi.advanceTimersByTime(50);
+    const before = column.column.scrollTop;
+    expect(before).toBeGreaterThan(0);
+    expect(before).toBeLessThan(theMiddle);
+
+    // The first callback a `ResizeObserver` delivers, right after it starts watching.
+    column.resizes();
+
+    const offsets = [column.column.scrollTop];
+    for (let frame = 0; frame < 5; frame += 1) {
+      vi.advanceTimersByTime(25);
+      offsets.push(column.column.scrollTop);
+    }
+    expect(offsets.every((offset) => offset < theMiddle)).toBe(true);
+    expect(offsets.at(-1)).toBeGreaterThan(before);
+
+    vi.advanceTimersByTime(100);
+    expect(column.column.scrollTop).toBe(theMiddle);
+  });
+
+  it("still redoes the placement when the column resizes after that animation (S8.5, ID230)", async () => {
+    revealInColumn(column.column, column.regionAt(1));
+    vi.advanceTimersByTime(50);
+    column.resizes();
+    vi.advanceTimersByTime(200);
+    column.column.scrollTop = 0;
+
+    column.resizes();
+
+    expect(column.column.scrollTop).toBe(theMiddle);
+  });
+
   it("stops following once the person has scrolled it themselves", async () => {
     revealInColumn(column.column, column.regionAt(1));
     vi.advanceTimersByTime(220);
