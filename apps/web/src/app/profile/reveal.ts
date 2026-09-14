@@ -59,12 +59,17 @@ const watching = (column: HTMLElement): Following => {
   // A runtime with no `ResizeObserver` has no settling to redo, and a reveal that threw
   // here would be a screen that never scrolled — the same trade `instantly()` makes
   // above for a runtime with no `matchMedia`.
+  //
+  // The settling leaves a running reveal alone (`ID230`): an observer delivers its first
+  // callback right after `observe`, so on a fresh column it would otherwise re-place with
+  // no animation and cancel the scroll the first reveal just started.
   const observer =
     typeof ResizeObserver === "undefined"
       ? null
       : new ResizeObserver(() => {
           const state = following.get(column);
           if (state === undefined || state.region === null || state.scrolledByHand) return;
+          if (state.animation !== null) return;
           place(column, state.region, 0);
         });
   observer?.observe(column);
