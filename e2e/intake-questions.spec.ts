@@ -7,8 +7,7 @@ import {
   type TestInfo,
   test,
 } from "@playwright/test";
-import { apiUrl, payloadHashOf } from "./support/api";
-import { forget, type Person, signedIn, type Where } from "./support/session";
+import { deletedThroughApp, forget, type Person, signedIn, type Where } from "./support/session";
 
 /**
  * The person's path through the questions, walked for real (criterion 11, `US5`, `US6`,
@@ -61,23 +60,6 @@ const signedInAt = async (
 };
 
 /**
- * The library's own deletion route, as the web app's client reaches it: the page's origin,
- * which the library demands of a request carrying a session cookie, and the payload hash
- * the deployed origin demands of a body.
- */
-const deleteAccount = async (context: BrowserContext, baseURL: string | undefined) => {
-  const body = "{}";
-  return context.request.post("/api/auth/delete-user", {
-    headers: {
-      origin: new URL(apiUrl(baseURL, "/")).origin,
-      "content-type": "application/json",
-      "x-amz-content-sha256": await payloadHashOf(body),
-    },
-    data: body,
-  });
-};
-
-/**
  * The conversation's newest line is read, not hidden under the tool (agent-consolidation
  * `S8.4b`, `ID227`): the waiting line's box lies inside the visible area of the column that
  * scrolls it, and above the top of the tool dock.
@@ -111,7 +93,7 @@ test.afterAll(async ({}, testInfo) => {
   const statuses: number[] = [];
   for (const context of signedInHere.splice(0)) {
     if (at === "deployed") {
-      statuses.push((await deleteAccount(context, testInfo.project.use.baseURL)).status());
+      statuses.push((await deletedThroughApp(context, at)).status());
     }
     await context.close();
   }

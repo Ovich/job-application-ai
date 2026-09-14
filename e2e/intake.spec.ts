@@ -1,7 +1,6 @@
 import { fileURLToPath } from "node:url";
 import { type Browser, type BrowserContext, expect, type TestInfo, test } from "@playwright/test";
-import { apiUrl, payloadHashOf } from "./support/api";
-import { forget, type Person, signedIn, type Where } from "./support/session";
+import { deletedThroughApp, forget, type Person, signedIn, type Where } from "./support/session";
 
 /**
  * The first half of the person's path, walked for real (criterion 12, `US1`, `US3`).
@@ -47,23 +46,6 @@ const signedInAt = async (
   return context;
 };
 
-/**
- * The library's own deletion route, as the web app's client reaches it: the page's origin,
- * which the library demands of a request carrying a session cookie, and the payload hash
- * the deployed origin demands of a body.
- */
-const deleteAccount = async (context: BrowserContext, baseURL: string | undefined) => {
-  const body = "{}";
-  return context.request.post("/api/auth/delete-user", {
-    headers: {
-      origin: new URL(apiUrl(baseURL, "/")).origin,
-      "content-type": "application/json",
-      "x-amz-content-sha256": await payloadHashOf(body),
-    },
-    data: body,
-  });
-};
-
 // Once, at the end: `forget` lets the database go with it, so a per-test call would leave
 // the next sign-in with no connection at all (`support/session.ts`).
 // biome-ignore lint/correctness/noEmptyPattern: Playwright reads the fixtures a hook asks for off its destructuring pattern, so the argument has to be destructured even when it needs none of them.
@@ -72,7 +54,7 @@ test.afterAll(async ({}, testInfo) => {
   const statuses: number[] = [];
   for (const context of signedInHere.splice(0)) {
     if (at === "deployed") {
-      statuses.push((await deleteAccount(context, testInfo.project.use.baseURL)).status());
+      statuses.push((await deletedThroughApp(context, at)).status());
     }
     await context.close();
   }

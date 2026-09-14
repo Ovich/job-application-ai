@@ -1,7 +1,14 @@
 import { fileURLToPath } from "node:url";
 import { type Browser, type BrowserContext, expect, type TestInfo, test } from "@playwright/test";
-import { apiUrl, payloadHashOf } from "./support/api";
-import { forget, givenAReading, type Person, signedIn, type Where } from "./support/session";
+import { apiUrl } from "./support/api";
+import {
+  deletedThroughApp,
+  forget,
+  givenAReading,
+  type Person,
+  signedIn,
+  type Where,
+} from "./support/session";
 import { postStream } from "./support/stream";
 
 /**
@@ -43,30 +50,13 @@ const signedInAt = async (
   return context;
 };
 
-/**
- * The library's own deletion route, as the web app's client reaches it: the page's origin,
- * which the library demands of a request carrying a session cookie, and the payload hash
- * the deployed origin demands of a body.
- */
-const deleteAccount = async (context: BrowserContext, baseURL: string | undefined) => {
-  const body = "{}";
-  return context.request.post("/api/auth/delete-user", {
-    headers: {
-      origin: new URL(apiUrl(baseURL, "/")).origin,
-      "content-type": "application/json",
-      "x-amz-content-sha256": await payloadHashOf(body),
-    },
-    data: body,
-  });
-};
-
 // biome-ignore lint/correctness/noEmptyPattern: Playwright reads the fixtures a hook asks for off its destructuring pattern, so the argument has to be destructured even when it needs none of them.
 test.afterAll(async ({}, testInfo) => {
   const at = addressOf(testInfo.project.name);
   const statuses: number[] = [];
   for (const context of signedInHere.splice(0)) {
     if (at === "deployed") {
-      statuses.push((await deleteAccount(context, testInfo.project.use.baseURL)).status());
+      statuses.push((await deletedThroughApp(context, at)).status());
     }
     await context.close();
   }
@@ -362,7 +352,7 @@ test.describe("the conversations routes, at this address", () => {
       text: "Forget me.",
     });
 
-    const deleted = await deleteAccount(context, testInfo.project.use.baseURL);
+    const deleted = await deletedThroughApp(context, at);
     expect(deleted.status()).toBe(200);
     await context.close();
 
