@@ -74,6 +74,43 @@ describe("opening the conversation", () => {
   });
 });
 
+/**
+ * Seam B: what the assistant shows it is doing while a use case works on its behalf
+ * (agent-consolidation `S8.3`, `ID217`): a decision being saved has no stream of its own,
+ * so the use case says it.
+ */
+describe("showing an activity (S8.3, ID217)", () => {
+  const opening = entryOf(1, [{ kind: "text", text: "I read your 2 documents." }]);
+
+  it("reads the phrase shown, and nothing once it is taken away", async () => {
+    conversationIs([opening]);
+    const core = coreOf("profile");
+    await core.open();
+
+    core.showActivity("Thinking");
+    expect(core.activity()).toBe("Thinking");
+
+    core.showActivity(null);
+    expect(core.activity()).toBeNull();
+  });
+
+  it("still takes a message's status frames after it, and its end clears them (ID210)", async () => {
+    conversationIs([opening]);
+    const core = coreOf("profile");
+    await core.open();
+    core.showActivity("Thinking");
+
+    const posting = core.post("I ran the services.");
+    theReply.says({ kind: "status", text: "Reading your profile" });
+    await vi.waitFor(() => expect(core.activity()).toBe("Reading your profile"));
+    theReply.says({ kind: "done" });
+    theReply.ends();
+    await posting;
+
+    expect(core.activity()).toBeNull();
+  });
+});
+
 /** Seam D: a free message, as a component reads the core (`SL3`, `US2`, `ID183`). */
 describe("posting a free message (SL3)", () => {
   const opening = entryOf(1, [{ kind: "text", text: "I read your 2 documents." }]);

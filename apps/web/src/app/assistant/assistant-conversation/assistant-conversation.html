@@ -18,7 +18,8 @@
       >
         {{ initials() }}
       </div>
-      <div class="flex min-w-0 flex-col items-end gap-2">
+      <!-- The bubble sits on the right; the words in it read from the left (ID221). -->
+      <div class="flex min-w-0 flex-col items-end gap-2 text-left">
         @for (part of entry.parts; track $index) {
           @if (part.kind === "text") {
             <p
@@ -35,6 +36,10 @@
             />
           }
         }
+        <ng-container
+          [ngTemplateOutlet]="writtenAt"
+          [ngTemplateOutletContext]="{ $implicit: entry.createdAt }"
+        />
       </div>
     </div>
   } @else {
@@ -57,10 +62,41 @@
             />
           }
         }
+        <ng-container
+          [ngTemplateOutlet]="writtenAt"
+          [ngTemplateOutletContext]="{ $implicit: entry.createdAt }"
+        />
       </div>
     </div>
   }
+
+  <!--
+    What the concrete assistant said after this entry and did not store (ID227), in its
+    place in the thread.
+  -->
+  @if (afterEntry(); as drawn) {
+    <ng-container
+      [ngTemplateOutlet]="drawn"
+      [ngTemplateOutletContext]="{ $implicit: $index + 1 }"
+    />
+  }
 }
+
+<!--
+  When an entry was stored (ID220): a phrase that moves on while the page is open, and the
+  full date and time on hover.
+-->
+<ng-template #writtenAt let-createdAt>
+  <time
+    data-part="at"
+    uiText
+    variant="caption"
+    tone="muted"
+    [attr.datetime]="createdAt"
+    [attr.title]="exactlyWhen(createdAt)"
+    >{{ when(createdAt) }}</time
+  >
+</ng-template>
 
 <!-- A part that is not text: the component a provider names, or the placeholder. -->
 <ng-template #other let-part>

@@ -1,0 +1,487 @@
+import { TestBed } from "@angular/core/testing";
+import { provideRouter } from "@angular/router";
+import { RouterTestingHarness } from "@angular/router/testing";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { routes } from "../../../src/app/app.routes";
+import { GUIDE_PACE, type GuidePace } from "../../../src/app/guide/pace";
+import {
+  conversationIs,
+  emptyProfile,
+  entryOf,
+  itemOf,
+  type Profile,
+  profileIs,
+  type Question,
+  questionOf,
+  resetIntake,
+} from "../../support/intake";
+import { reset, signedInAs } from "../../support/session";
+
+/**
+ * Seam A: the profile screen, `ProfileViewer` rendered with `ProfileAssistant` inside it
+ * (agent-consolidation `SL8`, `S8.1`, `S8.2`, `S8.3`; `ID215`, `ID216`, `ID217`, `ID218`,
+ * `ID219`).
+ *
+ * Behind it: the intake's routes and the conversation, stood in for at `fetch`
+ * (`tests/support/intake.ts`); a case that holds or refuses the answer route wraps that
+ * stand-in and puts the suite's own back afterwards, never the platform's (`ID204`). The
+ * guide's pace is zero (`G7`) unless a case steps it to look inside the performance.
+ *
+ * Not past it: the reveal's arithmetic and the scope tool's rows, which have their own
+ * files. What is read is rendered text, `data-guide` and `data-at`, never a field.
+ */
+
+const person = {
+  name: "Stefan Teofanovic",
+  email: "stefan@example.com",
+  providers: ["google" as const],
+};
+
+const textOf = (element: Element | null | undefined): string =>
+  (element?.textContent ?? "").replace(/\s+/g, " ").trim();
+
+const chip = (id: string, label: string) =>
+  itemOf({ id, kind: "entry", title: label, entry: { label, qualifier: null } });
+
+const kubernetes = questionOf({
+  id: "q1",
+  itemId: "chip-k8s",
+  itemTitle: "Kubernetes",
+  lead: "Which was it?",
+});
+
+const docker = questionOf({
+  id: "q2",
+  itemId: "chip-docker",
+  itemTitle: "Docker",
+  lead: "Did you write the Dockerfiles or run the registry?",
+});
+
+/** Five documents read today, and a group of two chips each question can be about. */
+const aProfile = (questions: Question[]): Profile => ({
+  ...emptyProfile,
+  name: "Stefan Teofanovic",
+  documents: 5,
+  readOn: new Date().toISOString(),
+  groups: [
+    itemOf({
+      id: "group-devops",
+      kind: "group",
+      title: "DevOps and cloud",
+      children: [chip("chip-k8s", "Kubernetes"), chip("chip-docker", "Docker")],
+    }),
+  ],
+  questions,
+});
+
+/** The opening the conversation route writes for five documents (`tests/support/intake`). */
+const sentence =
+  "I read your 5 documents. Every fact on the right carries the document it came from, and I wrote nothing that is not in them.";
+const tail =
+  "Some facts say what you did but not what your part was, or two documents disagree. I ask only those. Everything else I could tell from your documents.";
+
+/** A pace at which each message takes a fraction of a second: the whole run can be watched. */
+const stepped: GuidePace = { perMessageMs: 150, firstBeatMs: 0 };
+
+/** A pace so slow the case stands inside the first sentence until it does something. */
+const holding: GuidePace = { perMessageMs: 60_000, firstBeatMs: 0 };
+
+/** The suite's own stand-in for `fetch`, taken before a case wraps it and put back after. */
+let suiteFetch: typeof fetch;
+
+beforeEach(() => {
+  reset();
+  resetIntake();
+  signedInAs(person);
+  TestBed.configureTestingModule({ providers: [provideRouter(routes)] });
+  suiteFetch = globalThis.fetch;
+});
+
+afterEach(() => {
+  vi.stubGlobal("fetch", suiteFetch);
+  reset();
+  resetIntake();
+});
+
+const addressOf = (input: RequestInfo | URL): string =>
+  input instanceof Request ? input.url : input instanceof URL ? input.href : String(input);
+
+/** The answer route answered by `route`; every other request still reaches the stand-in. */
+const answerRouteIs = (
+  route: (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>,
+): void => {
+  vi.stubGlobal("fetch", (input: RequestInfo | URL, init?: RequestInit) =>
+    /^\/api\/intake\/questions\/[^/]+\/answer$/.test(
+      new URL(addressOf(input), "http://localhost").pathname,
+    )
+      ? route(input, init)
+      : suiteFetch(input, init),
+  );
+};
+
+/** Everything a tool's activation turns on, each read on its own. */
+type Active = {
+  label: boolean;
+  path: boolean;
+  choices: boolean;
+  lifted: boolean;
+  dimmed: boolean;
+  revealed: boolean;
+  waiting: boolean;
+};
+
+const nothingActive: Active = {
+  label: false,
+  path: false,
+  choices: false,
+  lifted: false,
+  dimmed: false,
+  revealed: false,
+  waiting: false,
+};
+
+const everythingActive: Active = {
+  label: true,
+  path: true,
+  choices: true,
+  lifted: true,
+  dimmed: true,
+  revealed: true,
+  waiting: true,
+};
+
+const opened = async (pace?: GuidePace) => {
+  if (pace !== undefined) TestBed.overrideProvider(GUIDE_PACE, { useValue: pace });
+  const harness = await RouterTestingHarness.create();
+  await harness.navigateByUrl("/profile");
+  const page = () => harness.routeNativeElement;
+
+  // Every step the sequence names, in the order the host carried them (`G8`), watched from
+  // before the assistant's column exists.
+  const changes: (string | null)[] = [];
+  const watching = new MutationObserver((records) => {
+    for (const record of records) changes.push(record.oldValue);
+  });
+  const viewer = page();
+  if (viewer !== null) {
+    watching.observe(viewer, {
+      subtree: true,
+      attributes: true,
+      attributeFilter: ["data-guide"],
+      attributeOldValue: true,
+    });
+  }
+
+  const eventually = (assert: () => void, timeout = 1000) =>
+    vi.waitFor(
+      () => {
+        harness.detectChanges();
+        assert();
+      },
+      { timeout },
+    );
+  const at = (selector: string) => page()?.querySelector(selector) ?? null;
+  const all = (selector: string) => Array.from(page()?.querySelectorAll(selector) ?? []);
+  const region = (id: string) =>
+    page()?.querySelector<HTMLElement>(`[data-region][data-id="${id}"]`) ?? null;
+  const guide = () => at("profile-assistant")?.getAttribute("data-guide") ?? null;
+  const steps = () => [
+    ...changes.filter((each): each is string => each !== null),
+    ...(guide() === null ? [] : [guide() as string]),
+  ];
+  const active = (): Active => ({
+    label: at("[data-part=what]") !== null,
+    path: textOf(at("composer [data-part=where]")) !== "",
+    choices: all("[data-action=alt]").length > 0,
+    lifted: all("[data-selected=true]").length > 0,
+    dimmed: at("profile-sheet article")?.getAttribute("data-focused") === "true",
+    revealed: at("[data-at]")?.getAttribute("data-at") === "region",
+    waiting: at("[data-part=waiting]") !== null,
+  });
+  /** What a person sees of an active tool, whole, to compare one activation with another. */
+  const state = () => ({
+    label: textOf(at("[data-part=what]")),
+    path: textOf(at("composer [data-part=where]")),
+    lead: textOf(at("scope-tool [data-part=lead]")),
+    choices: all("[data-action=alt]").map((each) => textOf(each)),
+    lifted: all("[data-selected=true]").map((each) => each.getAttribute("data-id")),
+    dimmed: at("profile-sheet article")?.getAttribute("data-focused") ?? null,
+    at: at("[data-at]")?.getAttribute("data-at") ?? null,
+    waiting: textOf(at("[data-part=waiting]")),
+  });
+  const pick = async (row: number) => {
+    (all("[data-action=alt]")[row] as HTMLButtonElement).click();
+    await eventually(() =>
+      expect((at("[data-part=send]") as HTMLButtonElement | null)?.disabled).toBe(false),
+    );
+    (at("[data-part=send]") as HTMLButtonElement).click();
+  };
+
+  await eventually(() => expect(at("profile-sheet")).not.toBeNull());
+  return { harness, at, all, region, guide, steps, active, state, pick, eventually };
+};
+
+describe("a brand-new conversation, performed (S8.1, S8.2)", () => {
+  it("says the opening, shows the card, says the tail and the first opener, in that order, and then activates", async () => {
+    profileIs(aProfile([kubernetes, docker]));
+    const { at, guide, steps, eventually } = await opened();
+
+    await eventually(() => expect(guide()).toBe("done"));
+
+    expect(steps()).toEqual(["opening", "card", "tail", "opener", "activate", "done"]);
+    expect(textOf(at("[data-part=opening]"))).toBe(sentence);
+    expect(textOf(at("[data-part=tail]"))).toBe(tail);
+    expect(textOf(at("[data-part=opener]"))).toBe("First, Kubernetes.");
+    const said = textOf(at("profile-assistant"));
+    expect(said.indexOf(tail)).toBeLessThan(said.indexOf("First, Kubernetes."));
+    // A performed line is timed when it was said (`ID220`).
+    const opener = at("[data-part=opener]")?.closest("[data-msg]");
+    expect(textOf(opener?.querySelector("[data-part=at]"))).toBe("just now");
+  });
+
+  it("holds the composer and the profile still until the last word, then turns everything on in one render", async () => {
+    profileIs(aProfile([kubernetes, docker]));
+    const { harness, guide, active, eventually } = await opened(stepped);
+
+    const seen: ({ guide: string | null } & Active)[] = [];
+    const looking = setInterval(() => {
+      harness.detectChanges();
+      seen.push({ guide: guide(), ...active() });
+    }, 2);
+    await eventually(() => {
+      expect(guide()).toBe("done");
+      expect(active()).toEqual(everythingActive);
+    }, 3000);
+    clearInterval(looking);
+
+    const performing = seen.filter(
+      (each) => each.guide !== null && each.guide !== "activate" && each.guide !== "done",
+    );
+    expect(performing.map((each) => each.guide)).toEqual(
+      expect.arrayContaining(["opening", "tail", "opener"]),
+    );
+    for (const { guide: step, ...flags } of performing) {
+      expect({ step, ...flags }).toEqual({ step, ...nothingActive });
+    }
+    // Never some of it without the rest: what one activation turns on, it turns on at once.
+    for (const { guide: step, ...flags } of seen) {
+      const on = Object.values(flags).filter(Boolean).length;
+      expect({ step, on }).toEqual({ step, on: on === 0 ? 0 : 7 });
+    }
+  });
+
+  it("lands every word and activates the tool at once when the person presses mid-performance (G2)", async () => {
+    profileIs(aProfile([kubernetes, docker]));
+    const { at, guide, active, eventually } = await opened(holding);
+    await eventually(() => expect(textOf(at("[data-part=opening]"))).not.toBe(""));
+    expect(guide()).toBe("opening");
+    expect(textOf(at("[data-part=opening]"))).not.toBe(sentence);
+    expect(active()).toEqual(nothingActive);
+
+    at("profile-assistant")?.dispatchEvent(new Event("pointerdown"));
+
+    await eventually(() => {
+      expect(guide()).toBe("done");
+      expect(active()).toEqual(everythingActive);
+    });
+    expect(textOf(at("[data-part=opening]"))).toBe(sentence);
+    expect(textOf(at("[data-part=tail]"))).toBe(tail);
+    expect(textOf(at("[data-part=opener]"))).toBe("First, Kubernetes.");
+    expect(textOf(at("scope-tool [data-part=lead]"))).toBe(kubernetes.lead);
+  });
+
+  it("shows a conversation already under way at once, the tool active, and performs nothing", async () => {
+    profileIs(aProfile([kubernetes, docker]));
+    conversationIs([
+      entryOf(1, [
+        { kind: "text", text: sentence, scripted: true },
+        { kind: "text", text: tail, scripted: true },
+      ]),
+      entryOf(2, [{ kind: "text", text: "I ran the services." }], "person"),
+    ]);
+    const { at, active, eventually } = await opened(holding);
+
+    await eventually(() => expect(active()).toEqual(everythingActive));
+    expect(at("profile-assistant")?.hasAttribute("data-guide")).toBe(false);
+    expect(textOf(at("[data-part=opening]"))).toBe(sentence);
+    expect(textOf(at("[data-part=opener]"))).toBe("First, Kubernetes.");
+    expect(textOf(at("[data-part=waiting]"))).toContain("Kubernetes");
+  });
+
+  it("gives exactly the state a press on the same item gives, and the dimmed profile pressed puts it down", async () => {
+    profileIs(aProfile([kubernetes, docker]));
+    const { at, region, active, state, eventually } = await opened();
+    await eventually(() => expect(active()).toEqual(everythingActive));
+    const activated = state();
+    expect(activated.label).toBe("Adjusting scope");
+    expect(activated.lifted).toEqual(["chip-k8s"]);
+
+    (at("profile-sheet article") as HTMLElement).click();
+    await eventually(() => expect(at("scope-tool")).toBeNull());
+    expect(at("[data-part=waiting]")).toBeNull();
+
+    region("chip-k8s")?.click();
+    await eventually(() => expect(state()).toEqual(activated));
+  });
+});
+
+describe("the column keeps its thread for the visit (S8.4b, ID227)", () => {
+  const terraform = questionOf({
+    id: "q3",
+    itemId: "chip-terraform",
+    itemTitle: "Terraform",
+    lead: "Did you write the modules or apply them?",
+  });
+
+  const threeChips = (): Profile => {
+    const profile = aProfile([kubernetes, docker, terraform]);
+    return {
+      ...profile,
+      groups: [
+        itemOf({
+          id: "group-devops",
+          kind: "group",
+          title: "DevOps and cloud",
+          children: [
+            chip("chip-k8s", "Kubernetes"),
+            chip("chip-docker", "Docker"),
+            chip("chip-terraform", "Terraform"),
+          ],
+        }),
+      ],
+    };
+  };
+
+  /** What the column reads, top to bottom: each performed line's words, each stored part's kind. */
+  const thread = (all: (selector: string) => Element[]): string[] =>
+    all(
+      "profile-assistant :is([data-part=opening], [data-part=opener], [data-part=ack], [data-part=answered], [data-part=skipped], [data-part=waiting])",
+    ).map((each) => {
+      const part = each.getAttribute("data-part");
+      return part === "opener" || part === "ack" ? textOf(each) : (part ?? "");
+    });
+
+  it("reads every performed line in order after two decisions, and a reload shows only what was stored", async () => {
+    profileIs(threeChips());
+    const { at, all, active, pick, eventually } = await opened();
+    await eventually(() => expect(active()).toEqual(everythingActive));
+
+    await pick(0);
+    await eventually(() => expect(textOf(at("scope-tool [data-part=lead]"))).toBe(docker.lead));
+    (at("[data-action=skip]") as HTMLButtonElement).click();
+    await eventually(() => expect(textOf(at("scope-tool [data-part=lead]"))).toBe(terraform.lead));
+
+    expect(thread(all)).toEqual([
+      "opening",
+      "First, Kubernetes.",
+      "answered",
+      "Noted.",
+      "Next, Docker.",
+      "skipped",
+      "Put aside for later.",
+      "Next, Terraform.",
+      "waiting",
+    ]);
+
+    // A reload keeps nothing in the page: the stored entries come back, the lines said
+    // on the way do not.
+    TestBed.resetTestingModule();
+    TestBed.configureTestingModule({ providers: [provideRouter(routes)] });
+    const again = await opened();
+    await again.eventually(() => expect(again.active()).toEqual(everythingActive));
+    const reloaded = thread(again.all);
+    expect(reloaded.filter((each) => ["opening", "answered", "skipped"].includes(each))).toEqual([
+      "opening",
+      "answered",
+      "skipped",
+    ]);
+    for (const said of ["First, Kubernetes.", "Noted.", "Next, Docker.", "Put aside for later."]) {
+      expect(reloaded).not.toContain(said);
+    }
+  });
+});
+
+describe("between tools (S8.3, ID217, ID219)", () => {
+  it("thinks while the answer is saved, then says Noted., names the next question and activates it", async () => {
+    profileIs(aProfile([kubernetes, docker]));
+    let release = (): void => {};
+    const saving = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    answerRouteIs(async (input, init) => {
+      await saving;
+      return suiteFetch(input, init);
+    });
+    const { at, all, active, pick, eventually } = await opened();
+    await eventually(() => expect(active()).toEqual(everythingActive));
+
+    await pick(0);
+
+    await eventually(() => expect(textOf(at("[data-part=activity]"))).toBe("Thinking"));
+    expect(at("[data-part=ack]")).toBeNull();
+
+    release();
+
+    await eventually(() => expect(textOf(at("scope-tool [data-part=lead]"))).toBe(docker.lead));
+    expect(at("[data-part=activity]")).toBeNull();
+    expect(textOf(at("[data-part=ack]"))).toBe("Noted.");
+    expect(all("[data-part=opener]").map(textOf)).toEqual(["First, Kubernetes.", "Next, Docker."]);
+    const said = textOf(at("profile-assistant"));
+    expect(said.indexOf("Noted.")).toBeLessThan(said.indexOf("Next, Docker."));
+    expect(active()).toEqual(everythingActive);
+    expect(textOf(at("[data-part=waiting]"))).toContain("Docker");
+  });
+
+  it("says Put aside for later. after a skip, names the next question and activates it", async () => {
+    profileIs(aProfile([kubernetes, docker]));
+    const { at, all, active, eventually } = await opened();
+    await eventually(() => expect(active()).toEqual(everythingActive));
+
+    (at("[data-action=skip]") as HTMLButtonElement).click();
+
+    await eventually(() => expect(textOf(at("scope-tool [data-part=lead]"))).toBe(docker.lead));
+    expect(textOf(at("[data-part=ack]"))).toBe("Put aside for later.");
+    expect(all("[data-part=opener]").map(textOf)).toEqual(["First, Kubernetes.", "Next, Docker."]);
+    expect(active()).toEqual(everythingActive);
+  });
+
+  it("activates nothing, draws no waiting line and says That is all I needed. after the last decision", async () => {
+    profileIs(aProfile([kubernetes]));
+    const { at, all, active, pick, eventually } = await opened();
+    await eventually(() => expect(active()).toEqual(everythingActive));
+
+    await pick(0);
+
+    await eventually(() =>
+      expect(textOf(at("profile-assistant"))).toContain("That is all I needed."),
+    );
+    expect(at("scope-tool")).toBeNull();
+    expect(at("[data-part=waiting]")).toBeNull();
+    expect(textOf(at("[data-part=ack]"))).toBe("Noted.");
+    // The first opener stays for the visit (`ID227`); no next one is said after the last.
+    expect(all("[data-part=opener]").map(textOf)).toEqual(["First, Kubernetes."]);
+    expect(active()).toMatchObject({ label: false, choices: false, lifted: false, waiting: false });
+  });
+
+  it("keeps the tool active with the pick, and says so, when the answer is not saved", async () => {
+    profileIs(aProfile([kubernetes, docker]));
+    answerRouteIs(
+      async () =>
+        new Response(JSON.stringify({ error: "the answer could not be kept" }), {
+          status: 500,
+          headers: { "content-type": "application/json" },
+        }),
+    );
+    const { at, all, active, pick, eventually } = await opened();
+    await eventually(() => expect(active()).toEqual(everythingActive));
+
+    await pick(0);
+
+    await eventually(() => expect(at("[data-part=save-failure]")).not.toBeNull());
+    expect(at("[data-part=activity]")).toBeNull();
+    expect(at("[data-part=ack]")).toBeNull();
+    expect(textOf(at("scope-tool [data-part=lead]"))).toBe(kubernetes.lead);
+    expect(all("[data-action=alt]")[0]?.getAttribute("aria-pressed")).toBe("true");
+    expect(active()).toEqual(everythingActive);
+  });
+});

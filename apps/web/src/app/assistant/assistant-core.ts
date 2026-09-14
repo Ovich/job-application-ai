@@ -59,6 +59,15 @@ export class AssistantCore {
    */
   public readonly activity = this.doing.asReadonly();
 
+  /**
+   * Says what the assistant is doing while the use case works on its behalf, or nothing
+   * (`ID217`): a decision being saved has no stream to say it. A message posted after it
+   * still sets and clears `activity` from its own stream, whatever was shown before.
+   */
+  public showActivity(phrase: string | null): void {
+    this.doing.set(phrase);
+  }
+
   /** Opens this assistant's conversation, about a subject or none, creating it if absent. */
   public async open(subject?: string): Promise<void> {
     this.subject = subject;

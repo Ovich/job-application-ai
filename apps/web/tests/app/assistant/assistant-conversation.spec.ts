@@ -2,8 +2,10 @@ import { TestBed } from "@angular/core/testing";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { AssistantConversation } from "../../../src/app/assistant/assistant-conversation/assistant-conversation";
 import { AssistantCore } from "../../../src/app/assistant/assistant-core";
-import { provideAssistant } from "../../../src/app/assistant/provide-assistant";
+import { ASSISTANT_PARTS, provideAssistant } from "../../../src/app/assistant/provide-assistant";
 import { CurrentUser } from "../../../src/app/auth/current-user";
+import { QuestionAnsweredPart } from "../../../src/app/profile/parts/question-answered-part/question-answered-part";
+import { QuestionSkippedPart } from "../../../src/app/profile/parts/question-skipped-part/question-skipped-part";
 import { conversationIs, type Entry, entryOf, resetIntake, theReply } from "../../support/intake";
 import { reset, signedInAs } from "../../support/session";
 
@@ -153,6 +155,118 @@ describe("what the agent is doing (S7.5, H27)", () => {
     await settled(() => expect(activity()).toBeNull());
     theReply.ends();
     await posting;
+  });
+});
+
+/**
+ * Seam E: when each message was written (agent-consolidation `S8.3b`, `ID220`). The clock
+ * is stood in so a minute can pass without a case waiting one: only `Date` and the
+ * minute's interval are faked, and everything Angular schedules keeps the real timers.
+ */
+describe("when each message was written (S8.3b, ID220)", () => {
+  const written = new Date(2026, 8, 14, 9, 0, 0);
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  const at = (position: number, author: Entry["author"] = "assistant"): Entry => ({
+    ...entryOf(position, [{ kind: "text", text: `Message ${position}.` }], author),
+    createdAt: written.toISOString(),
+  });
+
+  it("shows each entry's time as a phrase, and the full date and time on hover", async () => {
+    vi.useFakeTimers({ toFake: ["Date", "setInterval", "clearInterval"] });
+    vi.setSystemTime(new Date(written.getTime() + 5 * 60 * 1000));
+
+    const element = await rendered([at(1), at(2, "person"), at(3)]);
+
+    const times = Array.from(element.querySelectorAll("[data-entry]")).map((entry) =>
+      entry.querySelector("[data-part=at]"),
+    );
+    expect(times.map((time) => textOf(time))).toEqual(["5 min ago", "5 min ago", "5 min ago"]);
+    for (const time of times) {
+      expect(time?.getAttribute("title")).toBe("14 September 2026, 09:00");
+    }
+  });
+
+  it("moves the phrase on when a minute passes, with no reload", async () => {
+    vi.useFakeTimers({ toFake: ["Date", "setInterval", "clearInterval"] });
+    vi.setSystemTime(new Date(written.getTime() + 30 * 1000));
+    conversationIs([at(1), at(2, "person")]);
+    await TestBed.inject(AssistantCore).open();
+    const fixture = TestBed.createComponent(AssistantConversation);
+    await fixture.whenStable();
+    const element = fixture.nativeElement as HTMLElement;
+    const phrases = () =>
+      Array.from(element.querySelectorAll("[data-entry] [data-part=at]")).map((each) =>
+        textOf(each),
+      );
+    expect(phrases()).toEqual(["just now", "just now"]);
+
+    vi.advanceTimersByTime(60 * 1000);
+    await fixture.whenStable();
+
+    expect(phrases()).toEqual(["1 min ago", "1 min ago"]);
+  });
+});
+
+/**
+ * Inside the person's bubble the text reads from the left (agent-consolidation `S8.3b`,
+ * `ID221`); only the bubble sits on the right. Read from the utilities that place it, as
+ * the side is above.
+ */
+describe("the person's words read from the left, in a bubble on the right (S8.3b, ID221)", () => {
+  const asked = {
+    lead: "Which was it?",
+    where: "What you work with · DevOps and cloud",
+    options: [{ id: "q1-1", label: "Ran the cluster", hint: "nodes, upgrades, access" }],
+  };
+
+  /** Every class in the entry and under it. */
+  const classesIn = (entry: Element | null | undefined): string[] =>
+    [entry, ...Array.from(entry?.querySelectorAll("*") ?? [])].flatMap((each) =>
+      Array.from(each?.classList ?? []),
+    );
+
+  const personEntry = (element: HTMLElement) =>
+    element.querySelector("[data-entry][data-msg=person]");
+
+  it("sits a text entry on the right and aligns its text to the left", async () => {
+    const element = await rendered([
+      entryOf(1, [{ kind: "text", text: "I read your 2 documents.", scripted: true }]),
+      entryOf(2, [{ kind: "text", text: "Shorten the second line." }], "person"),
+    ]);
+
+    const entry = personEntry(element);
+    expect(sideOf(entry)).toEqual({ right: true, width: "max-w-[70%]" });
+    expect(classesIn(entry)).toContain("text-left");
+    expect(classesIn(entry)).not.toContain("text-right");
+  });
+
+  it.each([
+    [
+      "an answered part",
+      { kind: "question_answered", ...asked, picked: "q1-1", words: "three clusters" },
+    ],
+    ["a skipped part", { kind: "question_skipped", ...asked }],
+  ])("aligns %s the same way", async (_, part) => {
+    TestBed.overrideProvider(ASSISTANT_PARTS, {
+      useValue: [
+        { kind: "question_answered", component: QuestionAnsweredPart },
+        { kind: "question_skipped", component: QuestionSkippedPart },
+      ],
+    });
+    const element = await rendered([
+      entryOf(1, [{ kind: "text", text: "I read your 2 documents.", scripted: true }]),
+      entryOf(2, [part], "person"),
+    ]);
+
+    const entry = personEntry(element);
+    expect(sideOf(entry)).toEqual({ right: true, width: "max-w-[70%]" });
+    expect(textOf(entry)).toContain("Which was it?");
+    expect(classesIn(entry)).toContain("text-left");
+    expect(classesIn(entry)).not.toContain("text-right");
   });
 });
 

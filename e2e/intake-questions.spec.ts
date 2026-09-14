@@ -1,5 +1,5 @@
 import { fileURLToPath } from "node:url";
-import { expect, test } from "@playwright/test";
+import { expect, type Page, test } from "@playwright/test";
 import { forget, signedIn } from "./support/session";
 
 /**
@@ -30,6 +30,34 @@ const three = [
 
 const who = { name: "Stefan Teofanovic", email: "questions-end-to-end@example.com" };
 
+/**
+ * The conversation's newest line is read, not hidden under the tool (agent-consolidation
+ * `S8.4b`, `ID227`): the waiting line's box lies inside the visible area of the column that
+ * scrolls it, and above the top of the tool dock.
+ */
+const waitingLineInView = async (page: Page): Promise<void> => {
+  const waiting = page.locator("[data-part=waiting]");
+  await expect(waiting).toBeVisible({ timeout: 15_000 });
+  await expect
+    .poll(() =>
+      waiting.evaluate((line) => {
+        let column = line.parentElement;
+        while (column !== null && !/(auto|scroll)/.test(getComputedStyle(column).overflowY)) {
+          column = column.parentElement;
+        }
+        const dock = document.querySelector("[data-part=dock]");
+        if (column === null || dock === null) return "no scrolling column or no dock";
+        const its = line.getBoundingClientRect();
+        const seen = column.getBoundingClientRect();
+        const top = dock.getBoundingClientRect().top;
+        return its.top >= seen.top && its.bottom <= seen.bottom && its.bottom <= top
+          ? "in view above the dock"
+          : `line ${its.top}..${its.bottom}, column ${seen.top}..${seen.bottom}, dock top ${top}`;
+      }),
+    )
+    .toBe("in view above the dock");
+};
+
 test.afterAll(async () => {
   await forget();
 });
@@ -55,9 +83,33 @@ test("the assistant asks, the answers become rules, and a reload still has them"
   await page.goto("/profile");
   await expect(page.locator("profile-sheet")).toBeVisible();
 
+  // The assistant writes first and only then activates its tool (agent-consolidation
+  // `S8.1`, `S8.2`): watched frame by frame in the page, no choice is offered while the
+  // host's `data-guide` names a step still being performed.
+  const offeredWhilePerforming = await page.evaluate(
+    () =>
+      new Promise<number>((resolve) => {
+        let offered = 0;
+        const look = (): void => {
+          const step = document.querySelector("profile-assistant")?.getAttribute("data-guide");
+          if (step === "done") {
+            resolve(offered);
+            return;
+          }
+          if (typeof step === "string" && step !== "activate") {
+            offered += document.querySelectorAll("[data-action=alt]").length;
+          }
+          requestAnimationFrame(look);
+        };
+        look();
+      }),
+  );
+  expect(offeredWhilePerforming).toBe(0);
+
   // The first question is open with no click at all, and the count is a count.
   const count = page.locator("[data-part=count]");
   await expect(page.locator("scope-tool")).toBeVisible();
+  await waitingLineInView(page);
   await expect(count).toHaveText(/^0 of \d+ answered$/);
   await expect(page.locator("body")).not.toContainText("%");
 
@@ -76,6 +128,10 @@ test("the assistant asks, the answers become rules, and a reload still has them"
   await expect(firstRow).toHaveAttribute("aria-pressed", "true");
   await page.locator("[data-part=send]").click();
   await expect(count).toHaveText(/^1 of \d+ answered$/);
+  // The assistant acknowledges, names the next question and activates its tool, with the
+  // line saying it waits for the person (`S8.3`, `ID218`).
+  await waitingLineInView(page);
+  await expect(page.locator("[data-action=alt]").first()).toBeVisible();
   await expect(page.locator("[data-part=lead]")).not.toHaveText(firstLead ?? "");
 
   // One answered in the person's own words: the question's last row, which is a pick that
@@ -91,6 +147,7 @@ test("the assistant asks, the answers become rules, and a reload still has them"
   await page.locator("[data-action=skip]").click();
   await expect(count).toHaveText(/^2 of \d+ answered, 1 for the builder$/);
   await expect(page.locator("scope-tool")).toBeVisible();
+  await waitingLineInView(page);
 
   // The rules are on the sheet, as the check line under their items.
   await expect(page.locator("[data-part=rule]").filter({ hasText: firstRule ?? "" })).toHaveCount(
@@ -143,6 +200,11 @@ test("a chip clicked, a rule written on it, and somebody else's deletion beside 
 
   await page.goto("/profile");
   await expect(page.locator("profile-sheet")).toBeVisible();
+  // The opening is performed before the tool is activated (`S8.1`): a few seconds at the
+  // application's pace, longer than an assertion's default wait on a slow runner.
+  await expect(page.locator("profile-assistant")).toHaveAttribute("data-guide", "done", {
+    timeout: 15_000,
+  });
   await expect(page.locator("scope-tool")).toBeVisible();
 
   // A chip nobody asked about: no mark on it, and no rule under it yet.
@@ -177,6 +239,9 @@ test("a chip clicked, a rule written on it, and somebody else's deletion beside 
   await page.reload();
   await expect(page.locator("profile-sheet")).toBeVisible();
   await expect(page.locator("[data-part=rule]").filter({ hasText: ownWords })).toHaveCount(1);
+  // Performed again when the conversation still holds only its opening, shown at once
+  // when it holds more (`S8.2`): either way the tool is active once the column is.
+  await expect(page.locator("scope-tool")).toBeVisible({ timeout: 15_000 });
   await expect(page.locator("scope-tool")).toBeVisible();
   await expect(page.locator("body")).not.toContainText("That is all I needed.");
 
