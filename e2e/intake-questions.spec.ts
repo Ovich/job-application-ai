@@ -244,8 +244,11 @@ test("the assistant asks, the answers become rules, and a reload still has them"
   await page.setViewportSize({ width: 800, height: 900 });
   await page.reload();
   await expect(page.locator("profile-sheet")).toBeVisible();
+  // The view toggle counts like the composer (`ID236`): the tool stays active across it.
   await page.getByRole("button", { name: "Back to the chat" }).click();
-  await newestLineInView(page);
+  await expect(page.locator("scope-tool")).toBeVisible();
+  await expect(page.locator("[data-part=dock]")).toBeVisible();
+  await waitingLineInView(page);
 });
 
 /**

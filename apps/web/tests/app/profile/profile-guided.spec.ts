@@ -568,6 +568,21 @@ describe("a press anywhere away closes the tool (S8.8, ID236)", () => {
     await eventually(() => expect(state()).toEqual(activated));
   });
 
+  it("keeps the tool on a press on the view toggle below 1024 px, and the dock shows after switching", async () => {
+    profileIs(aProfile([kubernetes, docker]));
+    const { at, all, active, eventually } = await opened();
+    await eventually(() => expect(active()).toEqual(everythingActive));
+    const toggle = all("profile-bar button").find((each) => textOf(each) === "Back to the chat");
+    expect(toggle).toBeDefined();
+
+    pressOn(toggle);
+
+    await eventually(() => expect(at("[data-view]")?.getAttribute("data-view")).toBe("chat"));
+    expect(active()).toEqual(everythingActive);
+    expect(at("[data-part=dock]")).not.toBeNull();
+    expect(textOf(at("scope-tool [data-part=lead]"))).toBe(kubernetes.lead);
+  });
+
   it("keeps the tool on a press on a row of the tool, in the composer and on the lifted region", async () => {
     profileIs(aProfile([kubernetes, docker]));
     const { at, all, region, active, eventually } = await opened();
