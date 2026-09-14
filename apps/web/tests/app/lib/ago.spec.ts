@@ -12,16 +12,16 @@ import { ago, exactly } from "../../../src/app/lib/ago";
 /** Monday 14 September 2026, noon, in the runtime's own time zone. */
 const now = new Date(2026, 8, 14, 12, 0, 0);
 
-const before = (ms: number): Date => new Date(now.getTime() - ms);
+const earlier = (ms: number): Date => new Date(now.getTime() - ms);
 
 const minute = 60 * 1000;
 
 describe("ago (S8.3b, ID220)", () => {
   it.each([
-    ["under a minute", before(30 * 1000), "just now"],
-    ["five minutes", before(5 * minute), "5 min ago"],
-    ["fifty-nine minutes", before(59 * minute), "59 min ago"],
-    ["two hours", before(2 * 60 * minute), "2 h ago"],
+    ["under a minute", earlier(30 * 1000), "just now"],
+    ["five minutes", earlier(5 * minute), "5 min ago"],
+    ["fifty-nine minutes", earlier(59 * minute), "59 min ago"],
+    ["two hours", earlier(2 * 60 * minute), "2 h ago"],
     ["the day before", new Date(2026, 8, 13, 10, 0, 0), "yesterday"],
     ["three days", new Date(2026, 8, 11, 12, 0, 0), "11 Sep"],
     ["last year", new Date(2025, 8, 12, 12, 0, 0), "12 Sep 2025"],
