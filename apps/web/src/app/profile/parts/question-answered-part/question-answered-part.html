@@ -1,0 +1,15 @@
+<!--
+  The person's bubble, as their own words are drawn: the option they picked, and what they
+  wrote beside it.
+-->
+<div
+  data-part="answered"
+  class="flex flex-col gap-1 rounded-lg bg-primary px-3.5 py-2 text-primary-foreground"
+>
+  @if (picked(); as label) {
+    <p data-part="picked" uiText variant="body">{{ label }}</p>
+  }
+  @if (words(); as said) {
+    <p data-part="words" uiText variant="body">{{ said }}</p>
+  }
+</div>
