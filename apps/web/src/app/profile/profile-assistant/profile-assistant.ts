@@ -1,6 +1,7 @@
 import { NgTemplateOutlet } from "@angular/common";
 import {
   afterNextRender,
+  afterRenderEffect,
   Component,
   computed,
   DestroyRef,
@@ -117,6 +118,8 @@ type Line = {
   tone: "foreground" | "ok" | "muted";
   landed: WritableSignal<number>;
   at: Date;
+  /** How many stored entries the conversation held when it was said: it reads after them. */
+  after: number;
 };
 
 /**
@@ -238,7 +241,7 @@ export class ProfileAssistant {
 
   protected readonly card = signal(false);
 
-  /** What the assistant has said on this turn and not stored: its openers and its answers. */
+  /** What the assistant has said on this visit and not stored: its openers and its answers. */
   protected readonly turn = signal<Line[]>([]);
 
   private readonly phase = signal<Phase>("performing");
@@ -427,6 +430,30 @@ export class ProfileAssistant {
     });
 
     /**
+     * The newest line in view above the dock (`ID227`): after each render that lands a
+     * word, stores an entry or activates a tool, the column that scrolls the conversation
+     * is taken to its end. The dock sits below that column, so its end is above the dock.
+     */
+    afterRenderEffect(() => {
+      for (const line of this.turn()) line.landed();
+      this.core.entries();
+      this.waitingLine();
+      this.tool();
+      const host = this.host.nativeElement as HTMLElement;
+      const newest =
+        host.querySelector("[data-part=waiting]") ??
+        Array.from(host.querySelectorAll("[data-msg]")).at(-1);
+      let column = newest?.parentElement ?? null;
+      while (column !== null && column !== host) {
+        if (/(auto|scroll)/.test(getComputedStyle(column).overflowY)) {
+          column.scrollTop = column.scrollHeight;
+          return;
+        }
+        column = column.parentElement;
+      }
+    });
+
+    /**
      * A decision read back (`ID217`). The viewer posts it and reads the profile and the
      * conversation again whether or not it was kept; once both have arrived, the column
      * stops thinking and either moves on or says it was not kept, the tool still on it.
@@ -480,6 +507,11 @@ export class ProfileAssistant {
     return this.reduced() ? atOnce : this.pace;
   }
 
+  /** The lines said once `after` stored entries were in the conversation, in order (`ID227`). */
+  protected saidAfter(after: number): Line[] {
+    return this.turn().filter((line) => line.after === after);
+  }
+
   /** A line's words, as far as they have landed. */
   protected shown(line: Line): string {
     return shownOf(line.text, line.landed());
@@ -526,7 +558,11 @@ export class ProfileAssistant {
       name: part,
       run: async (abandoned) => {
         const landed = signal(0);
-        this.turn.update((lines) => [...lines, { part, text, tone, landed, at: new Date() }]);
+        const after = this.core.entries().length;
+        this.turn.update((lines) => [
+          ...lines,
+          { part, text, tone, landed, at: new Date(), after },
+        ]);
         await say(part, text, landed, pace).run(abandoned);
       },
     };
@@ -588,12 +624,15 @@ export class ProfileAssistant {
           tone: "muted",
           landed: signal(Number.POSITIVE_INFINITY),
           at: new Date(),
+          after: entries.length,
         },
       ]);
       return;
     }
     this.forget();
-    this.turn.set([]);
+    // The lines said before stay for the visit (`ID227`); only a failure the decision has
+    // since overcome goes.
+    this.turn.update((lines) => lines.filter((line) => line.part !== "save-failure"));
     this.perform(this.turnSteps(this.currentPace(), saving.acknowledgement));
   }
 

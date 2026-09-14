@@ -17,11 +17,24 @@
       No conversation to draw yet, or none that could be opened: the reading and the
       greeting are the profile's and are still shown, with no stored words among them.
     -->
-    <ng-container [ngTemplateOutlet]="openingDrawing" />
+    <ng-container [ngTemplateOutlet]="firstEntry" />
   }
 
   <assistant-conversation>
-    <ng-template #openingDrawing>
+    <!--
+      After each stored entry, what the assistant said once it was stored and did not store
+      (ID201, ID227): the thread of the visit, in order.
+    -->
+    <ng-template #afterEntry let-position>
+      @for (line of saidAfter(position); track $index) {
+        <ng-container
+          [ngTemplateOutlet]="performed"
+          [ngTemplateOutletContext]="{ $implicit: line }"
+        />
+      }
+    </ng-template>
+
+    <ng-template #firstEntry>
       @if (welcome(); as hello) {
         <!--
           A second visit: the run that produced this profile is behind the person, so its
@@ -99,12 +112,17 @@
     </ng-template>
   </assistant-conversation>
 
+  <!-- Lines said while nothing is stored yet, which no entry can carry. -->
+  @for (line of saidAfter(0); track $index) {
+    <ng-container [ngTemplateOutlet]="performed" [ngTemplateOutletContext]="{ $implicit: line }" />
+  }
+
   <!--
-    What the assistant says on this turn and does not store (ID201): the opener, the
-    acknowledgement of a decision just kept, or that it has all it needs. Each is timed
-    when it was said (ID220).
+    What the assistant says and does not store (ID201): the opener, the acknowledgement of
+    a decision just kept, or that it has all it needs. Each is timed when it was said
+    (ID220).
   -->
-  @for (line of turn(); track $index) {
+  <ng-template #performed let-line>
     @if (shown(line); as landed) {
       <div data-msg="ai" class="grid grid-cols-[30px_1fr] gap-3">
         <div
@@ -134,7 +152,7 @@
         </div>
       </div>
     }
-  }
+  </ng-template>
 
   <!-- The last line while a question's tool is active: it waits for the person (ID218). -->
   @if (waitingLine(); as waiting) {

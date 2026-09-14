@@ -6,7 +6,7 @@ import {
   DestroyRef,
   inject,
   signal,
-  TemplateRef,
+  type TemplateRef,
   type Type,
 } from "@angular/core";
 import { CurrentUser } from "../../auth/current-user";
@@ -28,8 +28,8 @@ type Part = Entry["parts"][number];
  * placeholder and never dropped** (the spec's *Failure modes*): an entry written by a
  * later catalogue still takes its place in the conversation.
  *
- * **The concrete assistant may draw its own opening.** A `<ng-template>` given as content
- * is what entry 1 is drawn with, so the intake keeps the reading card between the
+ * **The concrete assistant may draw its own opening.** A `<ng-template #firstEntry>` given
+ * as content is what entry 1 is drawn with, so the intake keeps the reading card between the
  * opening's sentences, which is drawn from the profile and not stored (`ID200`), and the
  * opening is still drawn once, in its place. With none given, entry 1 is drawn like
  * every other.
@@ -66,8 +66,15 @@ export class AssistantConversation {
   /** What the agent is doing now, drawn beside an animated indicator until its words land. */
   protected readonly activity = this.core.activity;
 
-  /** The concrete assistant's own drawing of the opening, when it gives one. */
-  protected readonly opening = contentChild(TemplateRef);
+  /** The concrete assistant's own drawing of entry 1, `#firstEntry`, when it gives one. */
+  protected readonly opening = contentChild<TemplateRef<unknown>>("firstEntry");
+
+  /**
+   * What the concrete assistant draws after an entry, `#afterEntry`, given the entry's
+   * position from 1: the lines it said once that entry was stored and never stored
+   * themselves (agent-consolidation `ID227`), so they read in order for the visit.
+   */
+  protected readonly afterEntry = contentChild<TemplateRef<unknown>>("afterEntry");
 
   /**
    * The person's avatar on what they write (`S4.7`): their initials, as the account button

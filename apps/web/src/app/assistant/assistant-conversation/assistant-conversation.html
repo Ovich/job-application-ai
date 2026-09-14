@@ -69,6 +69,17 @@
       </div>
     </div>
   }
+
+  <!--
+    What the concrete assistant said after this entry and did not store (ID227), in its
+    place in the thread.
+  -->
+  @if (afterEntry(); as drawn) {
+    <ng-container
+      [ngTemplateOutlet]="drawn"
+      [ngTemplateOutletContext]="{ $implicit: $index + 1 }"
+    />
+  }
 }
 
 <!--
