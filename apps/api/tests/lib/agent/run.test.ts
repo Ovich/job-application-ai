@@ -188,7 +188,14 @@ describe("recorded answers of two steps (S4.5)", () => {
     ]);
     expect(stored[2]?.parts).toEqual([
       { kind: "text", text: "I will shorten the second line." },
-      { kind: "tool_use", id: "call_1", name: "edit_profile", input },
+      // The parsed input, and the arguments string as the model sent it (ID206).
+      {
+        kind: "tool_use",
+        id: "call_1",
+        name: "edit_profile",
+        input,
+        arguments: JSON.stringify(input),
+      },
     ]);
     expect(stored[3]?.parts).toEqual([
       { kind: "tool_result", id: "call_1", name: "edit_profile", before, after },
