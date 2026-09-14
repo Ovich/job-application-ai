@@ -58,7 +58,38 @@ export const toolResultPart = z
     "a tool_result carries before and after, or a refusal",
   );
 
-export const part = z.discriminatedUnion("kind", [textPart, toolUsePart, toolResultPart]);
+/** One option a question offered, as the person saw it: never the rule it writes. */
+const offeredOption = z.object({ id: z.string().min(1), label: z.string(), hint: z.string() });
+
+/**
+ * A question the person answered with the assistant's tool (`SL7`, `H12`, `ID209`): the
+ * question as asked, every option offered, the option picked by its id, or none when the
+ * person answered in words alone, and the person's words or none.
+ */
+export const questionAnsweredPart = z.object({
+  kind: z.literal("question_answered"),
+  lead: z.string(),
+  where: z.string(),
+  options: z.array(offeredOption),
+  picked: z.string().min(1).nullable(),
+  words: z.string().nullable(),
+});
+
+/** A question the person put off (`SL7`): the question as asked, and the options offered. */
+export const questionSkippedPart = z.object({
+  kind: z.literal("question_skipped"),
+  lead: z.string(),
+  where: z.string(),
+  options: z.array(offeredOption),
+});
+
+export const part = z.discriminatedUnion("kind", [
+  textPart,
+  toolUsePart,
+  toolResultPart,
+  questionAnsweredPart,
+  questionSkippedPart,
+]);
 
 /** A part as it is read: one the catalogue knows, or one from a catalogue it does not. */
 export type Part = z.infer<typeof part> | { kind: string; [key: string]: unknown };
