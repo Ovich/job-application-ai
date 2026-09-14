@@ -1,0 +1,143 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`every request (S4.4, ID181, ID193) > derives the edit tool's schema from profileEditTool's input, held by its snapshot 1`] = `
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "itemId": {
+      "minLength": 1,
+      "type": "string",
+    },
+    "operations": {
+      "items": {
+        "oneOf": [
+          {
+            "additionalProperties": false,
+            "description": "Set one field of the item: its title, subtitle, dates, or a field of its kind.",
+            "properties": {
+              "field": {
+                "description": "the field's name, as the item shows it",
+                "minLength": 1,
+                "type": "string",
+              },
+              "op": {
+                "const": "set",
+                "type": "string",
+              },
+              "value": {
+                "description": "the new value, or null to empty the field",
+                "type": [
+                  "string",
+                  "null",
+                ],
+              },
+            },
+            "required": [
+              "op",
+              "field",
+              "value",
+            ],
+            "type": "object",
+          },
+          {
+            "additionalProperties": false,
+            "description": "Replace the text of one line of the item.",
+            "properties": {
+              "lineId": {
+                "minLength": 1,
+                "type": "string",
+              },
+              "op": {
+                "const": "replace_line",
+                "type": "string",
+              },
+              "text": {
+                "minLength": 1,
+                "type": "string",
+              },
+            },
+            "required": [
+              "op",
+              "lineId",
+              "text",
+            ],
+            "type": "object",
+          },
+          {
+            "additionalProperties": false,
+            "description": "Add a line to the item at a position.",
+            "properties": {
+              "op": {
+                "const": "add_line",
+                "type": "string",
+              },
+              "position": {
+                "description": "0 is first; later lines move down",
+                "maximum": 9007199254740991,
+                "minimum": 0,
+                "type": "integer",
+              },
+              "text": {
+                "minLength": 1,
+                "type": "string",
+              },
+            },
+            "required": [
+              "op",
+              "position",
+              "text",
+            ],
+            "type": "object",
+          },
+          {
+            "additionalProperties": false,
+            "description": "Remove one line of the item.",
+            "properties": {
+              "lineId": {
+                "minLength": 1,
+                "type": "string",
+              },
+              "op": {
+                "const": "remove_line",
+                "type": "string",
+              },
+            },
+            "required": [
+              "op",
+              "lineId",
+            ],
+            "type": "object",
+          },
+          {
+            "additionalProperties": false,
+            "description": "Remove one item that hangs under this item.",
+            "properties": {
+              "childId": {
+                "minLength": 1,
+                "type": "string",
+              },
+              "op": {
+                "const": "remove_child",
+                "type": "string",
+              },
+            },
+            "required": [
+              "op",
+              "childId",
+            ],
+            "type": "object",
+          },
+        ],
+      },
+      "minItems": 1,
+      "type": "array",
+    },
+  },
+  "required": [
+    "itemId",
+    "operations",
+  ],
+  "type": "object",
+}
+`;

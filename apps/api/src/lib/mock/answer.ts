@@ -31,8 +31,7 @@ import { chunksOf, intervalMs, type Pace, paceOf } from "./pace";
  * is the whole of `D11`: one answer, two envelopes, and a document that does not move the
  * day a provider is reached in the other shape.
  *
- * The document comes last to `frames` because one protocol's stream does not need it: see
- * `openai-envelope.ts`.
+ * The document comes last to `frames`, after the pieces of its content the pace cut.
  */
 type Envelope = {
   whole: (recorded: RecordedCase, model: string) => object;

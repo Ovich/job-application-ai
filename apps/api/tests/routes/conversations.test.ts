@@ -34,16 +34,28 @@ vi.mock("../../src/lib/ai", async (importOriginal) => {
   const real = await importOriginal<typeof import("../../src/lib/ai")>();
   const { aiThroughTheApp } = await import("../support/ai");
   const ai = aiThroughTheApp();
-  // A call that fails mid-stream, when a case says so: one piece, then the throw.
-  async function* askStreaming(...asked: Parameters<typeof ai.askStreaming>) {
-    if (!objects.failing) {
-      yield* ai.askStreaming(...asked);
-      return;
-    }
-    yield "No pre";
-    throw new Error("the model went away mid-stream");
-  }
-  return { ...real, ask: ai.ask, askStreaming, askFor: ai.askFor };
+  // A call that fails mid-stream, when a case says so: one piece, then the throw. Since
+  // `SL4` a message is answered through the agent loop, which asks with tools.
+  const askWithTools: typeof ai.askWithTools = (...asked) => {
+    if (!objects.failing) return ai.askWithTools(...asked);
+    const gone = new Error("the model went away mid-stream");
+    const calls = Promise.reject(gone);
+    calls.catch(() => {});
+    return {
+      pieces: (async function* () {
+        yield "No pre";
+        throw gone;
+      })(),
+      calls,
+    };
+  };
+  return {
+    ...real,
+    ask: ai.ask,
+    askStreaming: ai.askStreaming,
+    askFor: ai.askFor,
+    askWithTools,
+  };
 });
 
 const { app } = await import("../../src/app");
@@ -318,10 +330,13 @@ describe("a free message (US2, SL3)", () => {
     ]);
 
     // Step 1 of this conversation's message, named per step (`ID182`), asked with the
-    // conversation as messages (`ID162`).
+    // profile as it stands as a system message (`ID193`; this test's definition has no
+    // prompt of its own), then the conversation as messages (`ID162`).
     const [sent] = requestsSent();
+    expect(requestsSent()).toHaveLength(1);
     expect(sent?.headers["x-jobapp-case"]).toBe(`profile.message:${body.id}#1`);
     expect((sent?.body as { messages: unknown[] } | undefined)?.messages).toEqual([
+      { role: "system", content: expect.stringContaining("profile") },
       { role: "assistant", content: `Hello, ${person.id}.` },
       { role: "user", content: "I ran the services, not the cluster." },
     ]);

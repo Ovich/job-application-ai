@@ -58,5 +58,17 @@ export const askStreaming = ai.askStreaming;
 /** The answer parsed into the shape the step asked for, or an error. Never half of one. */
 export const askFor = ai.askFor;
 
-export { type About, type Ai, type AiConfig, createAi, type Message } from "./client";
+/** A step that may call the tools offered: its text in pieces, then its calls. */
+export const askWithTools = ai.askWithTools;
+
+export {
+  type About,
+  type Ai,
+  type AiConfig,
+  createAi,
+  type Message,
+  type Step,
+  type Tool,
+  type ToolCall,
+} from "./client";
 export { answeringOwnAddress, type Fetch, type OwnAddress } from "./own-address";

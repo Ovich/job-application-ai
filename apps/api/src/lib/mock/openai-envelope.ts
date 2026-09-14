@@ -13,10 +13,23 @@ import type { Frame } from "./frames";
  * The case's counts are written in the envelope-independent names, input and output.
  * Here they become prompt, completion and total, which is not what the other envelope
  * calls them.
+ *
+ * A call is a `function` tool call whose arguments are a JSON **string**, as the model
+ * wrote them (`ID190`): the other envelope carries an object.
  */
 
 const identifier = () => `chatcmpl-${crypto.randomUUID().replaceAll("-", "")}`;
 const now = () => Math.floor(Date.now() / 1000);
+
+type Call = RecordedCase["tool_calls"][number];
+
+/** The arguments as this protocol carries them: the string itself, or the object as JSON. */
+const argumentsOf = (call: Call): string =>
+  typeof call.arguments === "string" ? call.arguments : JSON.stringify(call.arguments ?? {});
+
+/** Why the answer stopped: on its calls when it has any. */
+const finishOf = (recorded: RecordedCase): string =>
+  recorded.tool_calls.length === 0 ? "stop" : "tool_calls";
 
 /** The whole answer. `object` is exactly `chat.completion`. */
 export const openAiWhole = (recorded: RecordedCase, model: string) => ({
@@ -31,9 +44,17 @@ export const openAiWhole = (recorded: RecordedCase, model: string) => ({
         role: "assistant",
         content: recorded.content,
         refusal: null,
-        tool_calls: null,
+        // `null` with no call, never an empty list, as the protocol has it.
+        tool_calls:
+          recorded.tool_calls.length === 0
+            ? null
+            : recorded.tool_calls.map((call) => ({
+                id: call.id,
+                type: "function",
+                function: { name: call.name, arguments: argumentsOf(call) },
+              })),
       },
-      finish_reason: "stop",
+      finish_reason: finishOf(recorded),
       logprobs: null,
     },
   ],
@@ -48,19 +69,18 @@ export const openAiWhole = (recorded: RecordedCase, model: string) => ({
  * The stream: one `data:` line per chunk, then the literal sentinel.
  *
  * `object` is `chat.completion.chunk`, a different value from the whole answer's. The
- * first chunk's delta carries the role, the middle ones the content, and the last an
+ * first chunk's delta carries the role, the middle ones the content, then each call —
+ * its `id`, `type` and `name` in one delta, its arguments in the next — and the last an
  * empty delta with the `finish_reason`, which is `null` on every chunk before it.
  *
  * The stream ends with `data: [DONE]`, which is not JSON. A client that parses it as
  * JSON breaks, so it is written out here rather than left to be remembered — and it is
  * the one thing that makes this protocol end differently from the other.
  *
- * The recorded case is not needed here, only its pieces: this protocol carries no
- * `usage` in a stream unless the request asked for it with `stream_options`, and no
- * request of ours does. The other envelope does carry it, which is why the serialisers
- * are given the case last and this one simply does not take it.
+ * This protocol carries no `usage` in a stream unless the request asked for it with
+ * `stream_options`, and no request of ours does: of the case, only the calls are read.
  */
-export const openAiFrames = (model: string, chunks: string[]): Frame[] => {
+export const openAiFrames = (model: string, chunks: string[], recorded: RecordedCase): Frame[] => {
   const id = identifier();
   const created = now();
   const chunk = (delta: object, finish: string | null, paced = false): Frame => ({
@@ -77,7 +97,18 @@ export const openAiFrames = (model: string, chunks: string[]): Frame[] => {
   return [
     chunk({ role: "assistant" }, null),
     ...chunks.map((text) => chunk({ content: text }, null, true)),
-    chunk({}, "stop"),
+    ...recorded.tool_calls.flatMap((call, index) => [
+      chunk(
+        {
+          tool_calls: [
+            { index, id: call.id, type: "function", function: { name: call.name, arguments: "" } },
+          ],
+        },
+        null,
+      ),
+      chunk({ tool_calls: [{ index, function: { arguments: argumentsOf(call) } }] }, null, true),
+    ]),
+    chunk({}, finishOf(recorded)),
     { data: "[DONE]" },
   ];
 };

@@ -33,7 +33,15 @@ const answerDocument = z.object({
   case: z.string().regex(/^[^.]+\.[^:]+:.+$/, "a case is named <feature>.<step>:<input>"),
   stands_for: z.string().min(1),
   content: z.string(),
-  tool_calls: z.array(z.unknown()).default([]),
+  /**
+   * The step's calls, in a shape no protocol owns (`ID190`): each envelope wraps them as
+   * its own. `arguments` is what the model passed, an object as a rule; a string is sent
+   * as the protocol's own text, verbatim, which is how a case holds arguments that do
+   * not parse.
+   */
+  tool_calls: z
+    .array(z.object({ id: z.string().min(1), name: z.string().min(1), arguments: z.unknown() }))
+    .default([]),
   usage: z
     .object({
       input_tokens: z.number().int().nonnegative(),

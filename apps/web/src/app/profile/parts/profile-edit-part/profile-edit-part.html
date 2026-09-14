@@ -1,0 +1,27 @@
+<!--
+  The components library's `.record`: a bordered block, the item's name and where in it
+  in semibold, the before struck and muted, the after in green. A refusal says so, and why.
+-->
+@if (drawn(); as record) {
+  <div
+    data-part="record"
+    class="flex flex-col gap-1 rounded-lg border border-border bg-background px-3.5 py-2.5"
+  >
+    @if (record.kind === "refused") {
+      <b uiText variant="caption" weight="semibold">Not changed</b>
+      <span data-part="refused" uiText variant="caption" tone="muted">{{ record.reason }}</span>
+    } @else {
+      @for (change of record.changes; track $index) {
+        <b uiText variant="caption" weight="semibold">{{ record.item }} · {{ change.where }}</b>
+        @if (change.was !== null) {
+          <span data-part="was" uiText variant="caption" tone="muted" class="line-through">{{
+            change.was
+          }}</span>
+        }
+        @if (change.now !== null) {
+          <span data-part="now" uiText variant="caption" tone="ok">{{ change.now }}</span>
+        }
+      }
+    }
+  </div>
+}

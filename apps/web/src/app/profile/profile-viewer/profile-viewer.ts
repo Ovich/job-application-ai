@@ -17,6 +17,7 @@ import { api } from "../../lib/api";
 import { UiModal } from "../../ui/modal/modal";
 import { UiSpinner } from "../../ui/spinner/spinner";
 import { UiText } from "../../ui/typography/text/text";
+import { ProfileEditPart } from "../parts/profile-edit-part/profile-edit-part";
 import { type Pressed, ProfileAssistant } from "../profile-assistant/profile-assistant";
 import { ProfileBar } from "../profile-bar/profile-bar";
 import type { RegionRef } from "../profile-region/profile-region";
@@ -52,8 +53,15 @@ type Item = Answer["experience"][number];
   imports: [AppDocuments, ProfileAssistant, ProfileBar, ProfileSheet, UiModal, UiSpinner, UiText],
   templateUrl: "./profile-viewer.html",
   // The profile's assistant, for this screen alone (`ID186`, `ID165`): its own
-  // conversation, subject none, and no part of its own to draw before `SL4`.
-  providers: provideAssistant({ name: "profile", parts: [] }),
+  // conversation, subject none, and the profile edit's call and record drawn by the part
+  // written for them (`ID185`, `ID191`).
+  providers: provideAssistant({
+    name: "profile",
+    parts: [
+      { kind: "tool_use", component: ProfileEditPart },
+      { kind: "tool_result", component: ProfileEditPart },
+    ],
+  }),
   // The layout every assistant screen holds to (the person, 2026-09-12): this fills the
   // page rather than growing past it, so the window never scrolls and each column
   // decides for itself what moves inside it.

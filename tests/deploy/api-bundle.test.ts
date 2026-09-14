@@ -168,4 +168,14 @@ describe("the API bundle the deploy ships", () => {
     expect(existsSync(join(root, "apps/api/src/lib/mock/documents"))).toBe(true);
     expect(bundleStep()).toContain("apps/api/src/lib/mock/documents");
   });
+
+  it("carries the profile assistant's prompt inside the bundle, since nothing ships it beside", () => {
+    // Imported as text (`ID131`, `ID181`, `ID188`): a prompt read from disk at run time
+    // would be absent from the zip, and every call would go out with an empty one.
+    const prompt = readFileSync(join(root, "apps/api/src/assistants/profile/prompt.md"), "utf8");
+    const opening = prompt.split("\n").find((line) => line.trim() !== "") ?? "";
+
+    expect(opening).not.toBe("");
+    expect(readFileSync(outfile, "utf8")).toContain(opening);
+  });
 });

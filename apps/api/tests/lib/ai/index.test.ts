@@ -167,6 +167,132 @@ describe("askStreaming", () => {
 });
 
 /**
+ * `askWithTools`, as the agent loop meets it (`S4.1`, `S4.4`, `ID167`): the step's text
+ * in pieces, then the step's calls, their arguments parsed. What is offered is a tool's
+ * name, description and JSON schema, passed in: `lib/ai` knows no tool of the product.
+ */
+describe("askWithTools", () => {
+  const step = "profile.message:conversation-1#1" as const;
+  const aboutStep = { feature: "profile", step: "message", input: "conversation-1#1" };
+  const edit = {
+    itemId: "item-nexplore",
+    operations: [{ op: "replace_line", lineId: "line-2", text: "Shipped the platform." }],
+  };
+  const tools = [
+    {
+      name: "edit_profile",
+      description: "Change one item of the profile.",
+      parameters: { type: "object", properties: { itemId: { type: "string" } } },
+    },
+  ];
+  const said = "I shortened the second line, as you asked.";
+
+  const drained = async (pieces: AsyncIterable<string>): Promise<string[]> => {
+    const all: string[] = [];
+    for await (const piece of pieces) all.push(piece);
+    return all;
+  };
+
+  it("yields a text-only step's pieces, and settles on no calls", async () => {
+    const cases = withCases({ [step]: { stands_for: "a reply", content: said } });
+    try {
+      const answer = aiThroughTheApp().askWithTools(
+        [{ role: "user", content: "?" }],
+        aboutStep,
+        tools,
+      );
+
+      expect((await drained(answer.pieces)).join("")).toBe(said);
+      expect(await answer.calls).toEqual([]);
+    } finally {
+      cases.dispose();
+    }
+  });
+
+  it("yields the step's pieces, then settles on its call, the arguments parsed", async () => {
+    const cases = withCases({
+      [step]: {
+        stands_for: "an edit",
+        content: said,
+        tool_calls: [{ id: "call_1", name: "edit_profile", arguments: edit }],
+      },
+    });
+    try {
+      const answer = aiThroughTheApp().askWithTools(
+        [{ role: "user", content: "?" }],
+        aboutStep,
+        tools,
+      );
+
+      expect((await drained(answer.pieces)).join("")).toBe(said);
+      // The parsed arguments, and the string exactly as it arrived (ID206).
+      expect(await answer.calls).toEqual([
+        {
+          id: "call_1",
+          name: "edit_profile",
+          arguments: edit,
+          argumentsText: JSON.stringify(edit),
+        },
+      ]);
+    } finally {
+      cases.dispose();
+    }
+  });
+
+  it("asks with the protocol's own stream and tools, the model and the messages, and nothing else", async () => {
+    const cases = withCases({ [step]: { stands_for: "a reply", content: said } });
+    try {
+      const answer = aiThroughTheApp().askWithTools(
+        [{ role: "user", content: "?" }],
+        aboutStep,
+        tools,
+      );
+      await drained(answer.pieces);
+      await answer.calls;
+    } finally {
+      cases.dispose();
+    }
+
+    const [sent] = requestsSent();
+    expect(Object.keys(sent?.body as object).sort()).toEqual([
+      "messages",
+      "model",
+      "stream",
+      "tools",
+    ]);
+    expect(sent?.body).toMatchObject({
+      model: "mock-model",
+      stream: true,
+      messages: [{ role: "user", content: "?" }],
+      tools: [{ type: "function", function: tools[0] }],
+    });
+    expect(sent?.headers["x-jobapp-case"]).toBe(step);
+  });
+
+  it("rejects the calls, naming the case, when a call's arguments are not JSON", async () => {
+    const cases = withCases({
+      [step]: {
+        stands_for: "a call the model botched",
+        content: said,
+        tool_calls: [{ id: "call_1", name: "edit_profile", arguments: '{"itemId": "item-nex' }],
+      },
+    });
+    try {
+      const answer = aiThroughTheApp().askWithTools(
+        [{ role: "user", content: "?" }],
+        aboutStep,
+        tools,
+      );
+      await drained(answer.pieces);
+
+      await expect(answer.calls).rejects.toThrow(/profile\.message:conversation-1#1/);
+    } finally {
+      cases.dispose();
+    }
+  });
+});
+
+/**
  * `askFor` exists because every later step wants a shape, not prose. It validates and
  * throws, which is what keeps a half-valid object out of the database: a caller either
  * gets the shape it asked for or an error, never something in between.

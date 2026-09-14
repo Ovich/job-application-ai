@@ -1,28 +1,60 @@
 <!--
   Every entry, in order. Entry 1 is the concrete assistant's to draw when it gave a
   template for it; everything else is drawn here, a part at a time.
+
+  Who wrote it is where it sits (S4.7): the person's entries on the right, at most 70% of
+  the column and aligned from its right edge, behind their initials; the assistant's, and
+  its tools' records, full width behind its avatar.
 -->
 @for (entry of entries(); track entry.id; let first = $first) {
   @if (first && opening(); as drawn) {
     <ng-container [ngTemplateOutlet]="drawn" />
-  } @else {
-    <div data-entry [attr.data-msg]="entry.author" class="grid grid-cols-[30px_1fr] gap-3">
+  } @else if (entry.author === "person") {
+    <div data-entry data-msg="person" class="ml-auto flex max-w-[70%] flex-row-reverse gap-3">
       <div
+        data-part="avatar"
+        aria-hidden="true"
+        class="mt-0.5 grid size-[30px] shrink-0 place-items-center rounded-full border border-border bg-accent font-semibold text-label text-accent-foreground"
+      >
+        {{ initials() }}
+      </div>
+      <div class="flex min-w-0 flex-col items-end gap-2">
+        @for (part of entry.parts; track $index) {
+          @if (part.kind === "text") {
+            <p
+              uiText
+              variant="body"
+              class="rounded-lg bg-primary px-3.5 py-2 text-primary-foreground"
+            >
+              {{ textOf(part) }}
+            </p>
+          } @else {
+            <ng-container
+              [ngTemplateOutlet]="other"
+              [ngTemplateOutletContext]="{ $implicit: part }"
+            />
+          }
+        }
+      </div>
+    </div>
+  } @else {
+    <div data-entry [attr.data-msg]="entry.author" class="grid w-full grid-cols-[30px_1fr] gap-3">
+      <div
+        data-part="avatar"
         aria-hidden="true"
         class="mt-0.5 grid size-[30px] place-items-center rounded-full bg-primary font-semibold text-label text-primary-foreground"
       >
-        {{ entry.author === "person" ? "Y" : "A" }}
+        A
       </div>
-      <div class="flex flex-col gap-2">
+      <div class="flex min-w-0 flex-col gap-2">
         @for (part of entry.parts; track $index) {
           @if (part.kind === "text") {
             <p uiText variant="body">{{ textOf(part) }}</p>
-          } @else if (componentFor(part.kind); as component) {
-            <ng-container *ngComponentOutlet="component; inputs: { part }" />
           } @else {
-            <p data-part="placeholder" uiText variant="body" tone="muted">
-              This part cannot be shown here.
-            </p>
+            <ng-container
+              [ngTemplateOutlet]="other"
+              [ngTemplateOutletContext]="{ $implicit: part }"
+            />
           }
         }
       </div>
@@ -30,19 +62,31 @@
   }
 }
 
+<!-- A part that is not text: the component a provider names, or the placeholder. -->
+<ng-template #other let-part>
+  @if (componentFor(part.kind); as component) {
+    <ng-container *ngComponentOutlet="component; inputs: { part }" />
+  } @else {
+    <p data-part="placeholder" uiText variant="body" tone="muted">
+      This part cannot be shown here.
+    </p>
+  }
+</ng-template>
+
 <!--
   The reply as it streams (agent-consolidation SL3), drawn the way a stored `text` entry
   is, so the reload that reads it back shows exactly what was seen.
 -->
 @if (replying(); as streaming) {
-  <div data-entry data-msg="assistant" class="grid grid-cols-[30px_1fr] gap-3">
+  <div data-entry data-msg="assistant" class="grid w-full grid-cols-[30px_1fr] gap-3">
     <div
+      data-part="avatar"
       aria-hidden="true"
       class="mt-0.5 grid size-[30px] place-items-center rounded-full bg-primary font-semibold text-label text-primary-foreground"
     >
       A
     </div>
-    <div class="flex flex-col gap-2">
+    <div class="flex min-w-0 flex-col gap-2">
       <p data-part="replying" uiText variant="body" aria-live="polite">{{ streaming }}</p>
     </div>
   </div>

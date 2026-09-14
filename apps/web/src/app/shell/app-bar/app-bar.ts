@@ -1,7 +1,7 @@
 import { NgTemplateOutlet } from "@angular/common";
 import { Component, computed, ElementRef, inject, input, output, signal } from "@angular/core";
 import { RouterLink } from "@angular/router";
-import type { SignedIn } from "../../auth/session";
+import { initialsOf, type SignedIn } from "../../auth/session";
 import { UiBox } from "../../ui/layout/box/box";
 import { UiRow } from "../../ui/layout/row/row";
 import { UiSpacer } from "../../ui/layout/spacer/spacer";
@@ -51,14 +51,7 @@ export class AppBar {
   protected readonly menuOpen = signal(false);
 
   /** The first letters of the name's first two words, upper case. */
-  protected readonly initials = computed(() =>
-    this.user()
-      .name.split(/\s+/)
-      .filter((word) => word.length > 0)
-      .slice(0, 2)
-      .map((word) => word.charAt(0).toUpperCase())
-      .join(""),
-  );
+  protected readonly initials = computed(() => initialsOf(this.user().name));
 
   private readonly host = inject<ElementRef<HTMLElement>>(ElementRef);
 

@@ -1,6 +1,9 @@
+/// <reference path="../../text.d.ts" />
 import { document, profileItem, provenance, question } from "@app/db";
 import { and, asc, countDistinct, eq } from "drizzle-orm";
 import { type AssistantDefinition, NotYet } from "../../lib/agent";
+import { profileEditTool } from "../../lib/profile-edit";
+import prompt from "./prompt.md" with { type: "text" };
 
 /**
  * The profile assistant (`ID188`, `ID165`): the concrete assistant of the intake, as a
@@ -11,7 +14,8 @@ import { type AssistantDefinition, NotYet } from "../../lib/agent";
  * the browser (`ID164`); the reading card between them is drawn from the profile and
  * never stored (`ID200`).
  *
- * `prompt` is empty and `tools` none until `SL4` reads them.
+ * Its system prompt is `prompt.md` beside this file, imported as text so it is inside the
+ * bundle (`ID181`, `ID188`); its one tool is the shared profile edit (`ID187`).
  */
 
 /** `First, Java.` for the first question, `Next, Java.` once the run has moved on. */
@@ -29,8 +33,8 @@ const scripted = (text: string) => ({ kind: "text" as const, text, scripted: tru
 
 export const profileAssistant: AssistantDefinition = {
   name: "profile",
-  prompt: "",
-  tools: [],
+  prompt,
+  tools: [profileEditTool],
   /**
    * Entry 1: the sentence, the tail, and the first waiting question's opener as its last
    * part (`ID189`). The documents counted are the ones the profile cites, which is the

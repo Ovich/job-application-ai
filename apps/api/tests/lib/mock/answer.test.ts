@@ -72,7 +72,10 @@ describe("a recorded case, whole", () => {
         await (await askFor("/messages", { model: "m", messages: [], max_tokens: 100 })).json(),
       );
 
-      expect(anthropic.content[0]?.text).toBe(openAi.choices[0]?.message.content);
+      const [block] = anthropic.content;
+      expect(block?.type === "text" ? block.text : undefined).toBe(
+        openAi.choices[0]?.message.content,
+      );
       expect(anthropic.usage).toEqual({ input_tokens: 1180, output_tokens: 62 });
     } finally {
       cases.dispose();
@@ -136,7 +139,8 @@ describe("a case nobody recorded (ID166)", () => {
       );
 
       expect(answer.status).toBe(200);
-      expect(anthropicWhole.parse(await answer.json()).content[0]?.text).toBe(placeholder);
+      const [block] = anthropicWhole.parse(await answer.json()).content;
+      expect(block?.type === "text" ? block.text : undefined).toBe(placeholder);
     } finally {
       logged.mockRestore();
       cases.dispose();
@@ -173,7 +177,7 @@ describe("a case nobody recorded (ID166)", () => {
         framesOf(await anthropic.text())
           .map((frame) => anthropicEvent.parse(JSON.parse(frame.data)))
           .filter((event) => event.type === "content_block_delta")
-          .map((event) => event.delta.text)
+          .map((event) => (event.delta.type === "text_delta" ? event.delta.text : ""))
           .join(""),
       ).toBe(placeholder);
     } finally {

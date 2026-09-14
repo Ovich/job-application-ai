@@ -95,7 +95,7 @@ describe("the Anthropic stream", () => {
       expect(
         events
           .filter((event) => event.type === "content_block_delta")
-          .map((event) => event.delta.text)
+          .map((event) => (event.delta.type === "text_delta" ? event.delta.text : ""))
           .join(""),
       ).toBe(content);
     } finally {
@@ -159,7 +159,7 @@ describe("the pace", () => {
       const anthropic = framesOf(await (await stream("/messages", pace)).text())
         .map((frame) => anthropicEvent.parse(JSON.parse(frame.data)))
         .filter((event) => event.type === "content_block_delta")
-        .map((event) => event.delta.text)
+        .map((event) => (event.delta.type === "text_delta" ? event.delta.text : ""))
         .join("");
 
       expect(openAi).toBe(content);
