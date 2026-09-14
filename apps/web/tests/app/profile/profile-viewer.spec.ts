@@ -463,6 +463,62 @@ describe("the assistant's conversation (agent-consolidation SL2, S2.3)", () => {
   });
 });
 
+describe("a stored edit in the assistant's conversation (agent-consolidation SL4, S4.6, ID185)", () => {
+  it("draws the edit's before and after, and no placeholder for its call or its result", async () => {
+    const item = {
+      id: "item-nexplore",
+      kind: "experience",
+      title: "Platform engineer",
+      subtitle: null,
+      startText: null,
+      endText: null,
+      block: {
+        organisation: "Nexplore",
+        organisationNote: null,
+        location: null,
+        arrangement: null,
+      },
+      lines: [{ id: "line-2", text: "Designed and shipped the platform." }],
+      children: [],
+    };
+    profileIs(aFullProfile());
+    conversationIs([
+      entryOf(1, [{ kind: "text", text: "I read your 5 documents.", scripted: true }]),
+      entryOf(2, [{ kind: "text", text: "Shorten the second line." }], "person"),
+      entryOf(3, [
+        { kind: "text", text: "I will shorten it." },
+        { kind: "tool_use", id: "call_1", name: "edit_profile", input: {} },
+      ]),
+      entryOf(
+        4,
+        [
+          {
+            kind: "tool_result",
+            id: "call_1",
+            name: "edit_profile",
+            before: item,
+            after: { ...item, lines: [{ id: "line-2", text: "Shipped the platform." }] },
+          },
+        ],
+        "tool",
+      ),
+    ]);
+    const { page, eventually } = await opened();
+
+    await eventually(() =>
+      expect(textOf(page()?.querySelector("profile-assistant [data-part=now]"))).toBe(
+        "Shipped the platform.",
+      ),
+    );
+    expect(textOf(page()?.querySelector("profile-assistant [data-part=was]"))).toBe(
+      "Designed and shipped the platform.",
+    );
+    expect(textOf(page()?.querySelector("profile-assistant"))).not.toContain(
+      "This part cannot be shown here.",
+    );
+  });
+});
+
 describe("no assistant during the profile intake (S3.0, ID202)", () => {
   it("opens no conversation and draws no assistant column for a person with nothing read", async () => {
     profileIs(emptyProfile);
