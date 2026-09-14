@@ -3,12 +3,14 @@
   the question as it was asked and where it sits, then the option picked and the words
   written beside it. The bubble is the send button's fixed blue with white text, and every
   line takes the bubble's colour rather than a theme token, so dark mode flips none (ID232).
+  No line is faded: the question and where it sits are full white, told from the pick by the
+  caption size and a regular weight against its semibold (ID235).
 -->
 <div data-part="answered" class="flex flex-col gap-1 rounded-lg bg-send px-3.5 py-2 text-white">
-  <p data-part="asked" uiText variant="caption" class="text-inherit opacity-80">
+  <p data-part="asked" uiText variant="caption" weight="regular" class="text-inherit">
     {{ asked().lead }}
     @if (asked().where !== "") {
-      <span data-part="where" class="block opacity-80">{{ asked().where }}</span>
+      <span data-part="where" class="block">{{ asked().where }}</span>
     }
   </p>
   @if (picked(); as label) {
