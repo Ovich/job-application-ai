@@ -236,6 +236,7 @@ describe("a free message (SL3, US2, US3)", () => {
     entries: WritableSignal<Entry[]>;
     replying: WritableSignal<string | null>;
     failure: WritableSignal<string | null>;
+    activity: WritableSignal<string | null>;
     post: ReturnType<typeof vi.fn>;
     open: ReturnType<typeof vi.fn>;
     reload: ReturnType<typeof vi.fn>;
@@ -253,6 +254,7 @@ describe("a free message (SL3, US2, US3)", () => {
       entries: signal(entries),
       replying: signal<string | null>(null),
       failure: signal<string | null>(null),
+      activity: signal<string | null>(null),
       post: vi.fn(async () => {}),
       open: vi.fn(async () => {}),
       reload: vi.fn(async () => {}),
