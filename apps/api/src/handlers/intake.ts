@@ -26,12 +26,14 @@ import { createFactory } from "hono/factory";
 import { stream } from "hono/streaming";
 import { validator } from "hono/validator";
 import { z } from "zod";
+import { profileAssistant } from "../assistants/profile";
 import { env } from "../env";
 import { type About, askFor, type Message } from "../lib/ai";
+import { append, open, type Transaction } from "../lib/conversation";
 import { db } from "../lib/db";
 import { isDuplicate } from "../lib/db/duplicate";
 import { hashOf, kindOf, slugOf } from "../lib/documents";
-import { asking, refused } from "../lib/session";
+import { type Asking, asking, refused } from "../lib/session";
 import { keyFor, type ObjectKey, storage } from "../lib/storage";
 import { createEnvelope } from "../lib/stream";
 import { composed, textOf } from "../lib/text";
@@ -1124,50 +1126,74 @@ const ruleAbout = (title: string, words: string): string => `${title}: ${words}`
  * An `update` here would pass every test that reads only the current rule and quietly
  * destroy the one thing this table exists to keep.
  */
-const keepAsRule = async (kept: {
-  userId: string;
-  itemId: string;
-  kind: RuleKind;
-  text: string;
-  source: RuleSource;
-  questionId: string | null;
-}): Promise<RuleAnswer> => {
+const keepAsRule = async (
+  tx: Transaction,
+  kept: {
+    userId: string;
+    itemId: string;
+    kind: RuleKind;
+    text: string;
+    source: RuleSource;
+    questionId: string | null;
+  },
+): Promise<RuleAnswer> => {
   const id = randomUUID();
-  return db.transaction(async (tx) => {
-    const [written] = await tx
-      .insert(rule)
-      .values({
-        id,
-        userId: kept.userId,
-        itemId: kept.itemId,
-        kind: kept.kind,
-        text: kept.text,
-        source: kept.source,
-        questionId: kept.questionId,
-      })
-      .returning();
-    await tx
-      .update(rule)
-      .set({ supersededBy: id })
-      .where(
-        and(
-          eq(rule.itemId, kept.itemId),
-          eq(rule.userId, kept.userId),
-          isNull(rule.supersededBy),
-          ne(rule.id, id),
-        ),
-      );
-    if (written === undefined) throw new Error("the rule could not be kept");
-    return {
-      id: written.id,
-      text: written.text,
-      kind: written.kind,
-      source: written.source,
-      createdAt: written.createdAt.toISOString(),
-      supersededBy: null,
-    };
-  });
+  const [written] = await tx
+    .insert(rule)
+    .values({
+      id,
+      userId: kept.userId,
+      itemId: kept.itemId,
+      kind: kept.kind,
+      text: kept.text,
+      source: kept.source,
+      questionId: kept.questionId,
+    })
+    .returning();
+  await tx
+    .update(rule)
+    .set({ supersededBy: id })
+    .where(
+      and(
+        eq(rule.itemId, kept.itemId),
+        eq(rule.userId, kept.userId),
+        isNull(rule.supersededBy),
+        ne(rule.id, id),
+      ),
+    );
+  if (written === undefined) throw new Error("the rule could not be kept");
+  return {
+    id: written.id,
+    text: written.text,
+    kind: written.kind,
+    source: written.source,
+    createdAt: written.createdAt.toISOString(),
+    supersededBy: null,
+  };
 };
+
+/**
+ * The question as the person was asked it, and every option offered, as the entry that
+ * records their answer or their skip carries it (`SL7`). The rule each option would write
+ * stays out: it is the intake's, not what the person saw.
+ */
+const asAsked = async (row: { id: string; lead: string; where: string }) => ({
+  lead: row.lead,
+  where: row.where,
+  options: await db
+    .select({ id: questionOption.id, label: questionOption.label, hint: questionOption.hint })
+    .from(questionOption)
+    .where(eq(questionOption.questionId, row.id))
+    .orderBy(asc(questionOption.position), asc(questionOption.id)),
+});
+
+/**
+ * The profile's conversation, which an answer or a skip is written into (`SL7`). A
+ * reading has happened, since a question exists; opened with the profile assistant's own
+ * opening when nobody has opened it yet, as `GET /api/conversations/profile` would.
+ */
+const profileConversation = (person: Asking) =>
+  open(person, profileAssistant.name, null, (tx) => profileAssistant.opening(tx, person.id));
 
 /**
  * One question answered, or put off (`S4.3`, `S4.4`, `US6`, `US7`).
@@ -1198,8 +1224,15 @@ export const answerQuestion = factory.createHandlers(
       .where(and(eq(question.id, c.req.param("id") ?? ""), eq(question.userId, person.id)));
     if (row === undefined) return c.json({ error: "no such question" }, 404);
 
+    // The skip and its entry, one write (`SL7`, `H4`): a failed entry leaves the question
+    // waiting, as nothing had happened.
     if (said.skip === true) {
-      await db.update(question).set({ state: "skipped" }).where(eq(question.id, row.id));
+      const asked = await asAsked(row);
+      const conversation = await profileConversation(person);
+      await db.transaction(async (tx) => {
+        await tx.update(question).set({ state: "skipped" }).where(eq(question.id, row.id));
+        await append(tx, conversation, "person", [{ kind: "question_skipped", ...asked }]);
+      });
       return c.json({ skipped: row.id }, 200);
     }
 
@@ -1233,21 +1266,36 @@ export const answerQuestion = factory.createHandlers(
           ? picked
           : `${picked} — ${words}`;
 
-    const kept = await keepAsRule({
-      userId: person.id,
-      itemId: row.itemId,
-      // A scope question asks what the person's part was; a conflict and a provenance
-      // question both settle what may never be claimed (the spec's *The rules*).
-      kind: row.kind === "scope" ? "scope" : "constraint",
-      text,
-      source: picked === null ? "own words" : "answer",
-      questionId: row.id,
-    });
+    const asked = await asAsked(row);
+    const conversation = await profileConversation(person);
 
-    await db
-      .update(question)
-      .set({ state: "answered", answeredAt: new Date() })
-      .where(eq(question.id, row.id));
+    // The state, the rule as it was always written, and the person's entry: one write
+    // (`SL7`, `H4`). A failed entry rolls back the rule and the state with it.
+    const kept = await db.transaction(async (tx) => {
+      const written = await keepAsRule(tx, {
+        userId: person.id,
+        itemId: row.itemId,
+        // A scope question asks what the person's part was; a conflict and a provenance
+        // question both settle what may never be claimed (the spec's *The rules*).
+        kind: row.kind === "scope" ? "scope" : "constraint",
+        text,
+        source: picked === null ? "own words" : "answer",
+        questionId: row.id,
+      });
+      await tx
+        .update(question)
+        .set({ state: "answered", answeredAt: new Date() })
+        .where(eq(question.id, row.id));
+      await append(tx, conversation, "person", [
+        {
+          kind: "question_answered",
+          ...asked,
+          picked: option?.id ?? null,
+          words: words === "" ? null : words,
+        },
+      ]);
+      return written;
+    });
 
     return c.json({ rule: kept }, 200);
   },
@@ -1298,14 +1346,16 @@ export const writeItemRule = factory.createHandlers(
       return c.json({ error: "no such line" }, 404);
     }
 
-    const kept = await keepAsRule({
-      userId: person.id,
-      itemId: item.id,
-      kind: "scope",
-      text: ruleAbout(line?.text ?? item.title, said.words.trim()),
-      source: "own words",
-      questionId: null,
-    });
+    const kept = await db.transaction((tx) =>
+      keepAsRule(tx, {
+        userId: person.id,
+        itemId: item.id,
+        kind: "scope",
+        text: ruleAbout(line?.text ?? item.title, said.words.trim()),
+        source: "own words",
+        questionId: null,
+      }),
+    );
     return c.json({ rule: kept }, 200);
   },
 );

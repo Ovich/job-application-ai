@@ -217,6 +217,129 @@ describe("skipping (criterion 8, US7)", () => {
   });
 });
 
+/**
+ * The person's tool use, in the conversation (agent-consolidation `S7.1`, `H4`, `ID209`):
+ * an answer or a skip commits the question's state and a `person` entry with its part in
+ * one transaction. The conversation is read back through its own route, never a table.
+ */
+describe("an answer or a skip, written into the conversation (S7.1, H4)", () => {
+  type Stored = {
+    entries: { position: number; author: string; parts: Record<string, unknown>[] }[];
+  };
+
+  const conversationOf = async (cookie: string): Promise<Stored> =>
+    (await (
+      await app.request("/api/conversations/profile", { headers: { cookie } })
+    ).json()) as Stored;
+
+  /** Every option the question offered, as the part carries it: no rule. */
+  const offered = (question: Support.AskedQuestion) =>
+    question.options.map(({ id, label, hint }) => ({ id, label, hint }));
+
+  /** The entries written after the ones a case read before it acted. */
+  const since = (before: Stored, after: Stored) =>
+    after.entries.slice(before.entries.length).map((entry) => [entry.author, entry.parts]);
+
+  it("commits the answered state and one person entry holding the question, every option and the pick", async () => {
+    const person = await asked("answer-into-the-conversation@example.com");
+    const before = await conversationOf(person.cookie);
+    const question = about(person.profile, "Kubernetes");
+    const picked = question.options[1];
+
+    expect((await answer(person.cookie, question.id, { optionId: picked?.id })).status).toBe(200);
+
+    expect(about(await profileOf(person.cookie), "Kubernetes").state).toBe("answered");
+    expect(since(before, await conversationOf(person.cookie))).toEqual([
+      [
+        "person",
+        [
+          {
+            kind: "question_answered",
+            lead: question.lead,
+            where: question.where,
+            options: offered(question),
+            picked: picked?.id,
+            words: null,
+          },
+        ],
+      ],
+    ]);
+  });
+
+  it("carries the person's words beside the pick, in the same part", async () => {
+    const person = await asked("answer-with-words-into-the-conversation@example.com");
+    const before = await conversationOf(person.cookie);
+    const question = about(person.profile, "Kubernetes");
+
+    await answer(person.cookie, question.id, {
+      optionId: question.options[0]?.id,
+      words: "three clusters, one of them on bare metal",
+    });
+
+    expect(since(before, await conversationOf(person.cookie))).toEqual([
+      [
+        "person",
+        [
+          expect.objectContaining({
+            kind: "question_answered",
+            picked: question.options[0]?.id,
+            words: "three clusters, one of them on bare metal",
+          }),
+        ],
+      ],
+    ]);
+  });
+
+  it("commits the skipped state and one person entry holding the question and every option", async () => {
+    const person = await asked("skip-into-the-conversation@example.com");
+    const before = await conversationOf(person.cookie);
+    const question = about(person.profile, "Kubernetes");
+
+    expect((await answer(person.cookie, question.id, { skip: true })).status).toBe(200);
+
+    expect(about(await profileOf(person.cookie), "Kubernetes").state).toBe("skipped");
+    expect(since(before, await conversationOf(person.cookie))).toEqual([
+      [
+        "person",
+        [
+          {
+            kind: "question_skipped",
+            lead: question.lead,
+            where: question.where,
+            options: offered(question),
+          },
+        ],
+      ],
+    ]);
+  });
+
+  it("keeps the question's state, writes no rule and no entry, and answers 500 when the entry cannot be written", async () => {
+    const person = await asked("answer-whose-entry-fails@example.com");
+    const before = await conversationOf(person.cookie);
+    const question = about(person.profile, "Kubernetes");
+    const { failingOn } = await import("../support/failing-entry");
+    const failure = await failingOn(testDb, "INJECTED-FAILURE-S71");
+
+    let status: number;
+    try {
+      status = (
+        await answer(person.cookie, question.id, {
+          optionId: question.options[0]?.id,
+          words: "INJECTED-FAILURE-S71",
+        })
+      ).status;
+    } finally {
+      await failure.dispose();
+    }
+
+    expect(status).toBe(500);
+    const after = await profileOf(person.cookie);
+    expect(about(after, "Kubernetes").state).toBe("waiting");
+    expect(itemNamed(after, "Kubernetes").rule).toBeNull();
+    expect(await conversationOf(person.cookie)).toEqual(before);
+  });
+});
+
 describe("what belongs to somebody else, and what is gone (US11, Failure modes)", () => {
   it("answers 404 for another person's question, and touches no row of theirs", async () => {
     const owner = await asked("answer-owner@example.com");

@@ -18,6 +18,8 @@ import { UiModal } from "../../ui/modal/modal";
 import { UiSpinner } from "../../ui/spinner/spinner";
 import { UiText } from "../../ui/typography/text/text";
 import { ProfileEditPart } from "../parts/profile-edit-part/profile-edit-part";
+import { QuestionAnsweredPart } from "../parts/question-answered-part/question-answered-part";
+import { QuestionSkippedPart } from "../parts/question-skipped-part/question-skipped-part";
 import { type Pressed, ProfileAssistant } from "../profile-assistant/profile-assistant";
 import { ProfileBar } from "../profile-bar/profile-bar";
 import type { RegionRef } from "../profile-region/profile-region";
@@ -60,6 +62,8 @@ type Item = Answer["experience"][number];
     parts: [
       { kind: "tool_use", component: ProfileEditPart },
       { kind: "tool_result", component: ProfileEditPart },
+      { kind: "question_answered", component: QuestionAnsweredPart },
+      { kind: "question_skipped", component: QuestionSkippedPart },
     ],
   }),
   // The layout every assistant screen holds to (the person, 2026-09-12): this fills the
@@ -447,7 +451,9 @@ export class ProfileViewer {
         ...(said.words === undefined ? {} : { words: said.words }),
       },
     });
-    await this.load();
+    // The answer is an entry of the conversation now (agent-consolidation `S7.1`), so the
+    // conversation is read back with the profile.
+    await Promise.all([this.load(), this.core.reload()]);
   }
 
   protected async skipped(said: { questionId: string }): Promise<void> {
@@ -457,7 +463,7 @@ export class ProfileViewer {
       param: { id: said.questionId },
       json: { skip: true },
     });
-    await this.load();
+    await Promise.all([this.load(), this.core.reload()]);
   }
 
   /**

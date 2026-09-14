@@ -77,7 +77,10 @@ const conversationOf = async (person: string): Promise<Conversation> => {
   return conversation;
 };
 
-type Ran = { kind: "text"; text: string } | { kind: "entry"; entry: Entry };
+type Ran =
+  | { kind: "activity"; text: string }
+  | { kind: "text"; text: string }
+  | { kind: "entry"; entry: Entry };
 
 /** Everything `run` yielded, and what it threw, if it threw. */
 const ranThrough = async (
@@ -171,8 +174,9 @@ describe("recorded answers of two steps (S4.5)", () => {
     }
 
     expect(ran.thrown).toBeUndefined();
+    // What the agent is doing comes before each step's words and before its call (S7.5).
     expect(ran.said.map((each) => each.kind).filter((kind, i, all) => all[i - 1] !== kind)).toEqual(
-      ["text", "entry", "text", "entry"],
+      ["activity", "text", "activity", "entry", "activity", "text", "entry"],
     );
 
     const after = await standing(at.person, at.post);
@@ -235,6 +239,74 @@ describe("recorded answers of two steps (S4.5)", () => {
     expect(JSON.parse(String(answered?.content))).toEqual({ before, after });
     expect(String(bodyOf(0).messages[1]?.content)).not.toContain("Shipped the developer platform.");
     expect(String(bodyOf(1).messages[1]?.content)).toContain("Shipped the developer platform.");
+  });
+});
+
+/**
+ * What the agent is doing, as a short phrase (`S7.5`, `ID210`, spec `H27`): the step's own
+ * before its first words, and the called tool's summary of the call before it is applied.
+ * Never stored: the conversation holds only what it held before.
+ */
+describe("what the agent says it is doing (S7.5, ID210)", () => {
+  const activitiesOf = (said: Ran[]) =>
+    said.flatMap((ran) => (ran.kind === "activity" ? [ran.text] : []));
+
+  it("yields the step's phrase before its first words, and stores none of it", async () => {
+    const at = await planted();
+    const conversation = await conversationOf(at.person);
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+
+    const { said } = await ranThrough(
+      run(profileAssistant, conversation, at.person, aiThroughTheApp()),
+    );
+
+    expect(said[0]).toEqual({ kind: "activity", text: "Reading your profile" });
+    expect(said.findIndex((ran) => ran.kind === "activity")).toBeLessThan(
+      said.findIndex((ran) => ran.kind === "text"),
+    );
+    expect(JSON.stringify(await entries(conversation))).not.toContain("Reading your profile");
+  });
+
+  it("yields profileEditTool's summary of the call after the step's words and before its entries", async () => {
+    const at = await planted();
+    const conversation = await conversationOf(at.person);
+    const cases = withCases({
+      [stepOf(conversation, 1)]: {
+        stands_for: "the model shortens the line",
+        content: "I will shorten the second line.",
+        tool_calls: [
+          {
+            id: "call_1",
+            name: "edit_profile",
+            arguments: {
+              itemId: at.post,
+              operations: [{ op: "replace_line", lineId: at.lines[1], text: "Shipped it." }],
+            },
+          },
+        ],
+      },
+      [stepOf(conversation, 2)]: { stands_for: "the reply", content: "Done." },
+    });
+
+    let ran: { said: Ran[]; thrown: unknown };
+    try {
+      ran = await ranThrough(run(profileAssistant, conversation, at.person, aiThroughTheApp()));
+    } finally {
+      cases.dispose();
+    }
+
+    expect(ran.thrown).toBeUndefined();
+    const summary = ran.said.findIndex(
+      (each) => each.kind === "activity" && each.text === "Rewriting a line",
+    );
+    expect(summary).toBeGreaterThan(ran.said.findIndex((each) => each.kind === "text"));
+    expect(summary).toBeLessThan(ran.said.findIndex((each) => each.kind === "entry"));
+    expect(activitiesOf(ran.said)).toEqual([
+      "Reading your profile",
+      "Rewriting a line",
+      "Reading what changed",
+    ]);
+    expect(JSON.stringify(await entries(conversation))).not.toContain("Rewriting a line");
   });
 });
 

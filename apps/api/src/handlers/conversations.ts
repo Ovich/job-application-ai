@@ -147,8 +147,13 @@ export const postMessage = (definitions: AssistantDefinition[]) =>
           // `lib/ai` as the value the loop asks, gathered here where it is imported.
           const ai = { ask, askStreaming, askFor, askWithTools };
           for await (const ran of run(definition, conversation, person.id, ai)) {
+            // What the agent is doing travels as a status leaf and is never stored (`ID210`).
             await envelope.send(
-              ran.kind === "text" ? ran : { kind: "entry", entry: onTheWire(ran.entry) },
+              ran.kind === "entry"
+                ? { kind: "entry", entry: onTheWire(ran.entry) }
+                : ran.kind === "activity"
+                  ? { kind: "status", text: ran.text }
+                  : ran,
             );
           }
           await envelope.send({ kind: "done" });

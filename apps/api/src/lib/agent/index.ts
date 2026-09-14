@@ -46,6 +46,8 @@ export type AgentTool<I = unknown, R extends ToolOutcome = ToolOutcome> = {
   description: string;
   input: ZodType<I>;
   run(tx: Transaction, person: string, input: I): Promise<R>;
+  /** A few words saying what this call is doing, shown while it runs (`ID210`). */
+  summarise(input: I): string;
 };
 
 /**
@@ -68,8 +70,27 @@ export type AssistantDefinition = {
   opening: (tx: Transaction, person: string) => Promise<Part[]>;
 };
 
-/** What the loop says as it runs: a piece of a step's text, or an entry it committed. */
-export type Ran = { kind: "text"; text: string } | { kind: "entry"; entry: Entry };
+/**
+ * What the loop says as it runs: what it is doing now, in a short phrase (`ID210`), never
+ * stored; a piece of a step's text; or an entry it committed.
+ */
+export type Ran =
+  | { kind: "activity"; text: string }
+  | { kind: "text"; text: string }
+  | { kind: "entry"; entry: Entry };
+
+/** What a step is doing before its first words: the first reads the profile, a later one what changed. */
+const stepPhrase = (n: number): string =>
+  n === 1 ? "Reading your profile" : "Reading what changed";
+
+/** The called tool's own summary of a call, or nothing for a call it would refuse. */
+const summaryOf = (definition: AssistantDefinition, call: ToolCall): string | null => {
+  const tool = definition.tools.find((each) => each.name === call.name);
+  const input = tool?.input.safeParse(call.arguments);
+  return tool === undefined || input === undefined || !input.success
+    ? null
+    : tool.summarise(input.data);
+};
 
 /** How many steps one message may take (`ID180`). */
 export const stepLimit = 5;
@@ -138,6 +159,7 @@ export async function* run(
   const tools = offered(definition);
 
   for (let n = 1; n <= stepLimit; n += 1) {
+    yield { kind: "activity", text: stepPhrase(n) };
     const messages: Message[] = [
       ...(definition.prompt === ""
         ? []
@@ -164,6 +186,11 @@ export async function* run(
       );
       yield { kind: "entry", entry: reply };
       return;
+    }
+
+    for (const call of calls) {
+      const summary = summaryOf(definition, call);
+      if (summary !== null) yield { kind: "activity", text: summary };
     }
 
     const written = await db.transaction(async (tx) => {

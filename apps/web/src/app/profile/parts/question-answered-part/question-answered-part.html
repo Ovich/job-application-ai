@@ -1,0 +1,22 @@
+<!--
+  The whole exchange, at a glance (S7.6), as the person's own bubble (the library's `.me`):
+  the question as it was asked and where it sits, then the option picked and the words
+  written beside it.
+-->
+<div
+  data-part="answered"
+  class="flex flex-col gap-1 rounded-lg bg-primary px-3.5 py-2 text-primary-foreground"
+>
+  <p data-part="asked" uiText variant="caption" class="opacity-80">
+    {{ asked().lead }}
+    @if (asked().where !== "") {
+      <span data-part="where" class="block opacity-80">{{ asked().where }}</span>
+    }
+  </p>
+  @if (picked(); as label) {
+    <p data-part="picked" uiText variant="body" weight="semibold">{{ label }}</p>
+  }
+  @if (words(); as said) {
+    <p data-part="words" uiText variant="body">{{ said }}</p>
+  }
+</div>

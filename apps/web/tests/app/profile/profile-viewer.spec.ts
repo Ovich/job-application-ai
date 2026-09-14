@@ -14,6 +14,7 @@ import {
   itemOf,
   type Profile,
   profileIs,
+  questionOf,
   resetIntake,
   rowOf,
 } from "../../support/intake";
@@ -516,6 +517,109 @@ describe("a stored edit in the assistant's conversation (agent-consolidation SL4
     expect(textOf(page()?.querySelector("profile-assistant"))).not.toContain(
       "This part cannot be shown here.",
     );
+  });
+});
+
+/**
+ * The person's tool use, in the history (agent-consolidation `S7.3`, spec `H26`, `ID191`):
+ * an answer or a skip is drawn on the person's side by the part the profile screen
+ * provides, and the conversation is read again once one is written.
+ */
+describe("the person's tool use in the conversation (agent-consolidation SL7, S7.3)", () => {
+  const kubernetes = questionOf({
+    id: "q1",
+    itemId: "chip-k8s",
+    itemTitle: "Kubernetes",
+    lead: "Which was it?",
+  });
+  const asked = {
+    lead: kubernetes.lead,
+    where: kubernetes.where,
+    options: kubernetes.options.map(({ id, label, hint }) => ({ id, label, hint })),
+  };
+  const opening = entryOf(1, [{ kind: "text", text: "I read your 5 documents.", scripted: true }]);
+
+  /** The person's side of the conversation, as a person reads it. */
+  const personSide = (page: () => HTMLElement | null) =>
+    Array.from(page()?.querySelectorAll("profile-assistant [data-msg=person]") ?? []).map((each) =>
+      textOf(each),
+    );
+
+  it("draws a stored answer on the person's side: the option picked and the words", async () => {
+    profileIs({ ...aFullProfile(), questions: [{ ...kubernetes, state: "answered" }] });
+    conversationIs([
+      opening,
+      entryOf(
+        2,
+        [
+          {
+            kind: "question_answered",
+            ...asked,
+            picked: "q1-2",
+            words: "three clusters, one on bare metal",
+          },
+        ],
+        "person",
+      ),
+    ]);
+    const { page, eventually } = await opened();
+
+    await eventually(() =>
+      expect(personSide(page)).toEqual([expect.stringContaining("Ran services on it")]),
+    );
+    expect(personSide(page)[0]).toContain("three clusters, one on bare metal");
+    expect(textOf(page()?.querySelector("profile-assistant"))).not.toContain(
+      "This part cannot be shown here.",
+    );
+  });
+
+  it("draws a stored skip on the person's side as a line saying it was skipped", async () => {
+    profileIs({ ...aFullProfile(), questions: [{ ...kubernetes, state: "skipped" }] });
+    conversationIs([opening, entryOf(2, [{ kind: "question_skipped", ...asked }], "person")]);
+    const { page, eventually } = await opened();
+
+    await eventually(() => expect(personSide(page)).toHaveLength(1));
+    expect(personSide(page)[0]).toMatch(/skipped/i);
+    expect(personSide(page)[0]).toContain("Which was it?");
+    expect(textOf(page()?.querySelector("profile-assistant"))).not.toContain(
+      "This part cannot be shown here.",
+    );
+  });
+
+  it("reads the conversation again after an answer, and draws the pick on the person's side", async () => {
+    profileIs({ ...aFullProfile(), questions: [kubernetes] });
+    const { page, eventually } = await opened();
+    await eventually(() =>
+      expect(page()?.querySelector("profile-assistant [data-action=alt]")).not.toBeNull(),
+    );
+
+    page()?.querySelectorAll<HTMLButtonElement>("profile-assistant [data-action=alt]")[1]?.click();
+    await eventually(() =>
+      expect(
+        page()?.querySelector<HTMLButtonElement>("profile-assistant [data-part=send]")?.disabled,
+      ).toBe(false),
+    );
+    page()?.querySelector<HTMLButtonElement>("profile-assistant [data-part=send]")?.click();
+
+    await eventually(() =>
+      expect(personSide(page)).toEqual([expect.stringContaining("Ran services on it")]),
+    );
+    const conversationReads = intakeRequests().filter(
+      (each) => each.method === "GET" && each.address === "/api/conversations/profile",
+    );
+    expect(conversationReads.length).toBeGreaterThanOrEqual(2);
+  });
+
+  it("reads the conversation again after a skip, and draws the skip on the person's side", async () => {
+    profileIs({ ...aFullProfile(), questions: [kubernetes] });
+    const { page, eventually } = await opened();
+    await eventually(() =>
+      expect(page()?.querySelector("profile-assistant [data-action=skip]")).not.toBeNull(),
+    );
+
+    page()?.querySelector<HTMLButtonElement>("profile-assistant [data-action=skip]")?.click();
+
+    await eventually(() => expect(personSide(page)).toEqual([expect.stringMatching(/skipped/i)]));
   });
 });
 
