@@ -113,6 +113,66 @@ describe("the parts' colours in either theme (S8.6, ID232)", () => {
   });
 });
 
+/**
+ * Every line in the answer bubble is readable (agent-consolidation `S8.6b`, `ID235`, the
+ * person on dev: "part of the greyed text are washed out"): white on the send blue is about
+ * 4.6:1, so no line is faded or lighter; the question and where it sits are told apart from
+ * the pick by the caption size and a normal weight against the pick's semibold.
+ */
+describe("every line in the answer bubble is readable (S8.6b, ID235)", () => {
+  /** The `text-*` utilities that set a size or an alignment, not a colour. */
+  const NOT_A_COLOUR = new Set([
+    "text-label",
+    "text-caption",
+    "text-ui",
+    "text-body",
+    "text-figure",
+    "text-left",
+    "text-center",
+  ]);
+  /** The bubble's own colour, as a line may name it. */
+  const BUBBLE_COLOUR = new Set(["text-white", "text-inherit"]);
+
+  const answer = async (): Promise<HTMLElement> => {
+    const fixture = TestBed.createComponent(QuestionAnsweredPart);
+    fixture.componentRef.setInput("part", {
+      kind: "question_answered",
+      ...asked,
+      picked: "q1-2",
+      words: "three clusters, one on bare metal",
+    });
+    await fixture.whenStable();
+    return fixture.nativeElement as HTMLElement;
+  };
+
+  it("fades no line and gives none a colour other than the bubble's", async () => {
+    const element = await answer();
+    const bubble = element.querySelector("[data-part=answered]");
+    const inside = Array.from(bubble?.querySelectorAll("*") ?? []);
+    expect(inside.length).toBeGreaterThan(0);
+
+    for (const each of [bubble, ...inside]) {
+      const classes = Array.from(each?.classList ?? []);
+      expect(classes.filter((name) => name.startsWith("opacity-"))).toEqual([]);
+      expect(
+        classes.filter(
+          (name) => name.startsWith("text-") && !NOT_A_COLOUR.has(name) && !BUBBLE_COLOUR.has(name),
+        ),
+      ).toEqual([]);
+    }
+  });
+
+  it("tells the question and where it sits from the pick by size and weight", async () => {
+    const element = await answer();
+    const question = element.querySelector("[data-part=asked]");
+    const pick = element.querySelector("[data-part=picked]");
+
+    expect(question?.classList.contains("text-caption")).toBe(true);
+    expect(question?.classList.contains("font-normal")).toBe(true);
+    expect(pick?.classList.contains("font-semibold")).toBe(true);
+  });
+});
+
 describe("a skip, the whole exchange (S7.6)", () => {
   it("shows the question as asked, where it is, and that it was skipped", async () => {
     const said = await drawn(QuestionSkippedPart, { kind: "question_skipped", ...asked });
