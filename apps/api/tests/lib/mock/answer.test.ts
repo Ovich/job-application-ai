@@ -173,7 +173,7 @@ describe("a case nobody recorded (ID166)", () => {
         framesOf(await anthropic.text())
           .map((frame) => anthropicEvent.parse(JSON.parse(frame.data)))
           .filter((event) => event.type === "content_block_delta")
-          .map((event) => event.delta.text)
+          .map((event) => (event.delta.type === "text_delta" ? event.delta.text : ""))
           .join(""),
       ).toBe(placeholder);
     } finally {

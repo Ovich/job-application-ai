@@ -16,6 +16,28 @@ import { z } from "zod";
  * with itself.
  */
 
+/**
+ * One function call of the OpenAI protocol, whole: its arguments are a JSON string, as
+ * the model wrote them, and the protocol does not promise they parse.
+ */
+const openAiToolCall = z.object({
+  id: z.string().min(1),
+  type: z.literal("function"),
+  function: z.object({ name: z.string().min(1), arguments: z.string() }),
+});
+
+/**
+ * One piece of a call in a stream: the first piece of a call carries its `id`, `type`
+ * and `name`, and every piece may carry a fragment of the arguments string. `index` says
+ * which call of the step a fragment belongs to.
+ */
+const openAiToolCallDelta = z.object({
+  index: z.number().int().nonnegative(),
+  id: z.string().min(1).optional(),
+  type: z.literal("function").optional(),
+  function: z.object({ name: z.string().min(1).optional(), arguments: z.string().optional() }),
+});
+
 /** `POST /chat/completions`, whole. Required: id, object, created, model, choices, usage. */
 export const openAiWhole = z.object({
   id: z.string().min(1),
@@ -30,7 +52,8 @@ export const openAiWhole = z.object({
           role: z.literal("assistant"),
           content: z.string(),
           refusal: z.null(),
-          tool_calls: z.null(),
+          // `null` on an answer with no call, the calls otherwise; never an empty list.
+          tool_calls: z.union([z.null(), z.array(openAiToolCall).min(1)]),
         }),
         finish_reason: z.enum(["stop", "tool_calls"]),
         logprobs: z.null(),
@@ -60,6 +83,7 @@ export const openAiChunk = z.object({
         delta: z.object({
           role: z.literal("assistant").optional(),
           content: z.string().optional(),
+          tool_calls: z.array(openAiToolCallDelta).min(1).optional(),
         }),
         finish_reason: z.enum(["stop", "tool_calls"]).nullable(),
         logprobs: z.null(),
@@ -74,7 +98,21 @@ export const anthropicWhole = z.object({
   type: z.literal("message"),
   role: z.literal("assistant"),
   model: z.string().min(1),
-  content: z.array(z.object({ type: z.literal("text"), text: z.string() })).min(1),
+  // A text block, and one `tool_use` block per call, its input an object rather than
+  // the string the other protocol carries.
+  content: z
+    .array(
+      z.discriminatedUnion("type", [
+        z.object({ type: z.literal("text"), text: z.string() }),
+        z.object({
+          type: z.literal("tool_use"),
+          id: z.string().min(1),
+          name: z.string().min(1),
+          input: z.record(z.string(), z.unknown()),
+        }),
+      ]),
+    )
+    .min(1),
   stop_reason: z.enum(["end_turn", "tool_use"]),
   stop_sequence: z.null(),
   usage: z.object({
@@ -108,12 +146,24 @@ export const anthropicEvent = z.discriminatedUnion("type", [
   z.object({
     type: z.literal("content_block_start"),
     index: z.number().int().nonnegative(),
-    content_block: z.object({ type: z.literal("text"), text: z.literal("") }),
+    // A `tool_use` block opens with an empty input; its input arrives as `input_json_delta`.
+    content_block: z.discriminatedUnion("type", [
+      z.object({ type: z.literal("text"), text: z.literal("") }),
+      z.object({
+        type: z.literal("tool_use"),
+        id: z.string().min(1),
+        name: z.string().min(1),
+        input: z.object({}).strict(),
+      }),
+    ]),
   }),
   z.object({
     type: z.literal("content_block_delta"),
     index: z.number().int().nonnegative(),
-    delta: z.object({ type: z.literal("text_delta"), text: z.string() }),
+    delta: z.discriminatedUnion("type", [
+      z.object({ type: z.literal("text_delta"), text: z.string() }),
+      z.object({ type: z.literal("input_json_delta"), partial_json: z.string() }),
+    ]),
   }),
   z.object({ type: z.literal("content_block_stop"), index: z.number().int().nonnegative() }),
   z.object({
