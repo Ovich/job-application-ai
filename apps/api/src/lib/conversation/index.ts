@@ -5,6 +5,8 @@ import {
   conversationEntry,
   type Part,
   parts as partsOf,
+  questionAnsweredPart,
+  questionSkippedPart,
   toolResultPart,
   toolUsePart,
 } from "@app/db";
@@ -137,6 +139,31 @@ export const entries = async (of: Conversation): Promise<Entry[]> =>
     .orderBy(asc(conversationEntry.position));
 
 /**
+ * One part of the person's entry, in the words the model reads (`S7.2`): their text as it
+ * is, and their use of the assistant's tool said as they would say it. A part of a kind
+ * this does not know says nothing.
+ */
+const personSays = (part: Part): string[] => {
+  if (part.kind === "text" && typeof part["text"] === "string") return [part["text"]];
+  const answered = questionAnsweredPart.safeParse(part);
+  if (answered.success) {
+    const { lead, where, options, picked, words } = answered.data;
+    const option = options.find((each) => each.id === picked);
+    const asked = `I answered "${lead}" (${where})`;
+    if (option === undefined) return [`${asked} in my own words: ${words ?? ""}`];
+    const chose = `${asked}: ${option.label} (${option.hint}).`;
+    return [words === null ? chose : `${chose} In my own words: ${words}`];
+  }
+  const skipped = questionSkippedPart.safeParse(part);
+  if (skipped.success) {
+    return [
+      `I skipped "${skipped.data.lead}" (${skipped.data.where}) for now, without answering it.`,
+    ];
+  }
+  return [];
+};
+
+/**
  * The conversation as the model reads it (`ID162`), in the protocol's own messages.
  *
  * The person's entry is a `user` message of its `text` parts, joined. An assistant's
@@ -168,7 +195,10 @@ export const asMessages = (said: Entry[]): Message[] =>
         part.kind === "text" && typeof part["text"] === "string" ? [part["text"]] : [],
       )
       .join("\n\n");
-    if (entry.author === "person") return text === "" ? [] : [{ role: "user", content: text }];
+    if (entry.author === "person") {
+      const said = entry.parts.flatMap(personSays).join("\n\n");
+      return said === "" ? [] : [{ role: "user", content: said }];
+    }
 
     const calls = entry.parts.flatMap((part) => {
       const read = toolUsePart.safeParse(part);
