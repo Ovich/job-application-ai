@@ -1,4 +1,4 @@
-import { vi } from "vitest";
+import { beforeEach, vi } from "vitest";
 import type { Provider } from "../../src/app/auth/session";
 
 /**
@@ -158,7 +158,21 @@ const standIn = vi.fn(async (input: RequestInfo | URL, init?: RequestInit): Prom
 
 vi.stubGlobal("fetch", standIn);
 
-/** `get-session` answers `who`; `list-accounts` their providers, in the order linked. */
+/**
+ * And again before every case. The unit-test builder runs spec files in one shared
+ * context (`isolate: false`), and a spec that stands in for `fetch` itself — `lib/api`'s,
+ * the library client's — leaves its own mock behind, or restores the platform's with
+ * `vi.unstubAllGlobals`. Installed only at load, this stand-in was then gone for every
+ * file that happened to run after one of them in the same worker: which files those are
+ * depends on how many workers the machine gives the run, so a suite green on a laptop
+ * went red on a two-core runner. A spec that stubs `fetch` does so inside its case, after
+ * this hook, so it still gets its own.
+ */
+beforeEach(() => {
+  vi.stubGlobal("fetch", standIn);
+});
+
+/** `get-session` answers `who`;`list-accounts` their providers, in the order linked. */
 export const signedInAs = (identity: Identity): void => {
   who = identity;
 };
