@@ -55,8 +55,13 @@ export default defineConfig({
       // `dev-sql` is the local project's alone and always will be (agent-consolidation SL9,
       // ID228): it proves `pnpm dev:sql` on the local container, and dev is one shared
       // database nothing but the app may write to.
+      // `profile-look` joins at assistant-architecture SL10 (ID240, ID241): the profile
+      // page's states compared pixel for pixel with SL1's images. Local only, since dev
+      // holds other people's data. Its baselines sit beside it in `profile-look/`, one per
+      // state, width and platform: a run compares against its own platform's images.
       testMatch:
-        /(health-stream|auth|entry-route|intake|intake-questions|profile|conversation|dev-sql)\.spec\.ts$/,
+        /(health-stream|auth|entry-route|intake|intake-questions|profile|profile-look|conversation|dev-sql)\.spec\.ts$/,
+      snapshotPathTemplate: "{testDir}/profile-look/{arg}-{platform}{ext}",
       use: { baseURL: "http://localhost:4200" },
     },
     {
@@ -94,15 +99,6 @@ export default defineConfig({
       // parallel.
       fullyParallel: false,
       workers: 1,
-    },
-    {
-      name: "capture",
-      // The profile page's look, captured by hand before the assistant architecture
-      // migration (assistant-architecture SL1, ID240, ID256): a walk that writes images
-      // rather than a spec, so neither project above collects it. Local only, since dev
-      // holds other people's data. SL10 turns it into `profile-look.spec.ts`.
-      testMatch: /profile-look\.capture\.ts$/,
-      use: { baseURL: "http://localhost:4200" },
     },
   ],
 });
