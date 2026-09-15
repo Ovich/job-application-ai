@@ -1,8 +1,8 @@
 import type { Type } from "@angular/core";
 import { TestBed } from "@angular/core/testing";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { QuestionAnsweredPart } from "../../../../src/app/profile/parts/question-answered-part/question-answered-part";
-import { QuestionSkippedPart } from "../../../../src/app/profile/parts/question-skipped-part/question-skipped-part";
+import { HistoryAnswerPart } from "../../../../src/app/profile/profile-assistant/history/history-answer-part/history-answer-part";
+import { HistorySkipPart } from "../../../../src/app/profile/profile-assistant/history/history-skip-part/history-skip-part";
 import { type Entry, resetIntake } from "../../../support/intake";
 import { reset } from "../../../support/session";
 
@@ -46,7 +46,7 @@ const drawn = async (component: Type<unknown>, part: Part): Promise<string> => {
 
 describe("an answer, the whole exchange (S7.6)", () => {
   it("shows the question as asked, where it is, the option picked and the person's words", async () => {
-    const said = await drawn(QuestionAnsweredPart, {
+    const said = await drawn(HistoryAnswerPart, {
       kind: "question_answered",
       ...asked,
       picked: "q1-2",
@@ -82,7 +82,7 @@ describe("the parts' colours in either theme (S8.6, ID232)", () => {
     Array.from(element?.classList ?? []).filter((each) => THEME_COLOUR.test(each));
 
   it("draws an answer in the send blue with white text, and no line in it follows the theme", async () => {
-    const element = await rendered(QuestionAnsweredPart, {
+    const element = await rendered(HistoryAnswerPart, {
       kind: "question_answered",
       ...asked,
       picked: "q1-2",
@@ -103,7 +103,7 @@ describe("the parts' colours in either theme (S8.6, ID232)", () => {
   });
 
   it("leaves a skip, drawn without a bubble, on the theme's tokens", async () => {
-    const element = await rendered(QuestionSkippedPart, { kind: "question_skipped", ...asked });
+    const element = await rendered(HistorySkipPart, { kind: "question_skipped", ...asked });
 
     const skipped = element.querySelector("[data-part=skipped]");
     expect(skipped?.classList.contains("bg-send")).toBe(false);
@@ -134,7 +134,7 @@ describe("every line in the answer bubble is readable (S8.6b, ID235)", () => {
   const BUBBLE_COLOUR = new Set(["text-white", "text-inherit"]);
 
   const answer = async (): Promise<HTMLElement> => {
-    const fixture = TestBed.createComponent(QuestionAnsweredPart);
+    const fixture = TestBed.createComponent(HistoryAnswerPart);
     fixture.componentRef.setInput("part", {
       kind: "question_answered",
       ...asked,
@@ -175,7 +175,7 @@ describe("every line in the answer bubble is readable (S8.6b, ID235)", () => {
 
 describe("a skip, the whole exchange (S7.6)", () => {
   it("shows the question as asked, where it is, and that it was skipped", async () => {
-    const said = await drawn(QuestionSkippedPart, { kind: "question_skipped", ...asked });
+    const said = await drawn(HistorySkipPart, { kind: "question_skipped", ...asked });
 
     expect(said).toContain("Which was it?");
     expect(said).toContain("What you work with · DevOps and cloud");

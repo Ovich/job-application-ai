@@ -75,16 +75,16 @@ export type Item = {
   children: Item[];
   sources: Quote[];
   /** What the person said about it, newest first, and the one nothing superseded. */
-  rules: Rule[];
-  rule: Rule | null;
+  concerns: Concern[];
+  concern: Concern | null;
   /** The question this intake asked about it, whatever state it is now in. */
   question: Question | null;
 };
 
 type Quote = { document: string; said: string };
 
-/** One rule on the wire, as `GET /profile` carries it (SL4, ID121). */
-export type Rule = {
+/** One profile concern on the wire, as `GET /profile` carries it (SL4, ID121, D14). */
+export type Concern = {
   id: string;
   text: string;
   kind: "scope" | "constraint";
@@ -102,7 +102,7 @@ export type Question = {
   where: string;
   lead: string;
   state: "waiting" | "answered" | "skipped";
-  options: { id: string; label: string; hint: string; rule: string | null }[];
+  options: { id: string; label: string; hint: string; concern: string | null }[];
 };
 
 export type Profile = {
@@ -134,8 +134,8 @@ export const itemOf = (
   lines: [],
   children: [],
   sources: [],
-  rules: [],
-  rule: null,
+  concerns: [],
+  concern: null,
   question: null,
   ...item,
 });
@@ -153,21 +153,21 @@ export const questionOf = (
       id: `${question.id}-1`,
       label: "Ran the cluster",
       hint: "nodes, upgrades, access",
-      rule: "Kubernetes: cluster administration, and the services on it",
+      concern: "Kubernetes: cluster administration, and the services on it",
     },
     {
       id: `${question.id}-2`,
       label: "Ran services on it",
       hint: "deployed and operated the workloads",
-      rule: "Kubernetes: deploying and running services, never cluster administration",
+      concern: "Kubernetes: deploying and running services, never cluster administration",
     },
     {
       id: `${question.id}-3`,
       label: "Used it as a developer",
       hint: "shipped to a cluster someone else ran",
-      rule: "Kubernetes: shipping to a cluster run by others",
+      concern: "Kubernetes: shipping to a cluster run by others",
     },
-    { id: `${question.id}-own`, label: "Something else", hint: "say it below", rule: null },
+    { id: `${question.id}-own`, label: "Something else", hint: "say it below", concern: null },
   ],
   ...question,
 });
@@ -188,29 +188,6 @@ export const emptyProfile: Profile = {
 };
 
 let profile: Profile = emptyProfile;
-
-/** How many rules the person has written themselves, so each one gets its own id. */
-let ruleCount = 1;
-
-/** Every item of a profile, the nesting flattened, so one can be found by its id. */
-const everyItemOf = (given: Profile): Item[] => {
-  const all: Item[] = [];
-  const walk = (items: Item[]): void => {
-    for (const item of items) {
-      all.push(item);
-      walk(item.children);
-    }
-  };
-  walk([
-    ...(given.summary === null ? [] : [given.summary]),
-    ...(given.identity === null ? [] : [given.identity]),
-    ...given.experience,
-    ...given.projects,
-    ...given.groups,
-    ...given.education,
-  ]);
-  return all;
-};
 
 /** That question is now in that state, in the profile the route answers from now on. */
 const questionBecomes = (id: string, state: Question["state"]): void => {
@@ -233,14 +210,17 @@ const questionBecomes = (id: string, state: Question["state"]): void => {
   };
 };
 
-/** The rule the answer wrote, on its item, superseding the one before it. */
-const ruleLandsOn = (itemId: string, rule: Rule): void => {
+/** The concern the answer kept, on its item, superseding the one before it. */
+const concernLandsOn = (itemId: string, concern: Concern): void => {
   const onItem = (item: Item): Item =>
     item.id === itemId
       ? {
           ...item,
-          rule,
-          rules: [rule, ...item.rules.map((each) => ({ ...each, supersededBy: rule.id }))],
+          concern,
+          concerns: [
+            concern,
+            ...item.concerns.map((each) => ({ ...each, supersededBy: concern.id })),
+          ],
         }
       : { ...item, children: item.children.map(onItem) };
   profile = {
@@ -319,7 +299,6 @@ export const resetIntake = (): void => {
   requests = [];
   dropping = null;
   held = null;
-  ruleCount = 1;
   conversation = null;
   resetReplies();
 };
@@ -549,6 +528,82 @@ alsoAnswering((address, init) => {
   );
 });
 
+/**
+ * What the person does with the assistant's own tool, kept the way the actions route keeps
+ * it (D9): the question moves state, an answer's concern lands on its item, and the person's
+ * entry joins the conversation and is answered, so a screen that re-reads the profile or the
+ * conversation finds what it just did. A stand-in whose rows stood still would let a screen
+ * pass that threw the route's own answer away.
+ */
+alsoAnswering((address, init) => {
+  const path = new URL(address, "http://localhost").pathname;
+  const action = /^\/api\/conversations\/[^/]+\/actions\/([^/]+)$/.exec(path)?.[1];
+  if (action === undefined) return undefined;
+  requests.push({ method: init?.method ?? "POST", address: path });
+  const said = (typeof init?.body === "string" ? JSON.parse(init.body) : {}) as {
+    questionId?: string;
+    optionId?: string;
+    words?: string;
+  };
+  if (action !== "answer_question" && action !== "skip_question") {
+    return json({ error: "no such action" }, 404);
+  }
+  const question = profile.questions.find((each) => each.id === said.questionId);
+  if (question === undefined) return json({ error: "no such question" }, 404);
+  const asked = {
+    lead: question.lead,
+    where: question.where,
+    options: question.options.map(({ id: option, label, hint }) => ({ id: option, label, hint })),
+  };
+  /** The person's entry, appended in the action's own transaction, and answered. */
+  const recorded = (part: Entry["parts"][number]): Response => {
+    conversation ??= {
+      status: 200,
+      body: { id: "conversation-1", entries: [openingOf(profile)] },
+    };
+    const body = conversation.body as { id: string; entries: Entry[] };
+    const next = entryOf(body.entries.length + 1, [part], "person");
+    if (conversation.status === 200) {
+      conversation = { ...conversation, body: { ...body, entries: [...body.entries, next] } };
+    }
+    return json({ entries: [next] });
+  };
+  if (action === "skip_question") {
+    questionBecomes(question.id, "skipped");
+    return recorded({ kind: "question_skipped", ...asked });
+  }
+  const option = question.options.find((each) => each.id === said.optionId);
+  if (said.optionId !== undefined && option === undefined) {
+    return json({ error: "no such answer" }, 404);
+  }
+  const picked = option?.concern ?? null;
+  const words = (said.words ?? "").trim();
+  if (picked === null && words === "") {
+    return json({ error: "pick a row, or say it in your own words" }, 400);
+  }
+  const text =
+    picked === null
+      ? `${question.itemTitle}: ${words}`
+      : words === ""
+        ? picked
+        : `${picked} — ${words}`;
+  questionBecomes(question.id, "answered");
+  concernLandsOn(question.itemId, {
+    id: `concern-${profile.questions.indexOf(question) + 1}`,
+    text,
+    kind: question.kind === "scope" ? "scope" : "constraint",
+    source: picked === null ? "own words" : "answer",
+    createdAt: "2026-09-12T10:14:00.000Z",
+    supersededBy: null,
+  });
+  return recorded({
+    kind: "question_answered",
+    ...asked,
+    picked: option?.id ?? null,
+    words: words === "" ? null : words,
+  });
+});
+
 alsoAnswering((address, init) => {
   const path = new URL(address, "http://localhost").pathname;
   if (!path.startsWith("/api/conversations/")) return undefined;
@@ -572,99 +627,6 @@ alsoAnswering((address, init) => {
   requests.push({ method, address: path });
 
   if (path === "/api/intake/profile") return json(profile);
-
-  /**
-   * The answer and the skip, kept the way the API keeps them: the question moves state
-   * and the rule lands on its item, so a screen that re-reads the profile finds what it
-   * just said. A stand-in whose rows stood still would let a screen pass that threw the
-   * route's own answer away.
-   */
-  if (/^\/api\/intake\/questions\/[^/]+\/answer$/.test(path)) {
-    const id = path.split("/")[4] ?? "";
-    const question = profile.questions.find((each) => each.id === id);
-    if (question === undefined) return json({ error: "no such question" }, 404);
-    const said = (typeof init?.body === "string" ? JSON.parse(init.body) : {}) as {
-      optionId?: string;
-      words?: string;
-      skip?: boolean;
-    };
-    // The person's entry, written with the state as the API writes it (agent-consolidation
-    // `S7.1`): a screen that reads the conversation again finds the answer or the skip.
-    const asked = {
-      lead: question.lead,
-      where: question.where,
-      options: question.options.map(({ id: option, label, hint }) => ({ id: option, label, hint })),
-    };
-    const recorded = (part: Entry["parts"][number]): void => {
-      if (conversation === null || conversation.status !== 200) return;
-      const body = conversation.body as { id: string; entries: Entry[] };
-      const next = entryOf(body.entries.length + 1, [part], "person");
-      conversation = { ...conversation, body: { ...body, entries: [...body.entries, next] } };
-    };
-    if (said.skip === true) {
-      questionBecomes(question.id, "skipped");
-      recorded({ kind: "question_skipped", ...asked });
-      return json({ skipped: question.id });
-    }
-    const picked = question.options.find((option) => option.id === said.optionId)?.rule ?? null;
-    const words = (said.words ?? "").trim();
-    if (picked === null && words === "") return json({ error: "say something" }, 400);
-    const text =
-      picked === null
-        ? `${question.itemTitle}: ${words}`
-        : words === ""
-          ? picked
-          : `${picked} — ${words}`;
-    questionBecomes(question.id, "answered");
-    recorded({
-      kind: "question_answered",
-      ...asked,
-      picked: said.optionId ?? null,
-      words: words === "" ? null : words,
-    });
-    ruleLandsOn(question.itemId, {
-      id: `rule-${profile.questions.indexOf(question) + 1}`,
-      text,
-      kind: question.kind === "scope" ? "scope" : "constraint",
-      source: picked === null ? "own words" : "answer",
-      createdAt: "2026-09-12T10:14:00.000Z",
-      supersededBy: null,
-    });
-    return json({ rule: { text } });
-  }
-
-  /**
-   * The rule the person wrote on an item nobody asked about, kept the way the API keeps
-   * it: `<the item's title>: <the words>`, landing on that item and superseding whatever
-   * was there. A stand-in that answered `kept` and moved nothing would let a screen pass
-   * that never showed the check line a person had just written.
-   */
-  if (/^\/api\/intake\/items\/[^/]+\/rule$/.test(path)) {
-    const id = path.split("/")[4] ?? "";
-    const item = everyItemOf(profile).find((each) => each.id === id);
-    if (item === undefined) return json({ error: "no such item" }, 404);
-    const said = (typeof init?.body === "string" ? JSON.parse(init.body) : {}) as {
-      words?: string;
-      lineId?: string;
-    };
-    const words = (said.words ?? "").trim();
-    if (words === "") return json({ error: "say it in your own words" }, 400);
-    // A rule written from one of the item's lines is about that line, in the line's own
-    // words, and lands on the item the line belongs to: a line carries no rule of its own.
-    const line =
-      said.lineId === undefined ? null : item.lines.find((each) => each.id === said.lineId);
-    if (line === undefined) return json({ error: "no such line" }, 404);
-    const kept: Rule = {
-      id: `rule-own-${ruleCount++}`,
-      text: `${line === null ? item.title : line.text}: ${words}`,
-      kind: "scope",
-      source: "own words",
-      createdAt: "2026-09-12T10:14:00.000Z",
-      supersededBy: null,
-    };
-    ruleLandsOn(item.id, kept);
-    return json({ rule: kept });
-  }
 
   if (path === "/api/intake/read") return asStream(frames);
 

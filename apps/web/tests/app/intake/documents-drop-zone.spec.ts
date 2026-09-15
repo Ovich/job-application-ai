@@ -18,7 +18,8 @@ import {
 import { reset, signedInAs } from "../../support/session";
 
 /**
- * Seam C: the documents screen, rendered (criteria 7, 8, 11).
+ * Seam C: the documents screen, `DocumentsDropZone` under the `/documents` page that provides
+ * `Documents`, rendered (criteria 7, 8, 11, D15).
  *
  * Behind it: the RPC client, stood in for at `lib/api`'s seam the way the shell already
  * stands the library in (`tests/support/session.ts`, `tests/support/intake.ts`). No
@@ -72,7 +73,7 @@ const opened = async () => {
     });
   const field = () => page()?.querySelector("input[type=url]") as HTMLInputElement | undefined;
   /** The documents screen itself, without the shell's bar above it. */
-  const screen = () => page()?.querySelector("app-documents");
+  const screen = () => page()?.querySelector("documents-drop-zone");
   const settle = async () => {
     await vi.waitFor(() => expect(page()).not.toBeNull());
     harness.detectChanges();

@@ -1,5 +1,6 @@
 import { TestBed } from "@angular/core/testing";
 import { describe, expect, it } from "vitest";
+import { Assistant } from "../../../src/app/assistant/assistant/assistant";
 import { Composer } from "../../../src/app/assistant/composer/composer";
 
 /**
@@ -210,6 +211,31 @@ describe("the composer on many lines", () => {
     await fixture.whenStable();
 
     expect(at("input[data-part=composer]")).not.toBeNull();
+  });
+});
+
+/** What the bar says while nothing is typed: the concrete assistant's words, given (D7). */
+describe("the placeholder (D7)", () => {
+  const words = "Say it in your own words, or click anything in your profile";
+
+  it("shows the placeholder the composer is given", async () => {
+    const { fixture, field } = await rendered();
+
+    fixture.componentRef.setInput("placeholder", words);
+    await fixture.whenStable();
+
+    expect(field().placeholder).toBe(words);
+  });
+
+  it("shows the placeholder the assistant's column is given, in its composer", async () => {
+    const fixture = TestBed.createComponent(Assistant);
+    fixture.componentRef.setInput("placeholder", words);
+    await fixture.whenStable();
+
+    const field = (fixture.nativeElement as HTMLElement).querySelector<HTMLInputElement>(
+      "composer [data-part=composer]",
+    );
+    expect(field?.placeholder).toBe(words);
   });
 });
 

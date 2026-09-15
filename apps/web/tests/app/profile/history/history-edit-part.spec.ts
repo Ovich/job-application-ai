@@ -1,9 +1,7 @@
 import { TestBed } from "@angular/core/testing";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { AssistantConversation } from "../../../../src/app/assistant/assistant-conversation/assistant-conversation";
-import { AssistantCore } from "../../../../src/app/assistant/assistant-core";
-import { provideAssistant } from "../../../../src/app/assistant/provide-assistant";
-import { ProfileEditPart } from "../../../../src/app/profile/parts/profile-edit-part/profile-edit-part";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { HistoryEditPart } from "../../../../src/app/profile/profile-assistant/history/history-edit-part/history-edit-part";
+import { ProfileAssistant } from "../../../../src/app/profile/profile-assistant/profile-assistant";
 import { conversationIs, type Entry, entryOf, resetIntake } from "../../../support/intake";
 import { reset } from "../../../support/session";
 
@@ -67,7 +65,7 @@ afterEach(() => {
 });
 
 const drawn = async (part: Part): Promise<HTMLElement> => {
-  const fixture = TestBed.createComponent(ProfileEditPart);
+  const fixture = TestBed.createComponent(HistoryEditPart);
   fixture.componentRef.setInput("part", part);
   await fixture.whenStable();
   return fixture.nativeElement as HTMLElement;
@@ -151,17 +149,8 @@ describe("the call itself", () => {
   });
 });
 
-describe("in the conversation, provided as the profile's parts (ID185)", () => {
+describe("in the conversation, drawn by the profile assistant's #part template (ID185, D3, D4)", () => {
   it("draws the record of a stored edit, and no placeholder for its call or its result", async () => {
-    TestBed.configureTestingModule({
-      providers: provideAssistant({
-        name: "profile",
-        parts: [
-          { kind: "tool_use", component: ProfileEditPart },
-          { kind: "tool_result", component: ProfileEditPart },
-        ],
-      }),
-    });
     conversationIs([
       entryOf(1, [{ kind: "text", text: "I read your 2 documents.", scripted: true }]),
       entryOf(2, [{ kind: "text", text: "Shorten the second line." }], "person"),
@@ -179,12 +168,12 @@ describe("in the conversation, provided as the profile's parts (ID185)", () => {
         "tool",
       ),
     ]);
-    await TestBed.inject(AssistantCore).open();
-    const fixture = TestBed.createComponent(AssistantConversation);
-    await fixture.whenStable();
+    const fixture = TestBed.createComponent(ProfileAssistant);
     const element = fixture.nativeElement as HTMLElement;
-
-    expect(textOf(element)).toContain("I will shorten the second line.");
+    await vi.waitFor(async () => {
+      await fixture.whenStable();
+      expect(textOf(element)).toContain("I will shorten the second line.");
+    });
     expect(textsOf(element, "[data-part=now]")).toEqual(["Shipped the developer platform."]);
     expect(textOf(element)).not.toContain("This part cannot be shown here.");
   });

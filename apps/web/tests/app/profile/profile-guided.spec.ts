@@ -107,12 +107,12 @@ afterEach(() => {
 const addressOf = (input: RequestInfo | URL): string =>
   input instanceof Request ? input.url : input instanceof URL ? input.href : String(input);
 
-/** The answer route answered by `route`; every other request still reaches the stand-in. */
+/** The answer action answered by `route`; every other request still reaches the stand-in. */
 const answerRouteIs = (
   route: (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>,
 ): void => {
   vi.stubGlobal("fetch", (input: RequestInfo | URL, init?: RequestInit) =>
-    /^\/api\/intake\/questions\/[^/]+\/answer$/.test(
+    /^\/api\/conversations\/[^/]+\/actions\/answer_question$/.test(
       new URL(addressOf(input), "http://localhost").pathname,
     )
       ? route(input, init)
@@ -561,7 +561,7 @@ describe("a press anywhere away closes the tool (S8.8, ID236)", () => {
 
     await eventually(() => expect(active()).toMatchObject(putDown));
     expect(at("scope-tool")).toBeNull();
-    expect(intakeRequests().filter((each) => each.address.endsWith("/answer"))).toEqual([]);
+    expect(intakeRequests().filter((each) => each.address.includes("/actions/"))).toEqual([]);
 
     pressOn(region("chip-k8s"));
 

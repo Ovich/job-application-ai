@@ -25,21 +25,21 @@ const aQuestion = {
       id: "a",
       label: "Ran the cluster",
       hint: "nodes, upgrades, access",
-      rule: "Kubernetes: cluster administration, and the services on it",
+      concern: "Kubernetes: cluster administration, and the services on it",
     },
     {
       id: "b",
       label: "Ran services on it",
       hint: "deployed and operated the workloads",
-      rule: "Kubernetes: deploying and running services, never cluster administration",
+      concern: "Kubernetes: deploying and running services, never cluster administration",
     },
     {
       id: "c",
       label: "Used it as a developer",
       hint: "shipped to a cluster someone else ran",
-      rule: "Kubernetes: shipping to a cluster run by others",
+      concern: "Kubernetes: shipping to a cluster run by others",
     },
-    { id: "own", label: "Something else", hint: "say it below", rule: null },
+    { id: "own", label: "Something else", hint: "say it below", concern: null },
   ],
 } as const;
 
@@ -86,8 +86,8 @@ describe("the answers, as rows (criterion 5)", () => {
       where: "Experience · HEIG-VD · 2 documents disagree",
       lead: "Which was on your contract?",
       options: [
-        { id: "a", label: "Assistant HES", hint: "the 2022 CV", rule: "HEIG-VD: Assistant HES" },
-        { id: "own", label: "Something else", hint: "say it below", rule: null },
+        { id: "a", label: "Assistant HES", hint: "the 2022 CV", concern: "HEIG-VD: Assistant HES" },
+        { id: "own", label: "Something else", hint: "say it below", concern: null },
       ],
     });
 
@@ -113,7 +113,7 @@ describe("the answers, as rows (criterion 5)", () => {
     ]);
   });
 
-  it("says the own-words row is the person's own, and carries no rule of its own", async () => {
+  it("says the own-words row is the person's own, and carries no concern of its own", async () => {
     const { fixture, rows } = await rendered(aQuestion);
     const picked: { optionId: string }[] = [];
     fixture.componentInstance.pick.subscribe((event) => picked.push(event));
@@ -122,7 +122,7 @@ describe("the answers, as rows (criterion 5)", () => {
     await fixture.whenStable();
 
     expect(picked).toEqual([{ optionId: "own" }]);
-    expect(rows()[3]?.getAttribute("data-rule")).toBeNull();
+    expect(rows()[3]?.getAttribute("data-concern")).toBeNull();
   });
 });
 

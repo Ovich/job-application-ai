@@ -1,13 +1,67 @@
-import { TestBed } from "@angular/core/testing";
+import { Component, signal, type Type } from "@angular/core";
+import { type ComponentFixture, TestBed } from "@angular/core/testing";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { Assistant } from "../../../src/app/assistant/assistant/assistant";
 import { AssistantConversation } from "../../../src/app/assistant/assistant-conversation/assistant-conversation";
 import { AssistantCore } from "../../../src/app/assistant/assistant-core";
-import { ASSISTANT_PARTS, provideAssistant } from "../../../src/app/assistant/provide-assistant";
+import { provideAssistant } from "../../../src/app/assistant/provide-assistant";
 import { CurrentUser } from "../../../src/app/auth/current-user";
-import { QuestionAnsweredPart } from "../../../src/app/profile/parts/question-answered-part/question-answered-part";
-import { QuestionSkippedPart } from "../../../src/app/profile/parts/question-skipped-part/question-skipped-part";
+import { HistoryAnswerPart } from "../../../src/app/profile/profile-assistant/history/history-answer-part/history-answer-part";
+import { HistorySkipPart } from "../../../src/app/profile/profile-assistant/history/history-skip-part/history-skip-part";
 import { conversationIs, type Entry, entryOf, resetIntake, theReply } from "../../support/intake";
 import { reset, signedInAs } from "../../support/session";
+
+/**
+ * A concrete assistant's drawing of the parts that are not text, given as the `#part`
+ * template the way `ProfileAssistant` gives it (D4). The spec's own host: the core names
+ * no concrete part, so what it is handed is what a case needs.
+ */
+@Component({
+  selector: "parts-host",
+  imports: [AssistantConversation, HistoryAnswerPart, HistorySkipPart],
+  template: `
+    <assistant-conversation>
+      <ng-template #part let-given>
+        @switch (given.kind) {
+          @case ("question_answered") {
+            <history-answer-part [part]="given" />
+          }
+          @case ("question_skipped") {
+            <history-skip-part [part]="given" />
+          }
+        }
+      </ng-template>
+    </assistant-conversation>
+  `,
+})
+class PartsHost {}
+
+/**
+ * The conversation in the core assistant's column, as a concrete assistant composes it: a
+ * tool that can be activated, and a line it says after entry 1 and does not store (`ID227`).
+ */
+@Component({
+  selector: "column-host",
+  imports: [Assistant, AssistantConversation],
+  template: `
+    <assistant [tool]="tool()">
+      <assistant-conversation>
+        <ng-template #afterEntry let-position>
+          @if (position === 1 && said() !== "") {
+            <div data-msg="ai">
+              <p>{{ said() }}</p>
+            </div>
+          }
+        </ng-template>
+      </assistant-conversation>
+    </assistant>
+  `,
+})
+class ColumnHost {
+  public readonly tool = signal<{ label: string; describes: string; where: string } | null>(null);
+
+  public readonly said = signal("");
+}
 
 /**
  * Seam W: `AssistantConversation`, rendered with the core a screen provides (`S2.3`,
@@ -26,7 +80,7 @@ const textOf = (element: Element | null | undefined): string =>
 beforeEach(() => {
   reset();
   resetIntake();
-  TestBed.configureTestingModule({ providers: provideAssistant({ name: "profile", parts: [] }) });
+  TestBed.configureTestingModule({ providers: provideAssistant({ name: "profile" }) });
 });
 
 afterEach(() => {
@@ -34,13 +88,179 @@ afterEach(() => {
   resetIntake();
 });
 
-const rendered = async (entries: Entry[]) => {
+const rendered = async (entries: Entry[], host: Type<unknown> = AssistantConversation) => {
   conversationIs(entries);
   await TestBed.inject(AssistantCore).open();
-  const fixture = TestBed.createComponent(AssistantConversation);
+  const fixture = TestBed.createComponent(host);
   await fixture.whenStable();
   return fixture.nativeElement as HTMLElement;
 };
+
+/** The `#part` template a concrete assistant gives, and none (D4). */
+describe("the parts that are not text (D4)", () => {
+  const answered = {
+    kind: "question_answered",
+    lead: "Which was it?",
+    where: "What you work with · DevOps and cloud",
+    options: [{ id: "q1-1", label: "Ran the cluster", hint: "nodes, upgrades, access" }],
+    picked: "q1-1",
+    words: "three clusters",
+  };
+
+  it("draws a question_answered part with the #part template it is given", async () => {
+    const element = await rendered(
+      [
+        entryOf(1, [{ kind: "text", text: "I read your 2 documents.", scripted: true }]),
+        entryOf(2, [answered], "person"),
+      ],
+      PartsHost,
+    );
+
+    expect(textOf(element.querySelector("history-answer-part"))).toContain("Ran the cluster");
+    expect(textOf(element)).toContain("three clusters");
+    expect(textOf(element)).not.toContain("This part cannot be shown here.");
+  });
+
+  it("draws the placeholder for that part when no #part template is given", async () => {
+    const element = await rendered([
+      entryOf(1, [{ kind: "text", text: "I read your 2 documents.", scripted: true }]),
+      entryOf(2, [answered], "person"),
+    ]);
+
+    expect(textOf(element)).toContain("This part cannot be shown here.");
+    expect(textOf(element)).not.toContain("Ran the cluster");
+  });
+});
+
+/**
+ * The conversation keeps its own column at its end (D6, `ID227`, `ID237`): something new, a
+ * word, an entry or a tool activated, takes it back there; the column's resizes keep it
+ * there; a wheel or a press in it hands it to the person.
+ *
+ * jsdom lays nothing out and has no `ResizeObserver`, so the column is given a height and a
+ * content height here and the observers are stood in for, to say the column changed size.
+ */
+describe("the column kept at its end (D6, ID227, ID237)", () => {
+  let told: (() => void)[] = [];
+  let platformObserver: typeof ResizeObserver;
+
+  beforeEach(() => {
+    told = [];
+    platformObserver = globalThis.ResizeObserver;
+    globalThis.ResizeObserver = class {
+      constructor(callback: () => void) {
+        told.push(callback);
+      }
+      observe(): void {}
+      unobserve(): void {}
+      disconnect(): void {}
+    } as unknown as typeof ResizeObserver;
+  });
+
+  afterEach(() => {
+    globalThis.ResizeObserver = platformObserver;
+  });
+
+  const resized = (): void => {
+    for (const callback of told) callback();
+  };
+
+  /** The column, drawn over two entries, with the size a case gives it. */
+  const opened = async (size: { client: number; content: number }) => {
+    conversationIs([
+      entryOf(1, [{ kind: "text", text: "I read your 2 documents.", scripted: true }]),
+      entryOf(2, [{ kind: "text", text: "I ran the services." }], "person"),
+    ]);
+    await TestBed.inject(AssistantCore).open();
+    const fixture = TestBed.createComponent(ColumnHost);
+    await fixture.whenStable();
+    const column = (fixture.nativeElement as HTMLElement).querySelector(
+      "assistant > div",
+    ) as HTMLElement;
+    let top = 0;
+    Object.defineProperty(column, "clientHeight", { get: () => size.client, configurable: true });
+    Object.defineProperty(column, "scrollHeight", { get: () => size.content, configurable: true });
+    Object.defineProperty(column, "scrollTop", {
+      get: () => top,
+      set: (to: number) => {
+        top = to;
+      },
+      configurable: true,
+    });
+    return { fixture, column };
+  };
+
+  const settled = async (fixture: ComponentFixture<ColumnHost>): Promise<void> => {
+    fixture.detectChanges();
+    await fixture.whenStable();
+  };
+
+  it.each([
+    [
+      "a word lands",
+      async (fixture: ComponentFixture<ColumnHost>) => {
+        fixture.componentInstance.said.set("Noted.");
+      },
+    ],
+    [
+      "an entry lands",
+      async () => {
+        const posting = TestBed.inject(AssistantCore).post("And a second thing.");
+        theReply.says({
+          kind: "entry",
+          entry: entryOf(3, [{ kind: "text", text: "And a second thing." }], "person"),
+        });
+        theReply.ends();
+        await posting;
+      },
+    ],
+    [
+      "a tool is activated",
+      async (fixture: ComponentFixture<ColumnHost>) => {
+        fixture.componentInstance.tool.set({
+          label: "Adjusting scope",
+          describes: "What you say next goes into the conversation, about this item.",
+          where: "Kubernetes",
+        });
+      },
+    ],
+  ])(
+    "takes the column back to its end when %s, after the person had scrolled away",
+    async (_, land) => {
+      const { fixture, column } = await opened({ client: 300, content: 2000 });
+      column.dispatchEvent(new Event("wheel"));
+      column.scrollTop = 400;
+
+      await land(fixture);
+      await settled(fixture);
+
+      expect(column.scrollTop).toBe(2000);
+    },
+  );
+
+  it("takes the column to its end when it gets its size after the first render", async () => {
+    const size = { client: 0, content: 0 };
+    const { column } = await opened(size);
+
+    size.client = 300;
+    size.content = 2000;
+    resized();
+
+    expect(column.scrollTop).toBeGreaterThanOrEqual(2000 - 300);
+  });
+
+  it.each(["wheel", "pointerdown"])("stops keeping it once the person uses it: %s", async (use) => {
+    const size = { client: 300, content: 2000 };
+    const { column } = await opened(size);
+
+    column.dispatchEvent(new Event(use, { bubbles: true }));
+    column.scrollTop = 400;
+    size.content = 2600;
+    resized();
+
+    expect(column.scrollTop).toBe(400);
+  });
+});
 
 describe("drawing the entries", () => {
   it("draws a text entry's words", async () => {
@@ -251,16 +471,13 @@ describe("the person's words read from the left, in a bubble on the right (S8.3b
     ],
     ["a skipped part", { kind: "question_skipped", ...asked }],
   ])("aligns %s the same way", async (_, part) => {
-    TestBed.overrideProvider(ASSISTANT_PARTS, {
-      useValue: [
-        { kind: "question_answered", component: QuestionAnsweredPart },
-        { kind: "question_skipped", component: QuestionSkippedPart },
+    const element = await rendered(
+      [
+        entryOf(1, [{ kind: "text", text: "I read your 2 documents.", scripted: true }]),
+        entryOf(2, [part], "person"),
       ],
-    });
-    const element = await rendered([
-      entryOf(1, [{ kind: "text", text: "I read your 2 documents.", scripted: true }]),
-      entryOf(2, [part], "person"),
-    ]);
+      PartsHost,
+    );
 
     const entry = personEntry(element);
     expect(sideOf(entry)).toEqual({ right: true, width: "max-w-[70%]" });
@@ -304,26 +521,26 @@ describe("the person's bubbles keep their colours in either theme (S8.6, ID232)"
   });
 
   it("draws an answered part the same way, in its place in the conversation", async () => {
-    TestBed.overrideProvider(ASSISTANT_PARTS, {
-      useValue: [{ kind: "question_answered", component: QuestionAnsweredPart }],
-    });
-    const element = await rendered([
-      entryOf(1, [{ kind: "text", text: "I read your 2 documents.", scripted: true }]),
-      entryOf(
-        2,
-        [
-          {
-            kind: "question_answered",
-            lead: "Which was it?",
-            where: "What you work with · DevOps and cloud",
-            options: [{ id: "q1-1", label: "Ran the cluster", hint: "nodes, upgrades, access" }],
-            picked: "q1-1",
-            words: "three clusters",
-          },
-        ],
-        "person",
-      ),
-    ]);
+    const element = await rendered(
+      [
+        entryOf(1, [{ kind: "text", text: "I read your 2 documents.", scripted: true }]),
+        entryOf(
+          2,
+          [
+            {
+              kind: "question_answered",
+              lead: "Which was it?",
+              where: "What you work with · DevOps and cloud",
+              options: [{ id: "q1-1", label: "Ran the cluster", hint: "nodes, upgrades, access" }],
+              picked: "q1-1",
+              words: "three clusters",
+            },
+          ],
+          "person",
+        ),
+      ],
+      PartsHost,
+    );
 
     const bubble = personEntry(element)?.querySelector("[data-part=answered]");
     expect(bubble?.classList.contains("bg-send")).toBe(true);

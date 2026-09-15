@@ -2,7 +2,6 @@ import { signal, type WritableSignal } from "@angular/core";
 import { TestBed } from "@angular/core/testing";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { AssistantCore } from "../../../src/app/assistant/assistant-core";
-import { provideAssistant } from "../../../src/app/assistant/provide-assistant";
 import { ProfileAssistant } from "../../../src/app/profile/profile-assistant/profile-assistant";
 import {
   conversationIs,
@@ -29,7 +28,6 @@ import { reset } from "../../support/session";
 beforeEach(() => {
   reset();
   resetIntake();
-  TestBed.configureTestingModule({ providers: provideAssistant({ name: "profile", parts: [] }) });
 });
 
 afterEach(() => {
@@ -137,18 +135,48 @@ describe("the reading and the first question (criterion 4)", () => {
   });
 });
 
-describe("what leaves the column (criteria 6, 8)", () => {
+describe("what leaves the column (criteria 6, 8, D5)", () => {
+  /**
+   * The column's own core stood in at its seam (D1): a conversation already under way, so
+   * it is resumed at once rather than performed, and every action kept. What is read is the
+   * action the column asked for, with what.
+   */
+  const acting = () => {
+    const act = vi.fn(async (_action: string, _input: unknown) => true);
+    const stood = {
+      entries: signal([
+        entryOf(1, [{ kind: "text", text: "I read your 5 documents.", scripted: true }]),
+        entryOf(2, [{ kind: "text", text: "I ran the services." }], "person"),
+      ]),
+      replying: signal(null),
+      failure: signal(null),
+      activity: signal(null),
+      open: vi.fn(async () => {}),
+      reload: vi.fn(async () => {}),
+      post: vi.fn(async () => {}),
+      showActivity: vi.fn(),
+      act,
+    };
+    // The column provides its own core (D1), so the stand-in replaces that provider.
+    TestBed.overrideComponent(ProfileAssistant, {
+      add: { providers: [{ provide: AssistantCore, useValue: stood }] },
+    });
+    return act;
+  };
+
   it("says which question was answered, and with what", async () => {
+    const act = acting();
     const { fixture, element } = await rendered(three);
-    const said: unknown[] = [];
-    fixture.componentInstance.answered.subscribe((event) => said.push(event));
+    const decided: unknown[] = [];
+    fixture.componentInstance.decided.subscribe((event) => decided.push(event));
 
     element.querySelectorAll<HTMLButtonElement>("[data-action=alt]")[0]?.click();
     await fixture.whenStable();
     element.querySelector<HTMLButtonElement>("[data-part=send]")?.click();
     await fixture.whenStable();
 
-    expect(said).toEqual([{ questionId: "q1", optionId: "q1-1" }]);
+    expect(act.mock.calls).toEqual([["answer_question", { questionId: "q1", optionId: "q1-1" }]]);
+    await vi.waitFor(() => expect(decided).toEqual([{ kept: true }]));
   });
 
   it("saves nothing until a row is picked or something is typed", async () => {
@@ -165,25 +193,23 @@ describe("what leaves the column (criteria 6, 8)", () => {
   });
 
   it("treats the prefix's × as a skip while a question is waiting", async () => {
+    const act = acting();
     const { fixture, element } = await rendered(three);
-    const skipped: unknown[] = [];
-    fixture.componentInstance.skipped.subscribe((event) => skipped.push(event));
 
     element.querySelector<HTMLButtonElement>("[data-action=clear]")?.click();
     await fixture.whenStable();
 
-    expect(skipped).toEqual([{ questionId: "q1" }]);
+    expect(act.mock.calls).toEqual([["skip_question", { questionId: "q1" }]]);
   });
 
   it("says which question was skipped when the foot's skip is pressed", async () => {
+    const act = acting();
     const { fixture, element } = await rendered(three);
-    const skipped: unknown[] = [];
-    fixture.componentInstance.skipped.subscribe((event) => skipped.push(event));
 
     element.querySelector<HTMLButtonElement>("[data-action=skip]")?.click();
     await fixture.whenStable();
 
-    expect(skipped).toEqual([{ questionId: "q1" }]);
+    expect(act.mock.calls).toEqual([["skip_question", { questionId: "q1" }]]);
   });
 });
 
@@ -204,7 +230,6 @@ describe("the opening, as the conversation stored it (S2.3, US8)", () => {
 
   it("performs the opening when it is the conversation's one entry", async () => {
     conversationIs([opening]);
-    await TestBed.inject(AssistantCore).open();
 
     const { fixture, element, at } = await rendered(three);
 
@@ -221,7 +246,6 @@ describe("the opening, as the conversation stored it (S2.3, US8)", () => {
       opening,
       entryOf(2, [{ kind: "text", text: "I ran the services, not the cluster." }], "person"),
     ]);
-    await TestBed.inject(AssistantCore).open();
 
     const { fixture, element, at } = await rendered(three);
 
@@ -250,6 +274,8 @@ describe("a free message (SL3, US2, US3)", () => {
     post: ReturnType<typeof vi.fn>;
     open: ReturnType<typeof vi.fn>;
     reload: ReturnType<typeof vi.fn>;
+    act: ReturnType<typeof vi.fn>;
+    showActivity: ReturnType<typeof vi.fn>;
   };
 
   const opening = entryOf(1, [
@@ -268,8 +294,13 @@ describe("a free message (SL3, US2, US3)", () => {
       post: vi.fn(async () => {}),
       open: vi.fn(async () => {}),
       reload: vi.fn(async () => {}),
+      act: vi.fn(async () => true),
+      showActivity: vi.fn(),
     };
-    TestBed.overrideProvider(AssistantCore, { useValue: stood });
+    // The column provides its own core (D1), so the stand-in replaces that provider.
+    TestBed.overrideComponent(ProfileAssistant, {
+      add: { providers: [{ provide: AssistantCore, useValue: stood }] },
+    });
     return stood;
   };
 
@@ -281,7 +312,8 @@ describe("a free message (SL3, US2, US3)", () => {
   };
 
   it("posts the typed text once with nothing open, on Enter, and the composer is back to one empty line", async () => {
-    const core = standIn();
+    // The column draws once its conversation has answered: one under way, stood in.
+    const core = standIn([opening, message]);
     const { fixture, element } = await rendered(
       three.map((question) => ({ ...question, state: "answered" as const })),
     );
@@ -300,10 +332,8 @@ describe("a free message (SL3, US2, US3)", () => {
   });
 
   it("posts the typed text as a message with a question open and no pick, and the question stays open", async () => {
-    const core = standIn();
+    const core = standIn([opening, message]);
     const { fixture, element, at } = await rendered(three);
-    const answered: unknown[] = [];
-    fixture.componentInstance.answered.subscribe((event) => answered.push(event));
 
     typeInto(element, "Can I say something else first?");
     await fixture.whenStable();
@@ -311,7 +341,7 @@ describe("a free message (SL3, US2, US3)", () => {
     await fixture.whenStable();
 
     expect(core.post).toHaveBeenCalledWith("Can I say something else first?");
-    expect(answered).toEqual([]);
+    expect(core.act).not.toHaveBeenCalled();
     expect(at("scope-tool")).not.toBeNull();
     expect(textOf(at("[data-part=lead]"))).toBe("Which was it?");
     expect(textOf(at("[data-part=count]"))).toBe("0 of 3 answered");
