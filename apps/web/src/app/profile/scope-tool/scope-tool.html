@@ -21,8 +21,8 @@
       <button
         type="button"
         data-action="alt"
-        [attr.data-own]="option.rule === null ? '1' : null"
-        [attr.data-rule]="option.rule"
+        [attr.data-own]="option.concern === null ? '1' : null"
+        [attr.data-concern]="option.concern"
         [attr.aria-pressed]="picked() === option.id"
         (click)="choose(option)"
         class="relative block w-full rounded-md border-border border-t py-2 pe-2 ps-[34px] text-left leading-snug first:border-t-0 hover:bg-muted aria-pressed:bg-accent aria-pressed:text-primary before:absolute before:start-2 before:top-3 before:size-3.5 before:rounded-full before:border-[1.5px] before:border-input before:bg-card before:content-[''] aria-pressed:before:border-primary aria-pressed:before:bg-primary aria-pressed:before:shadow-[inset_0_0_0_2.5px_var(--card)]"

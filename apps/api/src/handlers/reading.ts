@@ -442,7 +442,7 @@ const candidate = z.object({
       z.object({
         label: z.string().min(1),
         hint: z.string().min(1),
-        rule: z.string().nullish(),
+        concern: z.string().nullish(),
       }),
     )
     .min(2)
@@ -469,7 +469,7 @@ const readingAll = (document: string): Message[] => [
   {
     role: "system",
     content:
-      "You read everything a job seeker has handed over, given as one document whose parts are marked <<<DOCUMENT name>>> … <<<END>>>, and you write their profile and the questions it leaves open. Answer with JSON alone, as an object with items and candidates. Each item has kind, one of summary, identity, experience, project, education, publication, language, group, entry; title; the optional subtitle, start_text and end_text as the documents wrote them; the block for its kind (experience, project, education, entry); lines; children; and sources. A source is the name of the part the fact came from and what that part said, word for word in that part's own language. A fact stated by several parts carries one source per part and no third wording of your own. Never state a figure no part states: no duration, no seniority, no total. Each candidate is a question the documents themselves cannot answer, with kind, one of scope (a fact says what was done but not what the person's part was), conflict (two parts state the same thing differently) or provenance (a term appears in a way that leaves its standing unclear); item, the exact title of the item it is about; where, the item's place said the way the profile says it; lead, the question itself in one or two sentences; and options, two to four answers, each with label, hint and the rule that answer writes, the last of which is the person's own words and carries no rule. Never ask about a fact the parts agree on and state plainly, never ask about a date a part states, and never ask what a person can be assumed to know about their own job.",
+      "You read everything a job seeker has handed over, given as one document whose parts are marked <<<DOCUMENT name>>> … <<<END>>>, and you write their profile and the questions it leaves open. Answer with JSON alone, as an object with items and candidates. Each item has kind, one of summary, identity, experience, project, education, publication, language, group, entry; title; the optional subtitle, start_text and end_text as the documents wrote them; the block for its kind (experience, project, education, entry); lines; children; and sources. A source is the name of the part the fact came from and what that part said, word for word in that part's own language. A fact stated by several parts carries one source per part and no third wording of your own. Never state a figure no part states: no duration, no seniority, no total. Each candidate is a question the documents themselves cannot answer, with kind, one of scope (a fact says what was done but not what the person's part was), conflict (two parts state the same thing differently) or provenance (a term appears in a way that leaves its standing unclear); item, the exact title of the item it is about; where, the item's place said the way the profile says it; lead, the question itself in one or two sentences; and options, two to four answers, each with label, hint and the concern that answer writes, the last of which is the person's own words and carries no concern. Never ask about a fact the parts agree on and state plainly, never ask about a date a part states, and never ask what a person can be assumed to know about their own job.",
   },
   { role: "user", content: document },
 ];
@@ -590,9 +590,9 @@ const writeQuestions = async (userId: string, asked: z.infer<typeof proposal>): 
           position,
           label: option.label,
           hint: option.hint,
-          // The last row is always the person's own words, so it carries no rule of its
+          // The last row is always the person's own words, so it carries no concern of its
           // own whatever the reader proposed for it.
-          rule: position === proposed.options.length - 1 ? null : (option.rule ?? null),
+          concern: position === proposed.options.length - 1 ? null : (option.concern ?? null),
         });
       }
     }

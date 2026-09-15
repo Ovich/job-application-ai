@@ -40,7 +40,8 @@ vi.mock("../../../src/lib/ai", async (importOriginal) => {
 });
 
 const { testDb } = await import("../../support/database");
-const { document, itemLine, profileItem, provenance, question, rule } = await import("@app/db");
+const { document, itemLine, profileConcern, profileItem, provenance, question } =
+  await import("@app/db");
 const { eq } = await import("drizzle-orm");
 const { app } = await import("../../../src/app");
 const { auth } = await import("../../../src/lib/auth");
@@ -137,7 +138,8 @@ const whatIsLeftOf = async (person: { id: string; keys: ObjectKey[] }) => ({
   documents: (await testDb.select().from(document).where(eq(document.userId, person.id))).length,
   items: (await testDb.select().from(profileItem).where(eq(profileItem.userId, person.id))).length,
   questions: (await testDb.select().from(question).where(eq(question.userId, person.id))).length,
-  rules: (await testDb.select().from(rule).where(eq(rule.userId, person.id))).length,
+  rules: (await testDb.select().from(profileConcern).where(eq(profileConcern.userId, person.id)))
+    .length,
   objects: (await Promise.all(person.keys.map((key) => storage.get(key)))).filter(
     (object) => object !== null,
   ).length,

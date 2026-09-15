@@ -7,16 +7,16 @@ import {
   itemExperience,
   itemLine,
   itemProject,
+  type ProfileConcernKind,
+  type ProfileConcernSource,
   type ProfileItem,
+  profileConcern,
   profileItem,
   provenance,
   type QuestionKind,
   type QuestionState,
   question,
   questionOption,
-  type RuleKind,
-  type RuleSource,
-  rule,
 } from "@app/db";
 import { and, asc, desc, eq, inArray, isNull, ne } from "drizzle-orm";
 import { createFactory } from "hono/factory";
@@ -52,15 +52,15 @@ const factory = createFactory();
 type Source = { document: string; said: string };
 
 /**
- * One rule on the wire. `supersededBy` is carried, not hidden, because what `ID121`
- * exists to keep is the history: a screen shows the current rule, and the earlier words
- * are still readable beside it.
+ * One profile concern on the wire. `supersededBy` is carried, not hidden, because what
+ * `ID121` exists to keep is the history: a screen shows the current concern, and the
+ * earlier words are still readable beside it.
  */
-export type RuleAnswer = {
+export type ProfileConcernAnswer = {
   id: string;
   text: string;
-  kind: RuleKind;
-  source: RuleSource;
+  kind: ProfileConcernKind;
+  source: ProfileConcernSource;
   createdAt: string;
   supersededBy: string | null;
 };
@@ -74,7 +74,7 @@ export type QuestionAnswer = {
   where: string;
   lead: string;
   state: QuestionState;
-  options: { id: string; label: string; hint: string; rule: string | null }[];
+  options: { id: string; label: string; hint: string; concern: string | null }[];
 };
 
 /** One item on the wire: the spine, the per-kind block, its lines and what hangs under it. */
@@ -104,9 +104,9 @@ export type ProfileItemAnswer = {
   children: ProfileItemAnswer[];
   sources: Source[];
   /** What the person said about this item, newest first. Nothing is ever removed. */
-  rules: RuleAnswer[];
-  /** The one rule nothing has superseded: what the builder reads before writing. */
-  rule: RuleAnswer | null;
+  concerns: ProfileConcernAnswer[];
+  /** The one concern nothing has superseded: what the builder reads before writing. */
+  concern: ProfileConcernAnswer | null;
   /** The question this intake asked about it, whatever state it is now in. */
   question: QuestionAnswer | null;
 };
@@ -153,7 +153,7 @@ export const profileOf = async (userId: string): Promise<ProfileAnswer> => {
   if (items.length === 0) return noProfileYet;
 
   const ids = items.map((item) => item.id);
-  const [experiences, projects, educations, entries, lines, quotes, questions, options, rules] =
+  const [experiences, projects, educations, entries, lines, quotes, questions, options, concerns] =
     await Promise.all([
       db.select().from(itemExperience).where(inArray(itemExperience.itemId, ids)),
       db.select().from(itemProject).where(inArray(itemProject.itemId, ids)),
@@ -180,7 +180,7 @@ export const profileOf = async (userId: string): Promise<ProfileAnswer> => {
         .innerJoin(document, eq(provenance.documentId, document.id))
         .where(eq(document.userId, userId))
         .orderBy(asc(document.createdAt), asc(document.id), asc(provenance.id)),
-      // The questions in the order they are asked, and the rules newest first, so the
+      // The questions in the order they are asked, and the concerns newest first, so the
       // current one is the head of the list as well as the row nothing has superseded.
       db
         .select()
@@ -193,7 +193,7 @@ export const profileOf = async (userId: string): Promise<ProfileAnswer> => {
           questionId: questionOption.questionId,
           label: questionOption.label,
           hint: questionOption.hint,
-          rule: questionOption.rule,
+          concern: questionOption.concern,
         })
         .from(questionOption)
         .innerJoin(question, eq(questionOption.questionId, question.id))
@@ -201,9 +201,9 @@ export const profileOf = async (userId: string): Promise<ProfileAnswer> => {
         .orderBy(asc(questionOption.position), asc(questionOption.id)),
       db
         .select()
-        .from(rule)
-        .where(eq(rule.userId, userId))
-        .orderBy(desc(rule.createdAt), desc(rule.id)),
+        .from(profileConcern)
+        .where(eq(profileConcern.userId, userId))
+        .orderBy(desc(profileConcern.createdAt), desc(profileConcern.id)),
     ]);
 
   const by = <T extends { itemId: string }>(rows: T[]): Map<string, T> =>
@@ -243,13 +243,13 @@ export const profileOf = async (userId: string): Promise<ProfileAnswer> => {
     ]);
   }
 
-  /** What each question offers, and which item each question and each rule is about. */
+  /** What each question offers, and which item each question and each concern is about. */
   const titleOf = new Map(items.map((item) => [item.id, item.title]));
   const optionsOf = new Map<string, QuestionAnswer["options"]>();
   for (const option of options) {
     optionsOf.set(option.questionId, [
       ...(optionsOf.get(option.questionId) ?? []),
-      { id: option.id, label: option.label, hint: option.hint, rule: option.rule },
+      { id: option.id, label: option.label, hint: option.hint, concern: option.concern },
     ]);
   }
   const asQuestion = (row: (typeof questions)[number]): QuestionAnswer => ({
@@ -267,10 +267,10 @@ export const profileOf = async (userId: string): Promise<ProfileAnswer> => {
     if (row.asked && !questionOf.has(row.itemId)) questionOf.set(row.itemId, asQuestion(row));
   }
 
-  const rulesOf = new Map<string, RuleAnswer[]>();
-  for (const row of rules) {
-    rulesOf.set(row.itemId, [
-      ...(rulesOf.get(row.itemId) ?? []),
+  const concernsOf = new Map<string, ProfileConcernAnswer[]>();
+  for (const row of concerns) {
+    concernsOf.set(row.itemId, [
+      ...(concernsOf.get(row.itemId) ?? []),
       {
         id: row.id,
         text: row.text,
@@ -321,10 +321,10 @@ export const profileOf = async (userId: string): Promise<ProfileAnswer> => {
       lines: linesOf.get(item.id) ?? [],
       children: items.filter((each) => each.parentId === item.id).map(asAnswer),
       sources: saidOf.item.get(item.id) ?? [],
-      rules: rulesOf.get(item.id) ?? [],
-      // The item's current rule is the one row nothing has superseded, which is a fact
+      concerns: concernsOf.get(item.id) ?? [],
+      // The item's current concern is the one row nothing has superseded, which is a fact
       // about the rows rather than the newest of them (`ID121`).
-      rule: (rulesOf.get(item.id) ?? []).find((each) => each.supersededBy === null) ?? null,
+      concern: (concernsOf.get(item.id) ?? []).find((each) => each.supersededBy === null) ?? null,
       question: questionOf.get(item.id) ?? null,
     };
   };
@@ -359,30 +359,30 @@ const answering = z.object({
 });
 
 /** `Kubernetes: shipping to a cluster run by others` — the item, then what was said. */
-const ruleAbout = (title: string, words: string): string => `${title}: ${words}`;
+const concernAbout = (title: string, words: string): string => `${title}: ${words}`;
 
 /**
- * A rule kept, and the one it supersedes.
+ * A profile concern kept, and the one it supersedes.
  *
  * **Inserted, never updated.** Answering again writes a new row and marks the old one
  * superseded, so the history of what the person said survives being changed (`ID121`).
- * An `update` here would pass every test that reads only the current rule and quietly
+ * An `update` here would pass every test that reads only the current concern and quietly
  * destroy the one thing this table exists to keep.
  */
-const keepAsRule = async (
+const keepAsConcern = async (
   tx: Transaction,
   kept: {
     userId: string;
     itemId: string;
-    kind: RuleKind;
+    kind: ProfileConcernKind;
     text: string;
-    source: RuleSource;
+    source: ProfileConcernSource;
     questionId: string | null;
   },
-): Promise<RuleAnswer> => {
+): Promise<ProfileConcernAnswer> => {
   const id = randomUUID();
   const [written] = await tx
-    .insert(rule)
+    .insert(profileConcern)
     .values({
       id,
       userId: kept.userId,
@@ -394,17 +394,17 @@ const keepAsRule = async (
     })
     .returning();
   await tx
-    .update(rule)
+    .update(profileConcern)
     .set({ supersededBy: id })
     .where(
       and(
-        eq(rule.itemId, kept.itemId),
-        eq(rule.userId, kept.userId),
-        isNull(rule.supersededBy),
-        ne(rule.id, id),
+        eq(profileConcern.itemId, kept.itemId),
+        eq(profileConcern.userId, kept.userId),
+        isNull(profileConcern.supersededBy),
+        ne(profileConcern.id, id),
       ),
     );
-  if (written === undefined) throw new Error("the rule could not be kept");
+  if (written === undefined) throw new Error("the profile concern could not be kept");
   return {
     id: written.id,
     text: written.text,
@@ -417,7 +417,7 @@ const keepAsRule = async (
 
 /**
  * The question as the person was asked it, and every option offered, as the entry that
- * records their answer or their skip carries it (`SL7`). The rule each option would write
+ * records their answer or their skip carries it (`SL7`). The concern each option would write
  * stays out: it is the intake's, not what the person saw.
  */
 const asAsked = async (row: { id: string; lead: string; where: string }) => ({
@@ -496,15 +496,15 @@ export const answerQuestion = factory.createHandlers(
     const [item] = await db.select().from(profileItem).where(eq(profileItem.id, row.itemId));
     if (item === undefined) return c.json({ error: "no such question" }, 404);
 
-    // The picked row's own rule, and the person's words beside it when they typed as well.
-    // The last row carries no rule, so picking it is the same thing as saying it yourself.
-    const picked = option?.rule ?? null;
+    // The picked row's own concern, and the person's words beside it when they typed as
+    // well. The last row carries none, so picking it is the same thing as saying it yourself.
+    const picked = option?.concern ?? null;
     if (picked === null && words === "") {
       return c.json({ error: "pick a row, or say it in your own words" }, 400);
     }
     const text =
       picked === null
-        ? ruleAbout(item.title, words)
+        ? concernAbout(item.title, words)
         : words === ""
           ? picked
           : `${picked} — ${words}`;
@@ -512,14 +512,14 @@ export const answerQuestion = factory.createHandlers(
     const asked = await asAsked(row);
     const conversation = await profileConversation(person);
 
-    // The state, the rule as it was always written, and the person's entry: one write
-    // (`SL7`, `H4`). A failed entry rolls back the rule and the state with it.
+    // The state, the concern as it was always written, and the person's entry: one write
+    // (`SL7`, `H4`). A failed entry rolls back the concern and the state with it.
     const kept = await db.transaction(async (tx) => {
-      const written = await keepAsRule(tx, {
+      const written = await keepAsConcern(tx, {
         userId: person.id,
         itemId: row.itemId,
         // A scope question asks what the person's part was; a conflict and a provenance
-        // question both settle what may never be claimed (the spec's *The rules*).
+        // question both settle what may never be claimed (D14).
         kind: row.kind === "scope" ? "scope" : "constraint",
         text,
         source: picked === null ? "own words" : "answer",
@@ -540,66 +540,7 @@ export const answerQuestion = factory.createHandlers(
       return written;
     });
 
-    return c.json({ rule: kept }, 200);
-  },
-);
-
-/**
- * What the person said about an item nobody asked them about, or about one of its lines.
- *
- * It is the answer's own-words path with no question attached, which is why it is
- * mounted and proved here; **its screen is `SL5`'s** (the tool the person opens
- * themselves, which proposes nothing).
- *
- * A line carries no rule of its own (`rule.item_id`), so what is said about one is kept
- * on the item it belongs to, about the line, in the line's own words (the person,
- * 2026-09-13). The line's text is read here and never taken from the request: a client
- * that could name what a rule is about could write a rule about anything.
- */
-export const writeItemRule = factory.createHandlers(
-  validator("json", (value, c) => {
-    const said = z
-      .object({ words: z.string().trim().min(1), lineId: z.string().min(1).optional() })
-      .safeParse(value);
-    if (!said.success) return c.json({ error: "say it in your own words" }, 400);
-    return said.data;
-  }),
-  async (c) => {
-    const person = await asking(c);
-    if (person === null) return refused(c);
-
-    const said = c.req.valid("json");
-
-    const [item] = await db
-      .select()
-      .from(profileItem)
-      .where(and(eq(profileItem.id, c.req.param("id") ?? ""), eq(profileItem.userId, person.id)));
-    if (item === undefined) return c.json({ error: "no such item" }, 404);
-
-    // The line, when one was named, and only one of this item's: a line under another
-    // item is a 404 as a question that is not yours is, and for the same reason.
-    const [line] =
-      said.lineId === undefined
-        ? []
-        : await db
-            .select()
-            .from(itemLine)
-            .where(and(eq(itemLine.id, said.lineId), eq(itemLine.itemId, item.id)));
-    if (said.lineId !== undefined && line === undefined) {
-      return c.json({ error: "no such line" }, 404);
-    }
-
-    const kept = await db.transaction((tx) =>
-      keepAsRule(tx, {
-        userId: person.id,
-        itemId: item.id,
-        kind: "scope",
-        text: ruleAbout(line?.text ?? item.title, said.words.trim()),
-        source: "own words",
-        questionId: null,
-      }),
-    );
-    return c.json({ rule: kept }, 200);
+    return c.json({ concern: kept }, 200);
   },
 );
 

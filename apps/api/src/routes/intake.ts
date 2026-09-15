@@ -1,15 +1,15 @@
 import { Hono } from "hono";
 import { addDocument, listDocuments, removeDocument } from "../handlers/documents";
-import { answerQuestion, readProfile, writeItemRule } from "../handlers/profile";
+import { answerQuestion, readProfile } from "../handlers/profile";
 import { readDocuments } from "../handlers/reading";
 
 /**
  * The intake routes: paths and handlers, nothing else. What each one proves is written
  * where it is done, in `apps/api/src/handlers/documents.ts`, `reading.ts` and `profile.ts`.
  *
- * `ID118` lists six routes for the intake across SL2 to SL5, and with SL4 all six are
- * mounted: the documents, the reading run, the profile that run produces, the answer to
- * one of its questions, and the rule the person writes on an item nobody asked about.
+ * The documents, the reading run, the profile that run produces, and the answer to one of
+ * its questions. The route that wrote a rule on an item nobody asked about had no caller
+ * and is gone (D14).
  *
  * This is not an interface change and `ID118`'s row would say so if it were: the route
  * object is the same one SL2 exported, and every path here is on the register's own list.
@@ -24,5 +24,4 @@ export const intake = new Hono()
   .delete("/documents/:id", ...removeDocument)
   .post("/read", ...readDocuments)
   .get("/profile", ...readProfile)
-  .post("/questions/:id/answer", ...answerQuestion)
-  .post("/items/:id/rule", ...writeItemRule);
+  .post("/questions/:id/answer", ...answerQuestion);

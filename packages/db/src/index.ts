@@ -13,7 +13,7 @@
  * *"For infered types, can we expose them from the db package, define alias there to be
  * reused"*). Every table of our own names its `$inferSelect` and, where a caller writes
  * rows, its `$inferInsert`, beside the table in `schema.ts` — `Document`, `NewDocument`,
- * `ProfileItem`, `Question`, `Rule` and the rest. A row shape therefore has one name in
+ * `ProfileItem`, `Question`, `ProfileConcern` and the rest. A row shape therefore has one name in
  * the repository, and `typeof <table>.$inferSelect` written anywhere outside this
  * package is a name that was not reused.
  */

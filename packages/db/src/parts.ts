@@ -58,7 +58,7 @@ export const toolResultPart = z
     "a tool_result carries before and after, or a refusal",
   );
 
-/** One option a question offered, as the person saw it: never the rule it writes. */
+/** One option a question offered, as the person saw it: never the concern it writes. */
 const offeredOption = z.object({ id: z.string().min(1), label: z.string(), hint: z.string() });
 
 /**

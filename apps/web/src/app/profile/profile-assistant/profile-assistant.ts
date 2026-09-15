@@ -70,7 +70,7 @@ export type Question = {
   where: string;
   lead: string;
   state: string;
-  options: { id: string; label: string; hint: string; rule: string | null }[];
+  options: { id: string; label: string; hint: string; concern: string | null }[];
 };
 
 /**
