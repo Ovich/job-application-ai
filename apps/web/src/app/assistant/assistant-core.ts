@@ -96,6 +96,29 @@ export class AssistantCore {
   }
 
   /**
+   * Something the person did with the concrete assistant's tool, not a message (D9): the
+   * action named, run by the API with its input in one transaction. The entries it answers
+   * join `entries`, and it resolves `true` when kept and `false` when refused or unreachable.
+   *
+   * **A refusal writes no `failure`** (D19): today's column says a decision was not kept in
+   * its own words, beside the tool, and draws no failure line under the conversation.
+   */
+  public async act(action: string, input: unknown): Promise<boolean> {
+    try {
+      const answer = await api.conversations[":assistant"].actions[":action"].$post({
+        param: { assistant: this.assistant.name, action },
+        json: input,
+      });
+      if (!answer.ok) return false;
+      const kept = (await answer.json()) as { entries: Entry[] };
+      this.held.update((entries) => [...entries, ...kept.entries]);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  /**
    * A free message (`US2`): posted, and the stream read as it arrives. Each entry frame
    * is an entry the API has committed, so it joins `entries`; each text frame grows
    * `replying`; an error frame sets `failure` and keeps the person's entry. Resolves when

@@ -2,45 +2,38 @@ import {
   afterRenderEffect,
   Component,
   computed,
+  DestroyRef,
   type ElementRef,
   effect,
   inject,
+  input,
+  output,
   signal,
   untracked,
   viewChild,
 } from "@angular/core";
 import { Router } from "@angular/router";
 import type { InferResponseType } from "hono/client";
-import { AssistantCore } from "../../assistant/assistant-core";
-import { provideAssistant } from "../../assistant/provide-assistant";
 import { AddDocumentsModal } from "../../intake/documents/add-documents-modal/add-documents-modal";
 import { Documents } from "../../intake/documents/documents";
 import { api } from "../../lib/api";
 import { UiSpinner } from "../../ui/spinner/spinner";
-import { AboutPart } from "../parts/about-part/about-part";
-import { ProfileEditPart } from "../parts/profile-edit-part/profile-edit-part";
-import { QuestionAnsweredPart } from "../parts/question-answered-part/question-answered-part";
-import { QuestionSkippedPart } from "../parts/question-skipped-part/question-skipped-part";
-import { type Pressed, ProfileAssistant } from "../profile-assistant/profile-assistant";
+import type { Pressed } from "../profile-assistant/profile-assistant";
 import { ProfileBar } from "../profile-bar/profile-bar";
 import type { RegionRef } from "../profile-region/profile-region";
 import { ProfileSheet } from "../profile-sheet/profile-sheet";
 import { backToHead, revealInColumn, stopFollowing } from "../reveal";
 
 /**
- * The profile viewer (`D5`, `D6`, `ID123`): a route of its own, openable at any time,
- * with no done state and no exit.
+ * The profile viewer, the right section of `ProfilePage` (`D5`, `D6`, `ID123`, D2, D8):
+ * the bar and the sheet, openable at any time, with no done state and no exit.
  *
- * It is the CV builder's layout, deliberately — the assistant on the left, the document
- * on the right — so the person learns one workbench and the builder inherits a shell
- * already used against real content.
- *
- * **This is the one place that talks to the interface.** The assistant says which
- * question was answered and with what; this class writes it and reads the profile back,
- * so a rule shown under an item is a rule the database agrees with and not one the
- * browser remembered. The class reads the RPC client and the templates bind signals
- * (`AGENTS.md` 3). Types travel Drizzle to `AppType` to `InferResponseType` and arrive
- * inferred; `@app/db` is never reached from the browser.
+ * **It reads the profile and holds where the person is on it.** The profile shown is the
+ * one the interface answered, read back after each decision the assistant says was kept,
+ * so a concern shown under an item is one the database agrees with and not one the browser
+ * remembered. The class reads the RPC client and the templates bind signals (`AGENTS.md`
+ * 3). Types travel Drizzle to `AppType` to `InferResponseType` and arrive inferred;
+ * `@app/db` is never reached from the browser.
  *
  * **While a tool is open the profile behaves as the prototype behaves** (`ID125`): the
  * sheet dims, the question's region rises above the overlay and is brought to the middle
@@ -53,30 +46,12 @@ type Item = Answer["experience"][number];
 
 @Component({
   selector: "profile-viewer",
-  imports: [AddDocumentsModal, ProfileAssistant, ProfileBar, ProfileSheet, UiSpinner],
+  imports: [AddDocumentsModal, ProfileBar, ProfileSheet, UiSpinner],
   templateUrl: "./profile-viewer.html",
-  // The profile's assistant, for this screen alone (`ID186`, `ID165`): its own
-  // conversation, subject none, and the profile edit's call and record drawn by the part
-  // written for them (`ID185`, `ID191`).
-  // The documents and their reading, for this page and its modal (D15).
-  providers: [
-    provideAssistant({
-      name: "profile",
-      parts: [
-        { kind: "tool_use", component: ProfileEditPart },
-        { kind: "tool_result", component: ProfileEditPart },
-        { kind: "question_answered", component: QuestionAnsweredPart },
-        { kind: "question_skipped", component: QuestionSkippedPart },
-        { kind: "about", component: AboutPart },
-      ],
-    }),
-    Documents,
-  ],
-  // The layout every assistant screen holds to (the person, 2026-09-12): this fills the
-  // page rather than growing past it, so the window never scrolls and each column
-  // decides for itself what moves inside it.
+  // The documents and their reading, for this section and its modal (D15).
+  providers: [Documents],
   host: {
-    class: "flex min-h-0 flex-1 flex-col",
+    class: "flex min-h-0 flex-col overflow-hidden max-lg:order-1",
     "(document:pointerdown)": "pressedAnywhere($event)",
     "(document:click)": "pressEnded()",
     "(document:keydown.escape)": "escaped()",
@@ -85,37 +60,41 @@ type Item = Answer["experience"][number];
 export class ProfileViewer {
   private readonly router = inject(Router);
 
-  private readonly core = inject(AssistantCore);
-
   private readonly documents = inject(Documents);
 
-  /**
-   * Whether the conversation has answered, with its entries or with a refusal. The
-   * assistant's column waits for it, because whether the opening is performed is decided
-   * from what is stored, once, on its first render (`G3`).
-   */
-  protected readonly conversationAnswered = computed(
-    () => this.core.entries().length > 0 || this.core.failure() !== null,
-  );
+  /** Which column is showing below 1024 px, as the page holds it. */
+  public readonly view = input<"sheet" | "chat">("sheet");
+
+  /** The item whose question's tool the assistant activated, handled as a press on it. */
+  public readonly activated = input<{ itemId: string } | null>(null);
+
+  /** How many times the person's own tool was put away, written or cancelled. */
+  public readonly closed = input<number>(0);
+
+  /** The last decision the assistant made through its tool, and whether it was kept. */
+  public readonly decided = input<{ kept: boolean } | null>(null);
+
+  public readonly questions = output<Answer["questions"]>();
+
+  public readonly pressed = output<Pressed | null>();
+
+  public readonly dismissed = output<boolean>();
+
+  public readonly read = output<boolean>();
+
+  public readonly returning = output<boolean>();
+
+  public readonly reading = output<{ documents: number; facts: number }>();
+
+  public readonly toggleView = output<void>();
 
   protected readonly profile = signal<Answer | null>(null);
 
   /** Whether a reading has made a profile, which is when the assistant exists (`ID202`). */
-  protected readonly read = computed(() => (this.profile()?.documents ?? 0) > 0);
-
-  /** Two columns once there is an assistant; the sheet alone before. */
-  protected readonly gridClass = computed(() =>
-    [
-      "-mt-10 grid h-full min-h-0 flex-1 overflow-hidden",
-      this.read() ? "lg:grid-cols-[minmax(440px,42%)_minmax(0,1fr)]" : "",
-    ].join(" "),
-  );
+  private readonly hasRead = computed(() => (this.profile()?.documents ?? 0) > 0);
 
   /** Whether the drop zone is open over the profile (`ID160`). */
   protected readonly adding = signal(false);
-
-  /** Which column is showing below 1024 px. The profile is what a person came for. */
-  protected readonly view = signal<"sheet" | "chat">("sheet");
 
   /** The last region pressed by hand, which is what opens a tool on it (`US8`). */
   protected readonly selected = signal<RegionRef | null>(null);
@@ -125,7 +104,7 @@ export class ProfileViewer {
    * until they press a region again — otherwise the assistant, which is still waiting on
    * that question, would activate it again the instant it was closed.
    */
-  protected readonly dismissed = signal(false);
+  private readonly putDown = signal(false);
 
   /**
    * Which ending the last closed tool was, and the whole of `S5.4`: the profile returns
@@ -141,15 +120,18 @@ export class ProfileViewer {
 
   private readonly scroller = viewChild<ElementRef<HTMLElement>>("scroller");
 
-  protected readonly questions = computed(() => this.profile()?.questions ?? []);
+  /** The column the reveal last followed, whose observer and listeners go with this section. */
+  private followed: HTMLElement | null = null;
+
+  private readonly asked = computed(() => this.profile()?.questions ?? []);
 
   private readonly waiting = computed(() =>
-    this.questions().filter((question) => question.state === "waiting"),
+    this.asked().filter((question) => question.state === "waiting"),
   );
 
   /** Waiting or skipped: a question whose item still says `scope to clarify`. */
   private readonly stillOpen = computed(() =>
-    this.questions().filter((question) => question.state !== "answered"),
+    this.asked().filter((question) => question.state !== "answered"),
   );
 
   /**
@@ -169,7 +151,7 @@ export class ProfileViewer {
    * line is the item it belongs to, in the line's own words, with the line's id beside
    * it. `null` when they pressed nothing, or nothing of their profile.
    */
-  protected readonly pressed = computed<Pressed | null>(() => {
+  private readonly on = computed<Pressed | null>(() => {
     const region = this.selected();
     if (region === null) return null;
     return region.kind === "line" ? this.lineOf(region.id) : this.itemOf(region.id);
@@ -180,8 +162,8 @@ export class ProfileViewer {
    * is lifted when no tool is active.
    */
   protected readonly lifted = computed(() => {
-    const pressed = this.pressed();
-    return pressed === null ? null : (pressed.lineId ?? pressed.itemId);
+    const on = this.on();
+    return on === null ? null : (on.lineId ?? on.itemId);
   });
 
   /**
@@ -189,7 +171,7 @@ export class ProfileViewer {
    * (`US9`). The documents' own read day is what says so, which is a fact the interface
    * answered and never a guess about the session.
    */
-  protected readonly returning = computed(() => {
+  private readonly isReturning = computed(() => {
     const readOn = this.profile()?.readOn ?? null;
     if (readOn === null) return false;
     return new Date(readOn).toDateString() !== new Date().toDateString();
@@ -204,7 +186,7 @@ export class ProfileViewer {
    * a count of facts can be shown honestly is the spec's own open question, and the card
    * leaves the figure out rather than invent one.
    */
-  protected readonly reading = computed(() => ({
+  private readonly figures = computed(() => ({
     documents: this.profile()?.documents ?? 0,
     facts: 0,
   }));
@@ -240,17 +222,6 @@ export class ProfileViewer {
 
   protected readonly name = computed(() => this.profile()?.name ?? "");
 
-  /**
-   * Which column is on the screen. Two from 1024 px; below it one at a time, and the
-   * bar stays with the sheet's column so the toggle back is never off the screen.
-   */
-  protected readonly assistantClass = computed(() =>
-    [
-      "flex h-full min-h-0 min-w-0 flex-col overflow-hidden border-border bg-card max-lg:order-2 lg:flex lg:border-r",
-      this.view() === "chat" ? "flex" : "hidden",
-    ].join(" "),
-  );
-
   protected readonly scrollClass = computed(() =>
     [
       "min-h-0 flex-1 flex-col items-center overflow-auto p-4 lg:p-7",
@@ -261,25 +232,33 @@ export class ProfileViewer {
   constructor() {
     void this.load();
 
-    /**
-     * The profile's conversation, opened with the opening the API writes the first time
-     * (agent-consolidation SL2), **once a reading has made a profile** (`ID202`: no
-     * assistant during the intake). An effect, so a reading that lands through the drop
-     * zone over this page opens it too.
-     */
+    // What this section says, relayed by the page to the assistant (D8).
+    this.relay(this.asked, (value) => this.questions.emit(value));
+    this.relay(this.on, (value) => this.pressed.emit(value));
+    this.relay(this.putDown, (value) => this.dismissed.emit(value));
+    this.relay(this.hasRead, (value) => this.read.emit(value));
+    this.relay(this.isReturning, (value) => this.returning.emit(value));
+    this.relay(this.figures, (value) => this.reading.emit(value));
+
+    // What the assistant did, relayed by the page to this section (D8).
+    effect(() => {
+      const activation = this.activated();
+      if (activation !== null) untracked(() => this.activate(activation));
+    });
+    effect(() => {
+      if (this.closed() > 0) untracked(() => this.putAway());
+    });
+    effect(() => {
+      const decision = this.decided();
+      if (decision?.kept === true) untracked(() => this.kept());
+    });
+
     /**
      * A reading that landed through the modal, a second after its green line (D15): the
      * modal closes and the profile it just changed is read back.
      */
     effect(() => {
       if (this.documents.readDone() > 0) void untracked(() => this.documentsAdded());
-    });
-
-    let opened = false;
-    effect(() => {
-      if (opened || !this.read()) return;
-      opened = true;
-      void this.core.open();
     });
 
     /**
@@ -320,6 +299,7 @@ export class ProfileViewer {
       const column = this.scroller()?.nativeElement;
       const lifted = this.lifted();
       if (column === undefined) return;
+      this.followed = column;
       if (lifted === null) {
         // The assistant's own run has ended: the reading is what the person came to see
         // and the last question left them deep inside a list (`ID125`, rule 5). A tool
@@ -328,7 +308,7 @@ export class ProfileViewer {
         if (
           this.viaQuestion &&
           this.profile() !== null &&
-          this.questions().length > 0 &&
+          this.asked().length > 0 &&
           this.waiting().length === 0
         ) {
           backToHead(column);
@@ -337,6 +317,19 @@ export class ProfileViewer {
       }
       const region = column.querySelector<HTMLElement>(`[data-id="${lifted}"]`);
       if (region !== null) revealInColumn(column, region);
+    });
+
+    /** The observer and the two listeners the reveal set up go with the section (`ID248`). */
+    inject(DestroyRef).onDestroy(() => {
+      if (this.followed !== null) stopFollowing(this.followed);
+    });
+  }
+
+  /** One value of this section, emitted each time it changes. */
+  private relay<T>(value: () => T, emit: (value: T) => void): void {
+    effect(() => {
+      const now = value();
+      untracked(() => emit(now));
     });
   }
 
@@ -363,15 +356,11 @@ export class ProfileViewer {
       : `on ${read.toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric" })}`;
   }
 
-  protected toggleView(): void {
-    this.view.update((view) => (view === "sheet" ? "chat" : "sheet"));
-  }
-
   /**
    * A region pressed by hand, item or line. A line lights on hover, so it opens on a
    * press as well (the person, 2026-09-13): the tool opens about the line's own words,
-   * and what is written is kept on the item the line belongs to, since a rule hangs from
-   * an item and never from a line.
+   * and what is written is kept on the item the line belongs to, since a concern hangs
+   * from an item and never from a line.
    */
   protected chosen(region: RegionRef): void {
     // The click of a press that has just closed a tool opens nothing (`ID236`).
@@ -384,7 +373,7 @@ export class ProfileViewer {
 
   /** The one path a tool is activated by, a press's or the assistant's (`ID215`). */
   private select(region: RegionRef): void {
-    this.dismissed.set(false);
+    this.putDown.set(false);
     this.selected.set(region);
   }
 
@@ -435,32 +424,17 @@ export class ProfileViewer {
    * region opens it again.
    */
   protected overlayPressed(): void {
-    if (this.pressed() !== null && this.open() === null) this.cancelled();
+    if (this.on() !== null && this.open() === null) this.putAway();
     this.selected.set(null);
-    this.dismissed.set(true);
+    this.putDown.set(true);
   }
 
   /**
-   * What the person wrote about an item nobody asked about, or one of its lines: a message
-   * naming it (agent-consolidation `S8.7`, `ID233`), posted through the conversation, whose
-   * reply streams as for any message. No rule is written. The tool closes at once, and the
-   * sheet is left where they opened it: this ending is not the run's.
+   * The person's own tool put away, written or cancelled: nothing moved. What was written
+   * is the assistant's to post, and the sheet is left where they opened it: this ending is
+   * not the run's.
    */
-  protected async clarified(said: {
-    itemId: string;
-    words: string;
-    lineId?: string;
-  }): Promise<void> {
-    this.viaQuestion = false;
-    this.selected.set(null);
-    await this.core.post(said.words, {
-      itemId: said.itemId,
-      ...(said.lineId === undefined ? {} : { lineId: said.lineId }),
-    });
-  }
-
-  /** The person-opened tool, closed with nothing written and nothing moved. */
-  protected cancelled(): void {
+  private putAway(): void {
     this.viaQuestion = false;
     this.selected.set(null);
   }
@@ -515,55 +489,20 @@ export class ProfileViewer {
    * handled as a press on that item, the one path a tool is activated by, and marking the
    * assistant's run so the column returns to its head once no tool is left (`ID125`).
    */
-  protected activated(activation: { itemId: string }): void {
+  private activate(activation: { itemId: string }): void {
     this.viaQuestion = true;
     this.select({ kind: "item", id: activation.itemId });
   }
 
-  /** One answer written, and the profile read back, so the rule shown is the rule kept. */
-  protected async answered(said: {
-    questionId: string;
-    optionId?: string;
-    words?: string;
-  }): Promise<void> {
-    this.viaQuestion = true;
-    await this.decide(
-      api.intake.questions[":id"].answer.$post({
-        param: { id: said.questionId },
-        json: {
-          ...(said.optionId === undefined ? {} : { optionId: said.optionId }),
-          ...(said.words === undefined ? {} : { words: said.words }),
-        },
-      }),
-    );
-  }
-
-  protected async skipped(said: { questionId: string }): Promise<void> {
-    this.viaQuestion = true;
-    await this.decide(
-      api.intake.questions[":id"].answer.$post({
-        param: { id: said.questionId },
-        json: { skip: true },
-      }),
-    );
-  }
-
   /**
-   * A decision posted, and the profile and the conversation read back whether it was
-   * kept or not, which is what the assistant waits on while it thinks (`ID217`). Kept,
-   * nothing is active any more and the assistant activates what comes next; not kept, the
-   * tool stays on the item with what the person had picked.
-   *
-   * The decision is an entry of the conversation (agent-consolidation `S7.1`), so the
-   * conversation is read back with the profile.
+   * A decision the assistant kept (D5): nothing is active any more, and the profile is read
+   * back so the concern shown is the concern kept. The assistant activates what comes next
+   * once the new questions arrive.
    */
-  private async decide(posting: Promise<{ ok: boolean }>): Promise<void> {
-    const kept = await posting.then(
-      (answer) => answer.ok,
-      () => false,
-    );
-    if (kept) this.selected.set(null);
-    await Promise.all([this.load(), this.core.reload()]);
+  private kept(): void {
+    this.viaQuestion = true;
+    this.selected.set(null);
+    void this.load();
   }
 
   /**
@@ -582,11 +521,5 @@ export class ProfileViewer {
   protected async documentsAdded(): Promise<void> {
     this.adding.set(false);
     await this.load();
-  }
-
-  /** The observer and the two listeners the reveal set up go with the column. */
-  protected stopWatching(): void {
-    const column = this.scroller()?.nativeElement;
-    if (column !== undefined) stopFollowing(column);
   }
 }

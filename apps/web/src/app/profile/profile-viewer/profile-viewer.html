@@ -1,70 +1,36 @@
+<profile-bar
+  [name]="name()"
+  [readLine]="readLine()"
+  [view]="view()"
+  (addDocuments)="addDocuments()"
+  (toggleView)="toggleView.emit()"
+/>
+
 <!--
-  `-mt-10` undoes the shell's own opening step: the profile's bar sits directly under the
-  AppBar in the mockup, where every other signed-in page opens with air above it. Forty
-  pixels, not twenty-four: `uiPage` opens with `pt-6`, and `<router-outlet>` is an element
-  of its own, so the column's `gap-4` falls between the outlet and this page as well.
+  The scrolling column. The reveal is computed against this element's own rect and
+  moves its own `scrollTop`: it scrolls inside the shell, and `scrollIntoView` would
+  also move whatever contains it.
 -->
-<div [attr.data-view]="view()" [class]="gridClass()">
-  <!-- No assistant during the profile intake (ID202): the column exists once a reading has. -->
-  @if (read()) {
-    <section aria-label="Assistant" [class]="assistantClass()">
-      <!--
-        Once the conversation has answered, so the assistant decides whether to perform the
-        opening from what is stored rather than from nothing yet (agent-consolidation SL2).
-      -->
-      @if (conversationAnswered()) {
-        <profile-assistant
-          [questions]="questions()"
-          [on]="pressed()"
-          [dismissed]="dismissed()"
-          [returning]="returning()"
-          [reading]="reading()"
-          (answered)="answered($event)"
-          (skipped)="skipped($event)"
-          (clarified)="clarified($event)"
-          (cancelled)="cancelled()"
-          (activate)="activated($event)"
+<div #scroller [class]="scrollClass()">
+  @switch (state()) {
+    @case ("loading") {
+      <div uiSpinner></div>
+    }
+    @default {
+      @if (profile(); as loaded) {
+        <profile-sheet
+          [profile]="loaded"
+          [focused]="focused()"
+          [selected]="lifted()"
+          (select)="chosen($event)"
+          (overlayPressed)="overlayPressed()"
         />
       }
-    </section>
+    }
   }
-
-  <div class="flex min-h-0 flex-col overflow-hidden max-lg:order-1">
-    <profile-bar
-      [name]="name()"
-      [readLine]="readLine()"
-      [view]="view()"
-      (addDocuments)="addDocuments()"
-      (toggleView)="toggleView()"
-    />
-
-    <!--
-      The scrolling column. The reveal is computed against this element's own rect and
-      moves its own `scrollTop`: it scrolls inside the shell, and `scrollIntoView` would
-      also move whatever contains it.
-    -->
-    <div #scroller [class]="scrollClass()">
-      @switch (state()) {
-        @case ("loading") {
-          <div uiSpinner></div>
-        }
-        @default {
-          @if (profile(); as loaded) {
-            <profile-sheet
-              [profile]="loaded"
-              [focused]="focused()"
-              [selected]="lifted()"
-              (select)="chosen($event)"
-              (overlayPressed)="overlayPressed()"
-            />
-          }
-        }
-      }
-    </div>
-  </div>
 </div>
 
-<!-- The drop zone over the profile (`ID160`, D15), drawn from the Documents this page provides. -->
+<!-- The drop zone over the profile (`ID160`, D15), drawn from the Documents this section provides. -->
 @if (adding()) {
   <add-documents-modal (closed)="adding.set(false)" (done)="documentsAdded()" />
 }

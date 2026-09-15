@@ -7,6 +7,7 @@ import {
   DestroyRef,
   ElementRef,
   effect,
+  Injector,
   inject,
   input,
   output,
@@ -17,12 +18,17 @@ import {
 } from "@angular/core";
 import { Assistant } from "../../assistant/assistant/assistant";
 import { AssistantConversation } from "../../assistant/assistant-conversation/assistant-conversation";
-import { AssistantCore, type Entry } from "../../assistant/assistant-core";
+import { AssistantCore } from "../../assistant/assistant-core";
+import { provideAssistant } from "../../assistant/provide-assistant";
 import { guide, type Step } from "../../guide/guide";
 import { atOnce, GUIDE_PACE, type GuidePace } from "../../guide/pace";
 import { doThis, say, show, shownOf } from "../../guide/say";
 import { ago, exactly } from "../../lib/ago";
 import { UiText } from "../../ui/typography/text/text";
+import { AboutPart } from "../parts/about-part/about-part";
+import { ProfileEditPart } from "../parts/profile-edit-part/profile-edit-part";
+import { QuestionAnsweredPart } from "../parts/question-answered-part/question-answered-part";
+import { QuestionSkippedPart } from "../parts/question-skipped-part/question-skipped-part";
 import { ProgressLine } from "../progress-line/progress-line";
 import { ReadingCard } from "../reading-card/reading-card";
 import type { OpenQuestion, OpenTool, Option } from "../scope-tool/scope-tool";
@@ -54,11 +60,12 @@ import { ScopeTool } from "../scope-tool/scope-tool";
  * person and activates the first question still waiting: the finished run's opening is
  * not replayed, and there is no done state and no exit anywhere on this screen.
  *
- * The class holds the questions as an input and exposes computeds; the template binds
- * signals and reaches no service (`AGENTS.md` 3). What a decision *does* is the viewer's,
- * which owns the client — so what leaves here is which question was answered and with
- * what, which was skipped, which item a clarification was written on, and which item to
- * activate.
+ * **It is the only holder of the assistant core** (D1): it provides it, opens the
+ * conversation, draws once it has answered, posts, and answers and skips through
+ * `core.act` (D5, D9). The class holds the questions as an input and exposes computeds;
+ * the template binds signals and reaches no service (`AGENTS.md` 3). What leaves here is
+ * which item to activate, that the person's own tool was put away, and whether a decision
+ * was kept, which the page relays to the viewer (D8).
  */
 
 /** One question as the interface answers it, which is what this column is given. */
@@ -129,19 +136,31 @@ type Line = {
 type Phase = "performing" | "waiting" | "saving" | "finished";
 
 /**
- * A decision on its way. What the column held when it left is how it tells the viewer's
- * read-back apart from what came before, and whether the decision was kept.
+ * A decision on its way. `questions` is `null` until `core.act` has kept it, then the
+ * questions the column held at that moment, which is how it tells the viewer's read-back
+ * apart from what came before.
  */
 type Saving = {
-  questionId: string;
-  state: string;
   acknowledgement: string;
-  questions: Question[];
-  entries: Entry[];
+  questions: Question[] | null;
 };
 
 @Component({
   selector: "profile-assistant",
+  // The profile's assistant, for this column alone (`ID186`, `ID165`, D1): its own
+  // conversation, subject none, and the parts written for its entries (`ID185`, `ID191`).
+  providers: [
+    provideAssistant({
+      name: "profile",
+      parts: [
+        { kind: "tool_use", component: ProfileEditPart },
+        { kind: "tool_result", component: ProfileEditPart },
+        { kind: "question_answered", component: QuestionAnsweredPart },
+        { kind: "question_skipped", component: QuestionSkippedPart },
+        { kind: "about", component: AboutPart },
+      ],
+    }),
+  ],
   imports: [
     Assistant,
     AssistantConversation,
@@ -185,9 +204,18 @@ export class ProfileAssistant {
 
   /**
    * The stored conversation this column belongs to (agent-consolidation `SL2`, `ID176`),
-   * provided by the screen. Its first entry is the opening the API wrote.
+   * provided by this column (D1). Its first entry is the opening the API wrote.
    */
   private readonly core = inject(AssistantCore);
+
+  /**
+   * Whether the conversation has answered, with its entries or with a refusal. The column
+   * draws nothing before it, because whether the opening is performed is decided from what
+   * is stored, once, on its first render (`G3`).
+   */
+  protected readonly conversationAnswered = computed(
+    () => this.core.entries().length > 0 || this.core.failure() !== null,
+  );
 
   /** The words of one part of the opening, or nothing when the opening has no such part. */
   private readonly openingPart = (at: number): string => {
@@ -205,15 +233,14 @@ export class ProfileAssistant {
 
   protected readonly tailShown = computed(() => shownOf(this.tail(), this.toldTail()));
 
-  public readonly answered = output<{ questionId: string; optionId?: string; words?: string }>();
+  /**
+   * The person-opened tool put away: written about an item nobody asked about (`US8`), or
+   * one of its lines, and posted, or cancelled with nothing written.
+   */
+  public readonly closed = output<void>();
 
-  public readonly skipped = output<{ questionId: string }>();
-
-  /** What the person said about an item nobody asked about (`US8`), or one of its lines. */
-  public readonly clarified = output<{ itemId: string; words: string; lineId?: string }>();
-
-  /** The person-opened tool, closed with nothing written. */
-  public readonly cancelled = output<void>();
+  /** A decision made through the tool, and whether `core.act` kept it (D5). */
+  public readonly decided = output<{ kept: boolean }>();
 
   /**
    * The item whose question's tool the assistant activates (`ID216`): the viewer handles
@@ -378,7 +405,7 @@ export class ProfileAssistant {
   private readonly now = signal(new Date());
 
   /** When the column was first drawn, for an opening nothing stored. */
-  private readonly drawnAt = new Date();
+  private drawnAt = new Date();
 
   /** When the opening was written: as stored, or when it was drawn if nothing is. */
   protected readonly openingAt = computed(() => {
@@ -396,7 +423,15 @@ export class ProfileAssistant {
     });
 
     /**
-     * The intake's own guided sequence, run on the screen's **first render** (`G3`).
+     * The profile's conversation, opened with the opening the API writes the first time
+     * (agent-consolidation SL2). The page draws this column once a reading has made a
+     * profile (`ID202`: no assistant during the intake).
+     */
+    void this.core.open();
+
+    /**
+     * The intake's own guided sequence, run on the column's **first render** once the
+     * conversation has answered (`G3`).
      *
      * Every visit, not once per person, and not again while they stay. The steps are this
      * use case's words and this use case's tool — `app/guide/` holds none of them.
@@ -404,30 +439,15 @@ export class ProfileAssistant {
      * A person who types, clicks or scrolls abandons the performance and keeps
      * everything: the words whole, the card shown, the tool activated (`G2`).
      */
-    afterNextRender(() => {
-      /**
-       * **Only a brand new chat is performed** (the person, 2026-09-13).
-       *
-       * A conversation that already has something in it — a person coming back, a
-       * question already answered or put off — is a conversation being resumed, and
-       * typing its first line out again would be the interface pretending to think about
-       * something it has already said. Everything lands at once instead, and the tool is
-       * still activated.
-       */
-      if (!this.brandNew()) {
-        this.told.set(Number.POSITIVE_INFINITY);
-        this.card.set(true);
-        this.toldTail.set(Number.POSITIVE_INFINITY);
-        this.atOnce(this.turnSteps(atOnce, null));
-        return;
-      }
-      const pace = this.currentPace();
-      this.perform([
-        say("opening", this.opening(), this.told, pace),
-        show("card", this.card, pace),
-        say("tail", this.tail(), this.toldTail, pace),
-        ...this.turnSteps(pace, null),
-      ]);
+    const injector = inject(Injector);
+    let drawn = false;
+    effect(() => {
+      if (drawn || !this.conversationAnswered()) return;
+      drawn = true;
+      untracked(() => {
+        this.drawnAt = new Date();
+        afterNextRender(() => this.firstRender(), { injector });
+      });
     });
 
     /**
@@ -463,16 +483,14 @@ export class ProfileAssistant {
     });
 
     /**
-     * A decision read back (`ID217`). The viewer posts it and reads the profile and the
-     * conversation again whether or not it was kept; once both have arrived, the column
-     * stops thinking and either moves on or says it was not kept, the tool still on it.
+     * A kept decision read back (`ID217`): the viewer reads the profile again, and once its
+     * questions have arrived the column stops thinking and moves on.
      */
     effect(() => {
       const questions = this.questions();
-      const entries = this.core.entries();
       const saving = this.saving;
-      if (saving === null || questions === saving.questions || entries === saving.entries) return;
-      untracked(() => this.readBack(saving, questions, entries));
+      if (saving === null || saving.questions === null || questions === saving.questions) return;
+      untracked(() => this.readBack(saving));
     });
 
     /**
@@ -493,6 +511,33 @@ export class ProfileAssistant {
         if (this.phase() === "waiting" && next !== undefined) this.activateOn(next.itemId);
       });
     });
+  }
+
+  /** The column's first render: the opening performed, or everything landed at once. */
+  private firstRender(): void {
+    /**
+     * **Only a brand new chat is performed** (the person, 2026-09-13).
+     *
+     * A conversation that already has something in it — a person coming back, a
+     * question already answered or put off — is a conversation being resumed, and
+     * typing its first line out again would be the interface pretending to think about
+     * something it has already said. Everything lands at once instead, and the tool is
+     * still activated.
+     */
+    if (!this.brandNew()) {
+      this.told.set(Number.POSITIVE_INFINITY);
+      this.card.set(true);
+      this.toldTail.set(Number.POSITIVE_INFINITY);
+      this.atOnce(this.turnSteps(atOnce, null));
+      return;
+    }
+    const pace = this.currentPace();
+    this.perform([
+      say("opening", this.opening(), this.told, pace),
+      show("card", this.card, pace),
+      say("tail", this.tail(), this.toldTail, pace),
+      ...this.turnSteps(pace, null),
+    ]);
   }
 
   /**
@@ -652,44 +697,51 @@ export class ProfileAssistant {
     if (!this.gone) this.activate.emit({ itemId });
   }
 
-  /** A decision leaves: the column thinks until the viewer has read it back (`ID217`). */
-  private decided(question: Question, acknowledgement: string): void {
-    this.saving = {
-      questionId: question.id,
-      state: question.state,
-      acknowledgement,
-      questions: this.questions(),
-      entries: this.core.entries(),
-    };
+  /**
+   * A decision leaves through `core.act` (D5, D9): the column thinks until it is kept and
+   * the viewer has read the profile back (`ID217`). Not kept, the conversation is read
+   * again as it always was after a decision, and the column says so with the tool still on
+   * the pick and the words.
+   */
+  private async decide(
+    acknowledgement: string,
+    action: "answer_question" | "skip_question",
+    input: { questionId: string; optionId?: string; words?: string },
+  ): Promise<void> {
+    const saving: Saving = { acknowledgement, questions: null };
+    this.saving = saving;
     this.phase.set("saving");
     this.core.showActivity("Thinking");
-  }
-
-  /**
-   * The profile and the conversation, read back after a decision. Kept when the
-   * conversation holds one more entry or the question moved; otherwise nothing was
-   * saved, and the tool stays with the pick and the words.
-   */
-  private readBack(saving: Saving, questions: Question[], entries: Entry[]): void {
-    this.saving = null;
-    this.core.showActivity(null);
-    const state = questions.find((question) => question.id === saving.questionId)?.state;
-    const kept = entries.length > saving.entries.length || state !== saving.state;
-    if (!kept) {
-      this.phase.set("waiting");
-      this.turn.update((lines) => [
-        ...lines.filter((line) => line.part !== "save-failure"),
-        {
-          part: "save-failure",
-          text: notKept,
-          tone: "muted",
-          landed: signal(Number.POSITIVE_INFINITY),
-          at: new Date(),
-          after: entries.length,
-        },
-      ]);
+    const kept = await this.core.act(action, input);
+    if (this.gone) return;
+    if (kept) {
+      saving.questions = this.questions();
+      this.decided.emit({ kept: true });
       return;
     }
+    await this.core.reload();
+    if (this.gone) return;
+    this.saving = null;
+    this.core.showActivity(null);
+    this.phase.set("waiting");
+    this.turn.update((lines) => [
+      ...lines.filter((line) => line.part !== "save-failure"),
+      {
+        part: "save-failure",
+        text: notKept,
+        tone: "muted",
+        landed: signal(Number.POSITIVE_INFINITY),
+        at: new Date(),
+        after: this.core.entries().length,
+      },
+    ]);
+    this.decided.emit({ kept: false });
+  }
+
+  /** A kept decision, once the viewer's read-back has arrived: the column moves on. */
+  private readBack(saving: Saving): void {
+    this.saving = null;
+    this.core.showActivity(null);
     this.forget();
     // The lines said before stay for the visit (`ID227`); only a failure the decision has
     // since overcome goes.
@@ -715,11 +767,11 @@ export class ProfileAssistant {
     const pressed = this.clarifying();
     if (pressed !== null) {
       if (words === "") return;
-      this.clarified.emit({
+      void this.core.post(words, {
         itemId: pressed.itemId,
-        words,
         ...(pressed.lineId === null ? {} : { lineId: pressed.lineId }),
       });
+      this.closed.emit();
       this.forget();
       return;
     }
@@ -732,8 +784,7 @@ export class ProfileAssistant {
       return;
     }
     if (this.phase() === "saving") return;
-    this.decided(question, noted);
-    this.answered.emit({
+    void this.decide(noted, "answer_question", {
       questionId: question.id,
       optionId,
       ...(words === "" ? {} : { words }),
@@ -747,14 +798,13 @@ export class ProfileAssistant {
    */
   protected skip(): void {
     if (this.clarifying() !== null) {
-      this.cancelled.emit();
+      this.closed.emit();
       this.forget();
       return;
     }
     const question = this.open();
     if (question === null || this.phase() === "saving") return;
-    this.decided(question, putAside);
-    this.skipped.emit({ questionId: question.id });
+    void this.decide(putAside, "skip_question", { questionId: question.id });
   }
 
   private forget(): void {
