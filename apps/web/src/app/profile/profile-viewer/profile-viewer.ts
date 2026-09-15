@@ -6,15 +6,16 @@ import {
   effect,
   inject,
   signal,
+  untracked,
   viewChild,
 } from "@angular/core";
 import { Router } from "@angular/router";
 import type { InferResponseType } from "hono/client";
 import { AssistantCore } from "../../assistant/assistant-core";
 import { provideAssistant } from "../../assistant/provide-assistant";
-import { AppDocuments } from "../../intake/documents/documents";
+import { AddDocumentsModal } from "../../intake/documents/add-documents-modal/add-documents-modal";
+import { Documents } from "../../intake/documents/documents";
 import { api } from "../../lib/api";
-import { UiModal } from "../../ui/modal/modal";
 import { UiSpinner } from "../../ui/spinner/spinner";
 import { UiText } from "../../ui/typography/text/text";
 import { AboutPart } from "../parts/about-part/about-part";
@@ -53,21 +54,25 @@ type Item = Answer["experience"][number];
 
 @Component({
   selector: "profile-viewer",
-  imports: [AppDocuments, ProfileAssistant, ProfileBar, ProfileSheet, UiModal, UiSpinner, UiText],
+  imports: [AddDocumentsModal, ProfileAssistant, ProfileBar, ProfileSheet, UiSpinner, UiText],
   templateUrl: "./profile-viewer.html",
   // The profile's assistant, for this screen alone (`ID186`, `ID165`): its own
   // conversation, subject none, and the profile edit's call and record drawn by the part
   // written for them (`ID185`, `ID191`).
-  providers: provideAssistant({
-    name: "profile",
-    parts: [
-      { kind: "tool_use", component: ProfileEditPart },
-      { kind: "tool_result", component: ProfileEditPart },
-      { kind: "question_answered", component: QuestionAnsweredPart },
-      { kind: "question_skipped", component: QuestionSkippedPart },
-      { kind: "about", component: AboutPart },
-    ],
-  }),
+  // The documents and their reading, for this page and its modal (D15).
+  providers: [
+    provideAssistant({
+      name: "profile",
+      parts: [
+        { kind: "tool_use", component: ProfileEditPart },
+        { kind: "tool_result", component: ProfileEditPart },
+        { kind: "question_answered", component: QuestionAnsweredPart },
+        { kind: "question_skipped", component: QuestionSkippedPart },
+        { kind: "about", component: AboutPart },
+      ],
+    }),
+    Documents,
+  ],
   // The layout every assistant screen holds to (the person, 2026-09-12): this fills the
   // page rather than growing past it, so the window never scrolls and each column
   // decides for itself what moves inside it.
@@ -82,6 +87,8 @@ export class ProfileViewer {
   private readonly router = inject(Router);
 
   private readonly core = inject(AssistantCore);
+
+  private readonly documents = inject(Documents);
 
   /**
    * Whether the conversation has answered, with its entries or with a refusal. The
@@ -261,6 +268,14 @@ export class ProfileViewer {
      * assistant during the intake). An effect, so a reading that lands through the drop
      * zone over this page opens it too.
      */
+    /**
+     * A reading that landed through the modal, a second after its green line (D15): the
+     * modal closes and the profile it just changed is read back.
+     */
+    effect(() => {
+      if (this.documents.readDone() > 0) void untracked(() => this.documentsAdded());
+    });
+
     let opened = false;
     effect(() => {
       if (opened || !this.read()) return;
@@ -335,8 +350,8 @@ export class ProfileViewer {
     // mid-run included. Whether they handed anything over is the documents route's to
     // answer, and it is asked only in the one case that turns on it.
     if (this.state() !== "empty") return;
-    const documents = await api.intake.documents.$get();
-    this.handedOver.set(documents.ok ? (await documents.json()).length : null);
+    const documents = await this.documents.list();
+    this.handedOver.set(documents === null ? null : documents.length);
   }
 
   /** `today`, or the day itself. Read from the answer; nothing is counted from it. */
@@ -562,8 +577,8 @@ export class ProfileViewer {
   }
 
   /**
-   * The reading inside the modal landed: the drop zone has said its piece in green, so
-   * it closes, and the profile it just changed is read back.
+   * The reading inside the modal landed, or its Done was pressed: the drop zone has said
+   * its piece, so it closes, and the profile it just changed is read back.
    */
   protected async documentsAdded(): Promise<void> {
     this.adding.set(false);
