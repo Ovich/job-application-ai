@@ -48,7 +48,7 @@ const { keyFor } = await import("../../../src/lib/storage");
 const { cookiesSetBy, signInThrough, signedInAs } = await import("../../support/sign-in");
 const { theSet, uploadOfFixture } = await import("../../support/documents");
 const { forgetRequests } = await import("../../support/ai");
-const { profileOf } = await import("../../../src/handlers/intake");
+const { profileOf } = await import("../../../src/handlers/profile");
 
 const appUrl = "http://localhost:4200";
 

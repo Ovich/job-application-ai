@@ -1,17 +1,11 @@
 import { Hono } from "hono";
-import {
-  addDocument,
-  answerQuestion,
-  listDocuments,
-  readDocuments,
-  readProfile,
-  removeDocument,
-  writeItemRule,
-} from "../handlers/intake";
+import { addDocument, listDocuments, removeDocument } from "../handlers/documents";
+import { answerQuestion, readProfile, writeItemRule } from "../handlers/profile";
+import { readDocuments } from "../handlers/reading";
 
 /**
  * The intake routes: paths and handlers, nothing else. What each one proves is written
- * where it is done, in `apps/api/src/handlers/intake.ts`.
+ * where it is done, in `apps/api/src/handlers/documents.ts`, `reading.ts` and `profile.ts`.
  *
  * `ID118` lists six routes for the intake across SL2 to SL5, and with SL4 all six are
  * mounted: the documents, the reading run, the profile that run produces, the answer to
