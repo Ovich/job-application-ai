@@ -14,8 +14,8 @@ import { deletedThroughApp, forget, type Person, signedIn, type Where } from "./
  * `US7`).
  *
  * Read, land in the viewer, answer one with a choice, answer one in the person's own
- * words, skip one, reload and find the rules still there. It is the one place the whole
- * of it can be asked at once: the rules on the screen were written by routes a browser
+ * words, skip one, reload and find the profile concerns still there. It is the one place the
+ * whole of it can be asked at once: the concerns on the screen were written by routes a browser
  * called, into a database a run really wrote, and read back after a reload that kept
  * nothing in the page.
  *
@@ -133,7 +133,7 @@ test.afterAll(async ({}, testInfo) => {
   expect(statuses.every((status) => status === 200)).toBe(true);
 });
 
-test("the assistant asks, the answers become rules, and a reload still has them", async ({
+test("the assistant asks, the answers become profile concerns, and a reload still has them", async ({
   browser,
 }, testInfo) => {
   // The wait below reads documents through the paced double and carries a timeout of
@@ -190,11 +190,11 @@ test("the assistant asks, the answers become rules, and a reload still has them"
   await expect(page.locator("profile-sheet article")).toHaveAttribute("data-focused", "true");
   await expect(page.locator("[data-selected=true]")).toHaveCount(1);
 
-  /** The rule the row a case picks would write, read off the row itself. */
+  /** The concern the row a case picks would write, read off the row itself. */
   const firstLead = await page.locator("[data-part=lead]").textContent();
   const firstRow = page.locator("[data-action=alt]").first();
-  const firstRule = await firstRow.getAttribute("data-rule");
-  expect(firstRule).not.toBeNull();
+  const firstConcern = await firstRow.getAttribute("data-concern");
+  expect(firstConcern).not.toBeNull();
 
   // One answered with a choice.
   await firstRow.click();
@@ -222,19 +222,19 @@ test("the assistant asks, the answers become rules, and a reload still has them"
   await expect(page.locator("scope-tool")).toBeVisible();
   await waitingLineInView(page);
 
-  // The rules are on the sheet, as the check line under their items.
-  await expect(page.locator("[data-part=rule]").filter({ hasText: firstRule ?? "" })).toHaveCount(
-    1,
-  );
-  await expect(page.locator("[data-part=rule]").filter({ hasText: ownWords })).toHaveCount(1);
+  // The concerns are on the sheet, as the check line under their items.
+  await expect(
+    page.locator("[data-part=concern]").filter({ hasText: firstConcern ?? "" }),
+  ).toHaveCount(1);
+  await expect(page.locator("[data-part=concern]").filter({ hasText: ownWords })).toHaveCount(1);
 
   // And a reload, which keeps nothing in the page, still has both of them.
   await page.reload();
   await expect(page.locator("profile-sheet")).toBeVisible();
-  await expect(page.locator("[data-part=rule]").filter({ hasText: firstRule ?? "" })).toHaveCount(
-    1,
-  );
-  await expect(page.locator("[data-part=rule]").filter({ hasText: ownWords })).toHaveCount(1);
+  await expect(
+    page.locator("[data-part=concern]").filter({ hasText: firstConcern ?? "" }),
+  ).toHaveCount(1);
+  await expect(page.locator("[data-part=concern]").filter({ hasText: ownWords })).toHaveCount(1);
   await expect(count).toHaveText(/^2 of \d+ answered, 1 for the builder$/);
 
   // A conversation with history opens on its latest exchange (agent-consolidation `S8.9`,
@@ -294,10 +294,10 @@ test("a chip clicked, words about it in the conversation, and somebody else's de
   });
   await expect(page.locator("scope-tool")).toBeVisible();
 
-  // A chip nobody asked about: no mark on it, and no rule under it yet.
+  // A chip nobody asked about: no review flag on it, and no concern under it yet.
   const plain = page
     .locator("[data-row=chip]")
-    .filter({ hasNot: page.locator("[data-part=ask], [data-part=rule]") })
+    .filter({ hasNot: page.locator("[data-part=ask], [data-part=concern]") })
     .first();
   const label = (await plain.textContent())?.trim() ?? "";
   expect(label).not.toBe("");
@@ -326,13 +326,13 @@ test("a chip clicked, words about it in the conversation, and somebody else's de
 
   /**
    * What the person wrote is a message naming the chip (agent-consolidation `S8.7`,
-   * `ID233`): in the conversation with the chip's where above it, and no rule under it.
+   * `ID233`): in the conversation with the chip's where above it, and no concern under it.
    */
   const wroteAboutTheChip = async (): Promise<void> => {
     const mine = page.locator("[data-msg=person]").filter({ hasText: ownWords });
     await expect(mine).toHaveCount(1, { timeout: 15_000 });
     await expect(mine.locator("[data-part=about]")).toHaveText(label);
-    await expect(page.locator("[data-part=rule]").filter({ hasText: ownWords })).toHaveCount(0);
+    await expect(page.locator("[data-part=concern]").filter({ hasText: ownWords })).toHaveCount(0);
   };
   await wroteAboutTheChip();
   // The assistant is back on what still waits.

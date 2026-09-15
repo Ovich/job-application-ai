@@ -23,7 +23,7 @@
       >
         <span class="flex flex-wrap items-baseline gap-2.5">
           <span uiText variant="ui">{{ summary.title }}</span>
-          <profile-mark [of]="summary" />
+          <profile-review-flag [review]="summary.question" [concern]="summary.concern" />
           <span data-part="from" uiText variant="caption" tone="muted" class="ms-auto">{{
             from(summary.documents)
           }}</span>
@@ -44,7 +44,7 @@
       >
         <span class="flex flex-wrap items-baseline gap-2.5">
           <b uiText variant="ui" weight="semibold">{{ identity.title }}</b>
-          <profile-mark [of]="identity" />
+          <profile-review-flag [review]="identity.question" [concern]="identity.concern" />
           <span data-part="from" uiText variant="caption" tone="muted" class="ms-auto">{{
             from(identity.documents)
           }}</span>
@@ -75,7 +75,7 @@
           <span class="flex flex-wrap items-baseline gap-2.5">
             <b uiText variant="ui" weight="semibold">{{ post.title }}</b>
             <span uiText variant="caption" tone="muted">{{ dates(post) }}</span>
-            <profile-mark [of]="post" />
+            <profile-review-flag [review]="post.question" [concern]="post.concern" />
             <span data-part="from" uiText variant="caption" tone="muted" class="ms-auto">{{
               from(post.documents)
             }}</span>
@@ -116,7 +116,7 @@
                   >
                     <b uiText variant="caption" weight="semibold">{{ project.title }}</b>
                     <span uiText variant="caption" tone="muted">{{ dates(project) }}</span>
-                    <profile-mark [of]="project" />
+                    <profile-review-flag [review]="project.question" [concern]="project.concern" />
                     <span data-part="from" uiText variant="caption" tone="muted" class="ms-auto">{{
                       from(project.documents)
                     }}</span>
@@ -134,7 +134,10 @@
                             [profileRegion]="{ kind: 'item', id: chip.id }"
                             [selected]="selected() === chip.id"
                             (select)="chosen($event)"
-                            >{{ chip.title }}<profile-mark [of]="chip"
+                            >{{ chip.title
+                            }}<profile-review-flag
+                              [review]="chip.question"
+                              [concern]="chip.concern"
                           /></span>
                         }
                       </div>
@@ -154,7 +157,8 @@
                   [profileRegion]="{ kind: 'item', id: chip.id }"
                   [selected]="selected() === chip.id"
                   (select)="chosen($event)"
-                  >{{ chip.title }}<profile-mark [of]="chip"
+                  >{{ chip.title
+                  }}<profile-review-flag [review]="chip.question" [concern]="chip.concern"
                 /></span>
               }
             </div>
@@ -183,7 +187,7 @@
           <span class="flex flex-wrap items-baseline gap-2.5">
             <b uiText variant="ui" weight="semibold">{{ project.title }}</b>
             <span uiText variant="caption" tone="muted">{{ dates(project) }}</span>
-            <profile-mark [of]="project" />
+            <profile-review-flag [review]="project.question" [concern]="project.concern" />
             <span data-part="from" uiText variant="caption" tone="muted" class="ms-auto">{{
               from(project.documents)
             }}</span>
@@ -200,7 +204,8 @@
                   [profileRegion]="{ kind: 'item', id: chip.id }"
                   [selected]="selected() === chip.id"
                   (select)="chosen($event)"
-                  >{{ chip.title }}<profile-mark [of]="chip"
+                  >{{ chip.title
+                  }}<profile-review-flag [review]="chip.question" [concern]="chip.concern"
                 /></span>
               }
             </div>
@@ -236,7 +241,8 @@
                 [profileRegion]="{ kind: 'item', id: chip.id }"
                 [selected]="selected() === chip.id"
                 (select)="chosen($event)"
-                >{{ chip.title }}<profile-mark [of]="chip"
+                >{{ chip.title
+                }}<profile-review-flag [review]="chip.question" [concern]="chip.concern"
               /></span>
             }
           </div>
@@ -270,7 +276,7 @@
           <span class="flex flex-wrap items-baseline gap-2.5">
             <b uiText variant="ui" weight="semibold">{{ item.title }}</b>
             <span uiText variant="caption" tone="muted">{{ dates(item) }}</span>
-            <profile-mark [of]="item" />
+            <profile-review-flag [review]="item.question" [concern]="item.concern" />
             <span data-part="from" uiText variant="caption" tone="muted" class="ms-auto">{{
               from(item.documents)
             }}</span>
@@ -287,7 +293,8 @@
                   [profileRegion]="{ kind: 'item', id: chip.id }"
                   [selected]="selected() === chip.id"
                   (select)="chosen($event)"
-                  >{{ chip.title }}<profile-mark [of]="chip"
+                  >{{ chip.title
+                  }}<profile-review-flag [review]="chip.question" [concern]="chip.concern"
                 /></span>
               }
             </div>

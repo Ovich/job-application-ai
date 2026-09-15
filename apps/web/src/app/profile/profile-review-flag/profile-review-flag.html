@@ -1,4 +1,4 @@
-@if (of().question !== null && of().rule === null) {
+@if (review() !== null && concern() === null) {
   <!--
     The adjust glyph, drawn as a triangle rather than typed as a character, so it keeps
     the warn token and no font decides its shape.
@@ -13,8 +13,8 @@
   >
 }
 
-@if (of().rule; as kept) {
-  <span data-part="rule" uiText variant="caption" tone="ok" weight="semibold" class="basis-full"
+@if (concern(); as kept) {
+  <span data-part="concern" uiText variant="caption" tone="ok" weight="semibold" class="basis-full"
     >✓ {{ kept.text }}</span
   >
 }

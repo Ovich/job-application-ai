@@ -13,7 +13,7 @@ import { UiText } from "../../ui/typography/text/text";
  * product making. Four answers at most, by the type: the design language caps an
  * exclusive choice at four and the spec caps a question's answers at the same number, so
  * a fifth is a compile error rather than a review finding. The last row is always the
- * person's own words: it carries no rule of its own and picking it is what turns the
+ * person's own words: it carries no concern of its own and picking it is what turns the
  * composer into the answer.
  *
  * **Opened by the person**: one fixed sentence and the composer, and nothing else at all
@@ -34,8 +34,8 @@ import { UiText } from "../../ui/typography/text/text";
  * an output.
  */
 
-/** One answer offered: two lines, and the rule picking it writes. */
-export type Option = { id: string; label: string; hint: string; rule: string | null };
+/** One answer offered: two lines, and the profile concern picking it writes. */
+export type Option = { id: string; label: string; hint: string; concern: string | null };
 
 /** A question as the tool takes it. Four answers at most, and the type says so. */
 export type OpenQuestion = {

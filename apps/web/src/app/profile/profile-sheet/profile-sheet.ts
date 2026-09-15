@@ -2,8 +2,8 @@ import { Component, computed, input, output } from "@angular/core";
 import type { InferResponseType } from "hono/client";
 import type { api } from "../../lib/api";
 import { UiText } from "../../ui/typography/text/text";
-import { ProfileMark } from "../profile-mark/profile-mark";
 import { ProfileRegion, type RegionRef } from "../profile-region/profile-region";
+import { ProfileReviewFlag } from "../profile-review-flag/profile-review-flag";
 
 /**
  * The profile as the app's own surface (`US4`, `D17`, the mockup's right column).
@@ -39,7 +39,7 @@ const yearsIn = (items: Item[]): number[] =>
 
 @Component({
   selector: "profile-sheet",
-  imports: [ProfileMark, ProfileRegion, UiText],
+  imports: [ProfileRegion, ProfileReviewFlag, UiText],
   templateUrl: "./profile-sheet.html",
 })
 export class ProfileSheet {
