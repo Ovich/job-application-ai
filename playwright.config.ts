@@ -55,12 +55,19 @@ export default defineConfig({
       // `dev-sql` is the local project's alone and always will be (agent-consolidation SL9,
       // ID228): it proves `pnpm dev:sql` on the local container, and dev is one shared
       // database nothing but the app may write to.
-      // `profile-look` joins at assistant-architecture SL10 (ID240, ID241): the profile
-      // page's states compared pixel for pixel with SL1's images. Local only, since dev
-      // holds other people's data. Its baselines sit beside it in `profile-look/`, one per
-      // state, width and platform: a run compares against its own platform's images.
       testMatch:
-        /(health-stream|auth|entry-route|intake|intake-questions|profile|profile-look|conversation|dev-sql)\.spec\.ts$/,
+        /(health-stream|auth|entry-route|intake|intake-questions|profile|conversation|dev-sql)\.spec\.ts$/,
+      use: { baseURL: "http://localhost:4200" },
+    },
+    {
+      name: "look",
+      // `profile-look`, assistant-architecture SL10 (ID240, ID266): the profile page's
+      // states compared pixel for pixel with SL1's images, the dated lines masked. Run by
+      // hand, `pnpm exec playwright test --project=look`, on the machine its baselines were
+      // rendered on: pixels differ between platforms, and only Windows baselines exist, so
+      // neither `local` (which the pipeline runs on Linux) nor `deployed` collects it. Local
+      // only in any case, since dev holds other people's data.
+      testMatch: /profile-look\.spec\.ts$/,
       snapshotPathTemplate: "{testDir}/profile-look/{arg}-{platform}{ext}",
       use: { baseURL: "http://localhost:4200" },
     },
