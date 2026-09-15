@@ -17,7 +17,6 @@ import { AddDocumentsModal } from "../../intake/documents/add-documents-modal/ad
 import { Documents } from "../../intake/documents/documents";
 import { api } from "../../lib/api";
 import { UiSpinner } from "../../ui/spinner/spinner";
-import { UiText } from "../../ui/typography/text/text";
 import { AboutPart } from "../parts/about-part/about-part";
 import { ProfileEditPart } from "../parts/profile-edit-part/profile-edit-part";
 import { QuestionAnsweredPart } from "../parts/question-answered-part/question-answered-part";
@@ -54,7 +53,7 @@ type Item = Answer["experience"][number];
 
 @Component({
   selector: "profile-viewer",
-  imports: [AddDocumentsModal, ProfileAssistant, ProfileBar, ProfileSheet, UiSpinner, UiText],
+  imports: [AddDocumentsModal, ProfileAssistant, ProfileBar, ProfileSheet, UiSpinner],
   templateUrl: "./profile-viewer.html",
   // The profile's assistant, for this screen alone (`ID186`, `ID165`): its own
   // conversation, subject none, and the profile edit's call and record drawn by the part
