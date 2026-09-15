@@ -6,6 +6,12 @@
   <ng-content />
 </div>
 
-<composer [tool]="tool()" [canSave]="canSave()" (save)="save.emit()" (clear)="clear.emit()">
+<composer
+  [tool]="tool()"
+  [canSave]="canSave()"
+  [placeholder]="placeholder()"
+  (save)="save.emit()"
+  (clear)="clear.emit()"
+>
   <ng-content select="[assistantTool]" />
 </composer>

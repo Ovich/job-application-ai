@@ -11,7 +11,13 @@
   greeting, the reading, the openers, the acknowledgements, the waiting line, and the
   interview tool that goes into the dock.
 -->
-  <assistant [tool]="tool()" [canSave]="picked() !== null" (save)="save()" (clear)="skip()">
+  <assistant
+    [tool]="tool()"
+    [canSave]="picked() !== null"
+    [placeholder]="placeholder"
+    (save)="save()"
+    (clear)="skip()"
+  >
     <!--
     The stored conversation (agent-consolidation SL2). The core draws its entries; the
     template given here is how this use case draws entry 1, the opening, with the reading
@@ -36,6 +42,35 @@
             [ngTemplateOutlet]="performed"
             [ngTemplateOutletContext]="{ $implicit: line }"
           />
+        }
+      </ng-template>
+
+      <!--
+      Every stored part that is not text, drawn by its kind with this assistant's history
+      parts (D3, D4). A `tool_use` is drawn as nothing: the record that follows says it.
+    -->
+      <ng-template #part let-given>
+        @switch (given.kind) {
+          @case ("tool_use") {
+            <history-edit-part [part]="given" />
+          }
+          @case ("tool_result") {
+            <history-edit-part [part]="given" />
+          }
+          @case ("question_answered") {
+            <history-answer-part [part]="given" />
+          }
+          @case ("question_skipped") {
+            <history-skip-part [part]="given" />
+          }
+          @case ("about") {
+            <history-about-part [part]="given" />
+          }
+          @default {
+            <p data-part="placeholder" uiText variant="body" tone="muted">
+              This part cannot be shown here.
+            </p>
+          }
         }
       </ng-template>
 

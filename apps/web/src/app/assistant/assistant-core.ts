@@ -1,13 +1,8 @@
 import { Injectable, inject, signal } from "@angular/core";
-import type { InferResponseType } from "hono/client";
 import { api } from "../lib/api";
 import { framesOf } from "../lib/stream";
+import type { Entry } from "./entry";
 import { ASSISTANT } from "./provide-assistant";
-
-type Conversation = InferResponseType<(typeof api.conversations)[":assistant"]["$get"], 200>;
-
-/** One entry as the API answers it: inferred from `AppType`, never declared here. */
-export type Entry = Conversation["entries"][number];
 
 /** What a message's stream says, as far as the core reads it (`ID170`). */
 type Leaf =

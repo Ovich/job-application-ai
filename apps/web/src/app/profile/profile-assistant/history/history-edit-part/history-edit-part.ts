@@ -1,6 +1,6 @@
 import { Component, computed, input } from "@angular/core";
-import type { Entry } from "../../../assistant/assistant-core";
-import { UiText } from "../../../ui/typography/text/text";
+import type { Entry } from "../../../../assistant/entry";
+import { UiText } from "../../../../ui/typography/text/text";
 
 /** One part of an entry, whatever its kind. */
 type Part = Entry["parts"][number];
@@ -103,11 +103,11 @@ const changesOf = (before: Item, after: Item): Change[] => {
  * No calls and no outputs: it reads the part it is given.
  */
 @Component({
-  selector: "profile-edit-part",
+  selector: "history-edit-part",
   imports: [UiText],
-  templateUrl: "./profile-edit-part.html",
+  templateUrl: "./history-edit-part.html",
 })
-export class ProfileEditPart {
+export class HistoryEditPart {
   public readonly part = input.required<Part>();
 
   protected readonly drawn = computed<Drawn | null>(() => {

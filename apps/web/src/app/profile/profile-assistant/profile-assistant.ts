@@ -1,7 +1,6 @@
 import { NgTemplateOutlet } from "@angular/common";
 import {
   afterNextRender,
-  afterRenderEffect,
   Component,
   computed,
   DestroyRef,
@@ -25,14 +24,11 @@ import { atOnce, GUIDE_PACE, type GuidePace } from "../../guide/pace";
 import { doThis, say, show, shownOf } from "../../guide/say";
 import { ago, exactly } from "../../lib/ago";
 import { UiText } from "../../ui/typography/text/text";
-import { AboutPart } from "../parts/about-part/about-part";
-import { ProfileEditPart } from "../parts/profile-edit-part/profile-edit-part";
-import { QuestionAnsweredPart } from "../parts/question-answered-part/question-answered-part";
-import { QuestionSkippedPart } from "../parts/question-skipped-part/question-skipped-part";
 import { ProgressLine } from "../progress-line/progress-line";
 import { ReadingCard } from "../reading-card/reading-card";
 import type { OpenQuestion, OpenTool, Option } from "../scope-tool/scope-tool";
 import { ScopeTool } from "../scope-tool/scope-tool";
+import { profileAssistantHistory } from "./history/history";
 
 /**
  * The assistant's column, for the intake (`S4.2`, `S4.4`, `S5.1`, `S5.2`, the mockup's
@@ -102,6 +98,9 @@ const scope = "Adjusting scope";
 const whatScopeMeans =
   "What you say next goes into the conversation, about this item. Nothing is sent to anyone.";
 
+/** What the bar says while nothing is typed (D7). */
+const saySomething = "Say it in your own words, or click anything in your profile";
+
 /** What the assistant says once a decision is kept (`ID219`). Performed, never stored. */
 const noted = "Noted.";
 
@@ -148,23 +147,13 @@ type Saving = {
 @Component({
   selector: "profile-assistant",
   // The profile's assistant, for this column alone (`ID186`, `ID165`, D1): its own
-  // conversation, subject none, and the parts written for its entries (`ID185`, `ID191`).
-  providers: [
-    provideAssistant({
-      name: "profile",
-      parts: [
-        { kind: "tool_use", component: ProfileEditPart },
-        { kind: "tool_result", component: ProfileEditPart },
-        { kind: "question_answered", component: QuestionAnsweredPart },
-        { kind: "question_skipped", component: QuestionSkippedPart },
-        { kind: "about", component: AboutPart },
-      ],
-    }),
-  ],
+  // conversation, subject none. Its history parts are drawn by its `#part` template (D3, D4).
+  providers: [provideAssistant({ name: "profile" })],
   imports: [
     Assistant,
     AssistantConversation,
     NgTemplateOutlet,
+    profileAssistantHistory,
     ProgressLine,
     ReadingCard,
     ScopeTool,
@@ -182,6 +171,9 @@ export class ProfileAssistant {
   protected readonly nothingStored = computed(() => this.core.entries().length === 0);
 
   public readonly questions = input<Question[]>([]);
+
+  /** What the bar says while nothing is typed: this use case's words, given to the core (D7). */
+  protected readonly placeholder = saySomething;
 
   /** The region the person is on, pressed or activated. Nothing, to begin with. */
   public readonly on = input<Pressed | null>(null);
@@ -419,7 +411,6 @@ export class ProfileAssistant {
       clearInterval(every);
       this.gone = true;
       this.performance?.abort();
-      this.keeping?.stop();
     });
 
     /**
@@ -448,38 +439,6 @@ export class ProfileAssistant {
         this.drawnAt = new Date();
         afterNextRender(() => this.firstRender(), { injector });
       });
-    });
-
-    /**
-     * The newest line in view above the dock (`ID227`): after each render that lands a
-     * word, stores an entry or activates a tool, the column that scrolls the conversation
-     * is taken to its end. The dock sits below that column, so its end is above the dock.
-     *
-     * **And kept there while the column settles** (`ID237`). A render is not the last word
-     * on the column's size: below 1024 px the column is drawn hidden behind the sheet and
-     * gets its height only when the chat is shown, and content can grow after the render
-     * that drew it. No signal says either, so the end is kept on the column's resizes too,
-     * until the person scrolls or presses in it.
-     */
-    afterRenderEffect(() => {
-      const landed = this.turn().reduce((sum, line) => sum + line.landed(), 0);
-      const entries = this.core.entries().length;
-      this.waitingLine();
-      const tool = this.tool();
-      const on = tool === null ? null : `${tool.label} ${tool.where}`;
-      const news =
-        landed > this.said.landed ||
-        entries > this.said.entries ||
-        (on !== null && on !== this.said.on);
-      this.said = { landed, entries, on };
-      const host = this.host.nativeElement as HTMLElement;
-      const newest =
-        host.querySelector("[data-part=waiting]") ??
-        Array.from(host.querySelectorAll("[data-msg]")).at(-1);
-      // The column is what the core assistant scrolls the conversation in: its own child
-      // holding the newest line, found by where it sits rather than by a computed style.
-      const column = newest?.closest<HTMLElement>("assistant > *") ?? null;
-      if (column !== null) this.keepAtEnd(column, news);
     });
 
     /**
@@ -547,58 +506,6 @@ export class ProfileAssistant {
   private brandNew(): boolean {
     return this.core.entries().length === 1;
   }
-
-  /** What the column held at its last render: words landed, entries, and the active tool. */
-  private said: { landed: number; entries: number; on: string | null } = {
-    landed: 0,
-    entries: 0,
-    on: null,
-  };
-
-  /** The column kept at its end, and whether the person has taken it over since. */
-  private keeping: { column: HTMLElement; touched: boolean; stop: () => void } | null = null;
-
-  /**
-   * That column at its end, and kept there on each resize of it or of what it holds until
-   * the person scrolls or presses in it (`ID237`). Something new, a word, an entry or a
-   * tool activated, takes it back to its end and keeps it again (`ID227`); a render with
-   * nothing new, a tool closed by that very press, leaves the person's column alone.
-   */
-  private keepAtEnd(column: HTMLElement, news: boolean): void {
-    if (this.keeping?.column !== column) {
-      this.keeping?.stop();
-      const uses = ["wheel", "touchmove", "pointerdown"] as const;
-      const touched = (): void => {
-        if (this.keeping !== null) this.keeping.touched = true;
-      };
-      for (const use of uses) column.addEventListener(use, touched, { passive: true });
-      // A runtime with no `ResizeObserver` has no settling to follow, the trade
-      // `profile/reveal` makes too.
-      const observer =
-        typeof ResizeObserver === "undefined"
-          ? null
-          : new ResizeObserver(() => {
-              if (this.keeping?.touched === false) column.scrollTop = column.scrollHeight;
-            });
-      this.keeping = {
-        column,
-        touched: false,
-        stop: () => {
-          observer?.disconnect();
-          for (const use of uses) column.removeEventListener(use, touched);
-        },
-      };
-      this.observing = observer;
-      news = true;
-    }
-    if (news) this.keeping.touched = false;
-    if (!this.keeping.touched) column.scrollTop = column.scrollHeight;
-    this.observing?.observe(column);
-    for (const child of Array.from(column.children)) this.observing?.observe(child);
-  }
-
-  /** What watches the kept column's size and the size of what it holds. */
-  private observing: ResizeObserver | null = null;
 
   /** What a person asked for when they asked for less motion (`G6`). */
   private reduced(): boolean {

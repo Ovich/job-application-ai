@@ -1,6 +1,6 @@
 import { Component, computed, input } from "@angular/core";
-import type { Entry } from "../../../assistant/assistant-core";
-import { UiText } from "../../../ui/typography/text/text";
+import type { Entry } from "../../../../assistant/entry";
+import { UiText } from "../../../../ui/typography/text/text";
 
 /** One part of an entry, whatever its kind. */
 type Part = Entry["parts"][number];
@@ -14,11 +14,11 @@ type Part = Entry["parts"][number];
  * part is not parsed again on the way to the screen.
  */
 @Component({
-  selector: "question-answered-part",
+  selector: "history-answer-part",
   imports: [UiText],
-  templateUrl: "./question-answered-part.html",
+  templateUrl: "./history-answer-part.html",
 })
-export class QuestionAnsweredPart {
+export class HistoryAnswerPart {
   public readonly part = input.required<Part>();
 
   /** The label of the option picked, or nothing when the person answered in words alone. */

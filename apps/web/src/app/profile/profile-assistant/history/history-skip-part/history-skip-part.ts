@@ -1,6 +1,6 @@
 import { Component, computed, input } from "@angular/core";
-import type { Entry } from "../../../assistant/assistant-core";
-import { UiText } from "../../../ui/typography/text/text";
+import type { Entry } from "../../../../assistant/entry";
+import { UiText } from "../../../../ui/typography/text/text";
 
 /** One part of an entry, whatever its kind. */
 type Part = Entry["parts"][number];
@@ -13,11 +13,11 @@ type Part = Entry["parts"][number];
  * No calls and no outputs: it reads the part it is given.
  */
 @Component({
-  selector: "question-skipped-part",
+  selector: "history-skip-part",
   imports: [UiText],
-  templateUrl: "./question-skipped-part.html",
+  templateUrl: "./history-skip-part.html",
 })
-export class QuestionSkippedPart {
+export class HistorySkipPart {
   public readonly part = input.required<Part>();
 
   /** Where the question sits in the profile (`S7.6`). */

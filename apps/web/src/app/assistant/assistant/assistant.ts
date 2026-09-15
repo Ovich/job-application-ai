@@ -41,6 +41,9 @@ export class Assistant {
   /** Whether what is already chosen would be enough to save. */
   public readonly canSave = input<boolean>(false);
 
+  /** What the bar says while nothing is typed: the concrete assistant's own words (D7). */
+  public readonly placeholder = input<string>("");
+
   public readonly save = output<void>();
 
   public readonly clear = output<void>();

@@ -1,6 +1,6 @@
 import { Component, computed, input } from "@angular/core";
-import type { Entry } from "../../../assistant/assistant-core";
-import { UiText } from "../../../ui/typography/text/text";
+import type { Entry } from "../../../../assistant/entry";
+import { UiText } from "../../../../ui/typography/text/text";
 
 /** One part of an entry, whatever its kind. */
 type Part = Entry["parts"][number];
@@ -13,11 +13,11 @@ type Part = Entry["parts"][number];
  * part is not parsed again on the way to the screen.
  */
 @Component({
-  selector: "about-part",
+  selector: "history-about-part",
   imports: [UiText],
-  templateUrl: "./about-part.html",
+  templateUrl: "./history-about-part.html",
 })
-export class AboutPart {
+export class HistoryAboutPart {
   public readonly part = input.required<Part>();
 
   /** Where the words are: an item's title, or `<title> · row <n>` for a line. */
