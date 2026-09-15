@@ -67,8 +67,9 @@ const found = async (
   person: Asking,
   assistant: string,
   subject: string | null,
+  reader: Transaction | typeof db = db,
 ): Promise<Conversation | undefined> => {
-  const [row] = await db
+  const [row] = await reader
     .select({
       id: conversation.id,
       userId: conversation.userId,
@@ -90,30 +91,41 @@ const found = async (
  * The person's conversation with that assistant about that subject, as it was left, or
  * a new one whose entry 1 is the opening. A second open that lost the race to create it
  * reads the one that won.
+ *
+ * Given the caller's transaction (D9, W1), it reads and creates in that one, so the
+ * conversation is written with whatever else the caller writes; a lost race then fails the
+ * caller's whole write, since a failed statement ends the transaction it ran in.
  */
 export const open = async (
   person: Asking,
   assistant: string,
   subject: string | null,
   opening: (tx: Transaction) => Promise<Part[]>,
+  tx?: Transaction,
 ): Promise<Conversation> => {
+  const create = async (writer: Transaction): Promise<Conversation> => {
+    const said = partsOf.parse(await opening(writer));
+    const created = { id: randomUUID(), userId: person.id, assistant, subject };
+    await writer.insert(conversation).values(created);
+    await writer.insert(conversationEntry).values({
+      id: randomUUID(),
+      conversationId: created.id,
+      position: 1,
+      author: "assistant",
+      parts: said,
+    });
+    return created;
+  };
+
+  if (tx !== undefined) {
+    return (await found(person, assistant, subject, tx)) ?? (await create(tx));
+  }
+
   const existing = await found(person, assistant, subject);
   if (existing !== undefined) return existing;
 
   try {
-    return await db.transaction(async (tx) => {
-      const said = partsOf.parse(await opening(tx));
-      const created = { id: randomUUID(), userId: person.id, assistant, subject };
-      await tx.insert(conversation).values(created);
-      await tx.insert(conversationEntry).values({
-        id: randomUUID(),
-        conversationId: created.id,
-        position: 1,
-        author: "assistant",
-        parts: said,
-      });
-      return created;
-    });
+    return await db.transaction(create);
   } catch (thrown) {
     if (!isDuplicate(thrown, constraint)) throw thrown;
     const winner = await found(person, assistant, subject);

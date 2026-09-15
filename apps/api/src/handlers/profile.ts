@@ -1,4 +1,3 @@
-import { randomUUID } from "node:crypto";
 import {
   document,
   type ItemKind,
@@ -18,14 +17,15 @@ import {
   question,
   questionOption,
 } from "@app/db";
-import { and, asc, desc, eq, inArray, isNull, ne } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, isNull } from "drizzle-orm";
 import { createFactory } from "hono/factory";
 import { validator } from "hono/validator";
 import { z } from "zod";
 import { profileAssistant } from "../assistants/profile";
+import { Refused } from "../lib/agent";
 import { append, open, type Transaction } from "../lib/conversation";
 import { db } from "../lib/db";
-import { type Asking, asking, refused } from "../lib/session";
+import { asking, refused } from "../lib/session";
 
 const factory = createFactory();
 
@@ -358,52 +358,31 @@ const answering = z.object({
   skip: z.boolean().optional(),
 });
 
-/** `Kubernetes: shipping to a cluster run by others` — the item, then what was said. */
-const concernAbout = (title: string, words: string): string => `${title}: ${words}`;
+/** The profile assistant's action by its name (D9), which this route runs until SL7. */
+const actionNamed = (name: string) => {
+  const action = profileAssistant.actions.find((each) => each.name === name);
+  if (action === undefined) throw new Error(`the profile assistant has no ${name}`);
+  return action;
+};
 
-/**
- * A profile concern kept, and the one it supersedes.
- *
- * **Inserted, never updated.** Answering again writes a new row and marks the old one
- * superseded, so the history of what the person said survives being changed (`ID121`).
- * An `update` here would pass every test that reads only the current concern and quietly
- * destroy the one thing this table exists to keep.
- */
-const keepAsConcern = async (
+/** The item's current profile concern, as the answer returns it once kept. */
+const currentConcern = async (
   tx: Transaction,
-  kept: {
-    userId: string;
-    itemId: string;
-    kind: ProfileConcernKind;
-    text: string;
-    source: ProfileConcernSource;
-    questionId: string | null;
-  },
+  person: string,
+  questionId: string,
 ): Promise<ProfileConcernAnswer> => {
-  const id = randomUUID();
   const [written] = await tx
-    .insert(profileConcern)
-    .values({
-      id,
-      userId: kept.userId,
-      itemId: kept.itemId,
-      kind: kept.kind,
-      text: kept.text,
-      source: kept.source,
-      questionId: kept.questionId,
-    })
-    .returning();
-  await tx
-    .update(profileConcern)
-    .set({ supersededBy: id })
+    .select()
+    .from(profileConcern)
     .where(
       and(
-        eq(profileConcern.itemId, kept.itemId),
-        eq(profileConcern.userId, kept.userId),
+        eq(profileConcern.questionId, questionId),
+        eq(profileConcern.userId, person),
         isNull(profileConcern.supersededBy),
-        ne(profileConcern.id, id),
       ),
-    );
+    )
+    .orderBy(desc(profileConcern.createdAt))
+    .limit(1);
   if (written === undefined) throw new Error("the profile concern could not be kept");
   return {
     id: written.id,
@@ -416,36 +395,15 @@ const keepAsConcern = async (
 };
 
 /**
- * The question as the person was asked it, and every option offered, as the entry that
- * records their answer or their skip carries it (`SL7`). The concern each option would write
- * stays out: it is the intake's, not what the person saw.
- */
-const asAsked = async (row: { id: string; lead: string; where: string }) => ({
-  lead: row.lead,
-  where: row.where,
-  options: await db
-    .select({ id: questionOption.id, label: questionOption.label, hint: questionOption.hint })
-    .from(questionOption)
-    .where(eq(questionOption.questionId, row.id))
-    .orderBy(asc(questionOption.position), asc(questionOption.id)),
-});
-
-/**
- * The profile's conversation, which an answer or a skip is written into (`SL7`). A
- * reading has happened, since a question exists; opened with the profile assistant's own
- * opening when nobody has opened it yet, as `GET /api/conversations/profile` would.
- */
-const profileConversation = (person: Asking) =>
-  open(person, profileAssistant.name, null, (tx) => profileAssistant.opening(tx, person.id));
-
-/**
  * One question answered, or put off (`S4.3`, `S4.4`, `US6`, `US7`).
  *
- * A question that is not this person's is a `404` and never a `403`, as every route here
- * answers for a row that is not yours: a `403` would confirm that somebody else's
- * question exists. A question whose item a later correction removed is gone with it
- * through the item's `on delete cascade`, so it is the same `404` — a question never
- * points at nothing.
+ * Until SL7 this route stays, and runs the profile assistant's own actions (`ID253`), so one
+ * implementation serves it and `POST /api/conversations/profile/actions/:action`. The body
+ * is validated as it always was; the conversation is opened, the action run and the person's
+ * entry appended in one transaction (D9), and a failed entry leaves nothing written.
+ *
+ * A question that is not this person's is a `404` and never a `403`: a `403` would confirm
+ * that somebody else's question exists.
  */
 export const answerQuestion = factory.createHandlers(
   // The body is validated at the boundary, and the shape travels out to the browser
@@ -460,87 +418,35 @@ export const answerQuestion = factory.createHandlers(
     if (person === null) return refused(c);
 
     const said = c.req.valid("json");
+    const questionId = c.req.param("id") ?? "";
+    const skip = said.skip === true;
+    const action = actionNamed(skip ? "skip_question" : "answer_question");
+    const input = skip
+      ? { questionId }
+      : {
+          questionId,
+          ...(said.optionId === undefined ? {} : { optionId: said.optionId }),
+          ...(said.words === undefined ? {} : { words: said.words }),
+        };
 
-    const [row] = await db
-      .select()
-      .from(question)
-      .where(and(eq(question.id, c.req.param("id") ?? ""), eq(question.userId, person.id)));
-    if (row === undefined) return c.json({ error: "no such question" }, 404);
-
-    // The skip and its entry, one write (`SL7`, `H4`): a failed entry leaves the question
-    // waiting, as nothing had happened.
-    if (said.skip === true) {
-      const asked = await asAsked(row);
-      const conversation = await profileConversation(person);
-      await db.transaction(async (tx) => {
-        await tx.update(question).set({ state: "skipped" }).where(eq(question.id, row.id));
-        await append(tx, conversation, "person", [{ kind: "question_skipped", ...asked }]);
+    try {
+      const kept = await db.transaction(async (tx) => {
+        const conversation = await open(
+          person,
+          profileAssistant.name,
+          null,
+          (writer) => profileAssistant.opening(writer, person.id),
+          tx,
+        );
+        const parts = await action.run(tx, person.id, input);
+        await append(tx, conversation, "person", parts);
+        return skip ? null : await currentConcern(tx, person.id, questionId);
       });
-      return c.json({ skipped: row.id }, 200);
+      return kept === null ? c.json({ skipped: questionId }, 200) : c.json({ concern: kept }, 200);
+    } catch (thrown) {
+      if (thrown instanceof Refused) return c.json({ error: thrown.message }, thrown.status);
+      throw thrown;
     }
-
-    const words = (said.words ?? "").trim();
-    const [option] =
-      said.optionId === undefined
-        ? []
-        : await db
-            .select()
-            .from(questionOption)
-            .where(
-              and(eq(questionOption.id, said.optionId), eq(questionOption.questionId, row.id)),
-            );
-    if (said.optionId !== undefined && option === undefined) {
-      return c.json({ error: "no such answer" }, 404);
-    }
-
-    const [item] = await db.select().from(profileItem).where(eq(profileItem.id, row.itemId));
-    if (item === undefined) return c.json({ error: "no such question" }, 404);
-
-    // The picked row's own concern, and the person's words beside it when they typed as
-    // well. The last row carries none, so picking it is the same thing as saying it yourself.
-    const picked = option?.concern ?? null;
-    if (picked === null && words === "") {
-      return c.json({ error: "pick a row, or say it in your own words" }, 400);
-    }
-    const text =
-      picked === null
-        ? concernAbout(item.title, words)
-        : words === ""
-          ? picked
-          : `${picked} — ${words}`;
-
-    const asked = await asAsked(row);
-    const conversation = await profileConversation(person);
-
-    // The state, the concern as it was always written, and the person's entry: one write
-    // (`SL7`, `H4`). A failed entry rolls back the concern and the state with it.
-    const kept = await db.transaction(async (tx) => {
-      const written = await keepAsConcern(tx, {
-        userId: person.id,
-        itemId: row.itemId,
-        // A scope question asks what the person's part was; a conflict and a provenance
-        // question both settle what may never be claimed (D14).
-        kind: row.kind === "scope" ? "scope" : "constraint",
-        text,
-        source: picked === null ? "own words" : "answer",
-        questionId: row.id,
-      });
-      await tx
-        .update(question)
-        .set({ state: "answered", answeredAt: new Date() })
-        .where(eq(question.id, row.id));
-      await append(tx, conversation, "person", [
-        {
-          kind: "question_answered",
-          ...asked,
-          picked: option?.id ?? null,
-          words: words === "" ? null : words,
-        },
-      ]);
-      return written;
-    });
-
-    return c.json({ concern: kept }, 200);
   },
 );
 

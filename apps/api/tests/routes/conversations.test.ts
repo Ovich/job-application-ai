@@ -93,6 +93,7 @@ const aTestAssistant: AssistantDefinition = {
   name: "profile",
   prompt: "",
   tools: [],
+  actions: [],
   opening: async (_tx, person) => [{ kind: "text", text: `Hello, ${person}.`, scripted: true }],
   context: async () => [],
   stepPhrase: () => "Working",

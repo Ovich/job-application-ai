@@ -1,5 +1,5 @@
 import { Hono } from "hono";
-import { openConversation, postMessage } from "../handlers/conversations";
+import { openConversation, postMessage, runAction } from "../handlers/conversations";
 import type { AssistantDefinition } from "../lib/agent";
 
 /**
@@ -12,4 +12,5 @@ import type { AssistantDefinition } from "../lib/agent";
 export const conversationsOf = (definitions: AssistantDefinition[]) =>
   new Hono()
     .get("/:assistant", ...openConversation(definitions))
-    .post("/:assistant/messages", ...postMessage(definitions));
+    .post("/:assistant/messages", ...postMessage(definitions))
+    .post("/:assistant/actions/:action", ...runAction(definitions));

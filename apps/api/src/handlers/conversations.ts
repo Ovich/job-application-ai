@@ -3,7 +3,7 @@ import { createFactory } from "hono/factory";
 import { stream } from "hono/streaming";
 import { validator } from "hono/validator";
 import { z } from "zod";
-import { type AssistantDefinition, NotYet, run } from "../lib/agent";
+import { type AssistantDefinition, NotYet, Refused, run } from "../lib/agent";
 import { ask, askFor, askStreaming, askWithTools } from "../lib/ai";
 import { append, type Conversation, type Entry, entries, open } from "../lib/conversation";
 import { db } from "../lib/db";
@@ -96,6 +96,52 @@ export const openConversation = (definitions: AssistantDefinition[]) =>
       if ("notYet" in found) return c.json({ error: found.notYet }, 409);
       const { conversation } = found;
       return c.json({ id: conversation.id, entries: await entries(conversation) }, 200);
+    },
+  );
+
+/**
+ * `POST /:assistant/actions/:action` with the action's input → `{ entries }` (D9): what the
+ * person did with the assistant's own tool. **One transaction** opens the conversation when
+ * it does not exist yet, runs the action, and appends the person's entry with the parts the
+ * action returns, so a failed entry leaves nothing of the action written.
+ *
+ * 400 for an input the action's schema refuses, or one the action refuses as saying
+ * nothing; 404 for an unknown assistant or action, or a thing that is not the person's;
+ * 409 before there is anything to open on (`NotYet`).
+ */
+export const runAction = (definitions: AssistantDefinition[]) =>
+  factory.createHandlers(
+    validator("json", (value) => value as unknown),
+    async (c) => {
+      const person = await asking(c);
+      if (person === null) return refused(c);
+
+      const definition = definitions.find((each) => each.name === c.req.param("assistant"));
+      if (definition === undefined) return c.json({ error: "no such assistant" }, 404);
+      const action = definition.actions.find((each) => each.name === c.req.param("action"));
+      if (action === undefined) return c.json({ error: "no such action" }, 404);
+
+      const input = action.input.safeParse(c.req.valid("json"));
+      if (!input.success) return c.json({ error: `the input does not fit ${action.name}` }, 400);
+
+      try {
+        const mine = await db.transaction(async (tx) => {
+          const conversation = await open(
+            person,
+            definition.name,
+            null,
+            (writer) => definition.opening(writer, person.id),
+            tx,
+          );
+          const said = await action.run(tx, person.id, input.data);
+          return append(tx, conversation, "person", said);
+        });
+        return c.json({ entries: [onTheWire(mine)] }, 200);
+      } catch (thrown) {
+        if (thrown instanceof NotYet) return c.json({ error: thrown.message }, 409);
+        if (thrown instanceof Refused) return c.json({ error: thrown.message }, thrown.status);
+        throw thrown;
+      }
     },
   );
 

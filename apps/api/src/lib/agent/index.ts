@@ -57,6 +57,31 @@ export type AgentTool<I = unknown, R extends ToolOutcome = ToolOutcome> = {
 export class NotYet extends Error {}
 
 /**
+ * What a person does with a concrete assistant's own tool (D9): answering a question it
+ * asked, putting it off. Never offered to the model. `run` writes in the transaction that
+ * also opens the conversation and appends the person's entry, and returns that entry's parts.
+ */
+export type AgentAction<I = unknown> = {
+  name: string;
+  input: ZodType<I>;
+  run(tx: Transaction, person: string, input: I): Promise<Part[]>;
+};
+
+/**
+ * What an action throws when it will not do what it was asked (D9, `ID246`): 404 for a
+ * thing that is not the person's, 400 for an input that says nothing it can keep. The
+ * transaction rolls back and the route answers the status with the message.
+ */
+export class Refused extends Error {
+  constructor(
+    message: string,
+    readonly status: 400 | 404,
+  ) {
+    super(message);
+  }
+}
+
+/**
  * One concrete assistant: its name, which is the `:assistant` of the route; its system
  * prompt and its tools, which every step of the loop is given; and its opening, written
  * as entry 1 when a conversation is created and never again (`ID189`), or `NotYet`
@@ -73,6 +98,7 @@ export type AssistantDefinition = {
   name: string;
   prompt: string;
   tools: AgentTool[];
+  actions: AgentAction[];
   opening: (tx: Transaction, person: string) => Promise<Part[]>;
   context: (tx: Transaction, person: string) => Promise<string[]>;
   stepPhrase: (n: number) => string;
