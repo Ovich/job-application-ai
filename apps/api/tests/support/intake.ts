@@ -29,11 +29,11 @@ export type AskedQuestion = {
   where: string;
   lead: string;
   state: string;
-  options: { id: string; label: string; hint: string; rule: string | null }[];
+  options: { id: string; label: string; hint: string; concern: string | null }[];
 };
 
-/** One rule as `GET /profile` answers it, against the item it was written on. */
-export type ItemRule = { id: string; text: string; source: string; createdAt: string };
+/** One profile concern as `GET /profile` answers it, against the item it was kept on (D14). */
+export type ItemConcern = { id: string; text: string; source: string; createdAt: string };
 
 /** As much of the profile's answer as a case about questions and rules reads. */
 export type ProfileAnswer = {
@@ -51,8 +51,8 @@ export type ProfileItem = {
   id: string;
   kind: string;
   title: string;
-  rule: ItemRule | null;
-  rules: ItemRule[];
+  concern: ItemConcern | null;
+  concerns: ItemConcern[];
   question: AskedQuestion | null;
   /** The bullets under a post, each with its own id, which a rule may be about. */
   lines: { id: string; text: string }[];

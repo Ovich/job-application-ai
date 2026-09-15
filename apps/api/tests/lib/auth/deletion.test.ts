@@ -79,8 +79,8 @@ const twoRealCvs = [theSet.cvFrench.filename, theSet.cvEnglish.filename] as cons
 
 /**
  * A person with everything this slice erases: two uploaded documents with their objects,
- * a reading run's items, lines and provenance, its questions, and two rules — one from an
- * answer and one written on an item nobody asked about.
+ * a reading run's items, lines and provenance, its questions, and two profile concerns, each
+ * kept by an answer.
  */
 const aPersonWithAProfile = async (email: string) => {
   const person = await signedIn(email);
@@ -100,25 +100,22 @@ const aPersonWithAProfile = async (email: string) => {
     await app.request("/api/intake/read", { method: "POST", headers: { cookie: person.cookie } })
   ).text();
 
+  // Two questions answered in the person's own words, each keeping one profile concern:
+  // since `SL3` no concern is written on an item nobody asked about (D14), and since `SL7`
+  // an answer is the profile assistant's action (D9).
   const profile = await profileOf(person.id);
-  const asked = profile.questions[0];
-  if (asked === undefined) throw new Error(`the run for ${email} asked nothing`);
-  await app.request(`/api/intake/questions/${asked.id}/answer`, {
-    method: "POST",
-    headers: { cookie: person.cookie, "content-type": "application/json" },
-    body: JSON.stringify({ words: "I wrote it, nobody else did" }),
-  });
-
-  const [anyItem] = await testDb
-    .select()
-    .from(profileItem)
-    .where(eq(profileItem.userId, person.id));
-  if (anyItem === undefined) throw new Error(`the run for ${email} produced no item`);
-  await app.request(`/api/intake/items/${anyItem.id}/rule`, {
-    method: "POST",
-    headers: { cookie: person.cookie, "content-type": "application/json" },
-    body: JSON.stringify({ words: "say only what the documents say" }),
-  });
+  const [asked, second] = profile.questions;
+  if (asked === undefined || second === undefined) {
+    throw new Error(`the run for ${email} asked fewer than two questions`);
+  }
+  for (const { id } of [asked, second]) {
+    const answered = await app.request("/api/conversations/profile/actions/answer_question", {
+      method: "POST",
+      headers: { cookie: person.cookie, "content-type": "application/json" },
+      body: JSON.stringify({ questionId: id, words: "I wrote it, nobody else did" }),
+    });
+    if (answered.status !== 200) throw new Error(`the answer for ${email} was ${answered.status}`);
+  }
 
   return { ...person, keys: documents.map((id) => keyFor(person.id, id)) };
 };

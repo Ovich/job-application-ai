@@ -4,16 +4,17 @@ import { subjectAt } from "../support/providers";
 import { localStorageIn } from "../support/storage";
 
 /**
- * Seam B: `routes/intake`, `POST /questions/:id/answer` and `POST /items/:id/rule`
- * (criteria 6, 7, 8).
+ * Seam B: `routes/conversations`, `POST /:assistant/actions/:action`, with the profile
+ * assistant's `answer_question` and `skip_question` (criteria 6, 7, 8; D9). Until `SL7` these
+ * cases drove `POST /api/intake/questions/:id/answer`; the action is where that behaviour lives.
  *
  * Behind the seam: PGlite, and the same recorded cases seam A drives. The seam is the
- * route, and **every answer is read back through `GET /profile`** — never by selecting
- * from the rule or the question table, because the one thing criterion 7 is about is
- * that two rows survive, and a select would prove that while the screen showed one.
+ * route, and **every answer is read back through `GET /profile`** and the conversation's
+ * own `GET` — never by selecting from the concern or the question table, because the one
+ * thing criterion 7 is about is that two rows survive, and a select would prove that while
+ * the screen showed one.
  *
- * Not past it: what the builder later does with a rule. This file proves a rule is
- * written, superseded and readable; `SL5` proves it survives a return.
+ * Not past it: what the builder later does with a profile concern.
  */
 
 const objects = vi.hoisted(() => ({ storage: undefined as unknown }));
@@ -86,23 +87,20 @@ const asked = async (email: string) => {
   return { ...person, profile: await profileOf(person.cookie) };
 };
 
+const act = (cookie: string, action: string, input: unknown, assistant = "profile") =>
+  app.request(`/api/conversations/${assistant}/actions/${action}`, {
+    method: "POST",
+    headers: { cookie, "content-type": "application/json" },
+    body: JSON.stringify(input),
+  });
+
 const answer = (
   cookie: string,
   questionId: string,
-  said: { optionId?: string | undefined; words?: string | undefined; skip?: boolean | undefined },
-) =>
-  app.request(`/api/intake/questions/${questionId}/answer`, {
-    method: "POST",
-    headers: { cookie, "content-type": "application/json" },
-    body: JSON.stringify(said),
-  });
+  said: { optionId?: string | undefined; words?: string | undefined },
+) => act(cookie, "answer_question", { questionId, ...said });
 
-const ruleOn = (cookie: string, itemId: string, words: string, lineId?: string) =>
-  app.request(`/api/intake/items/${itemId}/rule`, {
-    method: "POST",
-    headers: { cookie, "content-type": "application/json" },
-    body: JSON.stringify(lineId === undefined ? { words } : { words, lineId }),
-  });
+const skip = (cookie: string, questionId: string) => act(cookie, "skip_question", { questionId });
 
 /** The question a case is about, by the item it hangs on. */
 const about = (profile: Support.ProfileAnswer, title: string): Support.AskedQuestion => {
@@ -112,7 +110,7 @@ const about = (profile: Support.ProfileAnswer, title: string): Support.AskedQues
 };
 
 describe("answering with a row the reader offered (criterion 6)", () => {
-  it("writes a rule on the item, in the row's own words, from the answer", async () => {
+  it("keeps a concern on the item, in the row's own words, from the answer", async () => {
     const person = await asked("answer-with-a-pick@example.com");
     const question = about(person.profile, "Kubernetes");
     const picked = question.options[1];
@@ -122,29 +120,33 @@ describe("answering with a row the reader offered (criterion 6)", () => {
 
     const after = await profileOf(person.cookie);
     const item = itemNamed(after, "Kubernetes");
-    expect(item.rule?.text).toBe(
+    expect(item.concern?.text).toBe(
       "Kubernetes: deploying and running services, never cluster administration",
     );
-    expect(item.rule?.source).toBe("answer");
+    expect(item.concern?.source).toBe("answer");
     expect(about(after, "Kubernetes").state).toBe("answered");
   });
 
-  it("writes the person's own words verbatim, as their own words", async () => {
+  it("keeps the person's own words verbatim, as their own words, with no pick (ID261)", async () => {
     const person = await asked("answer-with-words@example.com");
     const question = about(person.profile, "Terraform");
 
-    await answer(person.cookie, question.id, {
-      words: "I wrote the modules but somebody else applied them",
-    });
+    expect(
+      (
+        await answer(person.cookie, question.id, {
+          words: "I wrote the modules but somebody else applied them",
+        })
+      ).status,
+    ).toBe(200);
 
     const item = itemNamed(await profileOf(person.cookie), "Terraform");
-    expect(item.rule?.text).toContain("I wrote the modules but somebody else applied them");
-    expect(item.rule?.text.startsWith("Terraform: ")).toBe(true);
-    expect(item.rule?.source).toBe("own words");
+    expect(item.concern?.text).toContain("I wrote the modules but somebody else applied them");
+    expect(item.concern?.text.startsWith("Terraform: ")).toBe(true);
+    expect(item.concern?.source).toBe("own words");
   });
 
   /** `US6`: the person's own words are accepted beside a choice, and both are carried. */
-  it("carries a pick and the words beside it in one rule", async () => {
+  it("carries a pick and the words beside it in one concern", async () => {
     const person = await asked("answer-with-both@example.com");
     const question = about(person.profile, "Kubernetes");
 
@@ -154,50 +156,52 @@ describe("answering with a row the reader offered (criterion 6)", () => {
     });
 
     const item = itemNamed(await profileOf(person.cookie), "Kubernetes");
-    expect(item.rules.length).toBe(1);
-    expect(item.rule?.text).toContain("Kubernetes: cluster administration, and the services on it");
-    expect(item.rule?.text).toContain("three clusters, one of them on bare metal");
+    expect(item.concerns.length).toBe(1);
+    expect(item.concern?.text).toContain(
+      "Kubernetes: cluster administration, and the services on it",
+    );
+    expect(item.concern?.text).toContain("three clusters, one of them on bare metal");
   });
 
-  it("refuses an answer that says nothing at all", async () => {
+  it("refuses an answer that says nothing at all (ID261)", async () => {
     const person = await asked("answer-with-nothing@example.com");
     const question = about(person.profile, "Kubernetes");
 
     expect((await answer(person.cookie, question.id, {})).status).toBe(400);
-    expect(itemNamed(await profileOf(person.cookie), "Kubernetes").rule).toBeNull();
+    expect(itemNamed(await profileOf(person.cookie), "Kubernetes").concern).toBeNull();
   });
 });
 
 describe("answering again (criterion 7, ID121)", () => {
-  it("adds a rule and supersedes the old one, and both are still readable", async () => {
+  it("adds a concern and supersedes the old one, and both are still readable", async () => {
     const person = await asked("answer-twice@example.com");
     const question = about(person.profile, "Kubernetes");
 
     await answer(person.cookie, question.id, { optionId: question.options[0]?.id });
-    const first = itemNamed(await profileOf(person.cookie), "Kubernetes").rule;
+    const first = itemNamed(await profileOf(person.cookie), "Kubernetes").concern;
     await answer(person.cookie, question.id, { optionId: question.options[2]?.id });
 
     const item = itemNamed(await profileOf(person.cookie), "Kubernetes");
-    expect(item.rules.length).toBe(2);
-    expect(item.rule?.text).toBe("Kubernetes: shipping to a cluster run by others");
-    expect(item.rules.map((rule) => rule.text)).toContain(
+    expect(item.concerns.length).toBe(2);
+    expect(item.concern?.text).toBe("Kubernetes: shipping to a cluster run by others");
+    expect(item.concerns.map((concern) => concern.text)).toContain(
       "Kubernetes: cluster administration, and the services on it",
     );
     // Nothing was overwritten: the first row is the same row, superseded.
-    expect(item.rules.map((rule) => rule.id)).toContain(first?.id);
+    expect(item.concerns.map((concern) => concern.id)).toContain(first?.id);
   });
 });
 
 describe("skipping (criterion 8, US7)", () => {
-  it("keeps the question rather than deleting it, and answers nothing for it", async () => {
+  it("keeps the question rather than deleting it, and keeps no concern for it", async () => {
     const person = await asked("skip-one@example.com");
     const question = about(person.profile, "Kubernetes");
 
-    expect((await answer(person.cookie, question.id, { skip: true })).status).toBe(200);
+    expect((await skip(person.cookie, question.id)).status).toBe(200);
 
     const after = await profileOf(person.cookie);
     expect(about(after, "Kubernetes").state).toBe("skipped");
-    expect(itemNamed(after, "Kubernetes").rule).toBeNull();
+    expect(itemNamed(after, "Kubernetes").concern).toBeNull();
     expect(after.questions.length).toBe(person.profile.questions.length);
   });
 
@@ -207,7 +211,7 @@ describe("skipping (criterion 8, US7)", () => {
 
     await answer(person.cookie, first?.id ?? "", { optionId: first?.options[0]?.id });
     await answer(person.cookie, second?.id ?? "", { optionId: second?.options[0]?.id });
-    await answer(person.cookie, third?.id ?? "", { skip: true });
+    await skip(person.cookie, third?.id ?? "");
 
     const after = await profileOf(person.cookie);
     const counted = (state: string) =>
@@ -218,11 +222,11 @@ describe("skipping (criterion 8, US7)", () => {
 });
 
 /**
- * The person's tool use, in the conversation (agent-consolidation `S7.1`, `H4`, `ID209`):
- * an answer or a skip commits the question's state and a `person` entry with its part in
- * one transaction. The conversation is read back through its own route, never a table.
+ * The person's tool use, in the conversation (agent-consolidation `S7.1`, `H4`, `ID209`,
+ * D9): an answer or a skip commits the question's state and a `person` entry with its part
+ * in one transaction. The conversation is read back through its own route, never a table.
  */
-describe("an answer or a skip, written into the conversation (S7.1, H4)", () => {
+describe("an answer or a skip, written into the conversation (S7.1, H4, D9)", () => {
   type Stored = {
     entries: { position: number; author: string; parts: Record<string, unknown>[] }[];
   };
@@ -232,7 +236,7 @@ describe("an answer or a skip, written into the conversation (S7.1, H4)", () => 
       await app.request("/api/conversations/profile", { headers: { cookie } })
     ).json()) as Stored;
 
-  /** Every option the question offered, as the part carries it: no rule. */
+  /** Every option the question offered, as the part carries it: no concern. */
   const offered = (question: Support.AskedQuestion) =>
     question.options.map(({ id, label, hint }) => ({ id, label, hint }));
 
@@ -246,24 +250,23 @@ describe("an answer or a skip, written into the conversation (S7.1, H4)", () => 
     const question = about(person.profile, "Kubernetes");
     const picked = question.options[1];
 
-    expect((await answer(person.cookie, question.id, { optionId: picked?.id })).status).toBe(200);
+    const response = await answer(person.cookie, question.id, { optionId: picked?.id });
+    expect(response.status).toBe(200);
 
+    const part = {
+      kind: "question_answered",
+      lead: question.lead,
+      where: question.where,
+      options: offered(question),
+      picked: picked?.id,
+      words: null,
+    };
+    // The entry the route answers is the one the conversation holds.
+    expect(
+      ((await response.json()) as Stored).entries.map((entry) => [entry.author, entry.parts]),
+    ).toEqual([["person", [part]]]);
     expect(about(await profileOf(person.cookie), "Kubernetes").state).toBe("answered");
-    expect(since(before, await conversationOf(person.cookie))).toEqual([
-      [
-        "person",
-        [
-          {
-            kind: "question_answered",
-            lead: question.lead,
-            where: question.where,
-            options: offered(question),
-            picked: picked?.id,
-            words: null,
-          },
-        ],
-      ],
-    ]);
+    expect(since(before, await conversationOf(person.cookie))).toEqual([["person", [part]]]);
   });
 
   it("carries the person's words beside the pick, in the same part", async () => {
@@ -295,7 +298,7 @@ describe("an answer or a skip, written into the conversation (S7.1, H4)", () => 
     const before = await conversationOf(person.cookie);
     const question = about(person.profile, "Kubernetes");
 
-    expect((await answer(person.cookie, question.id, { skip: true })).status).toBe(200);
+    expect((await skip(person.cookie, question.id)).status).toBe(200);
 
     expect(about(await profileOf(person.cookie), "Kubernetes").state).toBe("skipped");
     expect(since(before, await conversationOf(person.cookie))).toEqual([
@@ -313,7 +316,22 @@ describe("an answer or a skip, written into the conversation (S7.1, H4)", () => 
     ]);
   });
 
-  it("keeps the question's state, writes no rule and no entry, and answers 500 when the entry cannot be written", async () => {
+  it("opens the conversation with its opening when there is none yet, then the person's entry (5.2, W1)", async () => {
+    const person = await asked("answer-before-any-conversation@example.com");
+    const question = about(person.profile, "Kubernetes");
+
+    expect((await skip(person.cookie, question.id)).status).toBe(200);
+
+    const stored = await conversationOf(person.cookie);
+    expect(stored.entries.map((entry) => [entry.position, entry.author])).toEqual([
+      [1, "assistant"],
+      [2, "person"],
+    ]);
+    expect(stored.entries[0]?.parts[0]).toMatchObject({ kind: "text", scripted: true });
+    expect(stored.entries[1]?.parts[0]).toMatchObject({ kind: "question_skipped" });
+  });
+
+  it("keeps the question's state, keeps no concern and no entry, and answers 500 when the entry cannot be written", async () => {
     const person = await asked("answer-whose-entry-fails@example.com");
     const before = await conversationOf(person.cookie);
     const question = about(person.profile, "Kubernetes");
@@ -335,15 +353,15 @@ describe("an answer or a skip, written into the conversation (S7.1, H4)", () => 
     expect(status).toBe(500);
     const after = await profileOf(person.cookie);
     expect(about(after, "Kubernetes").state).toBe("waiting");
-    expect(itemNamed(after, "Kubernetes").rule).toBeNull();
+    expect(itemNamed(after, "Kubernetes").concern).toBeNull();
     expect(await conversationOf(person.cookie)).toEqual(before);
   });
 });
 
-describe("what belongs to somebody else, and what is gone (US11, Failure modes)", () => {
+describe("what belongs to somebody else, and what is gone (US11, Failure modes, 4.4)", () => {
   it("answers 404 for another person's question, and touches no row of theirs", async () => {
     const owner = await asked("answer-owner@example.com");
-    const stranger = await signedIn("answer-stranger@example.com");
+    const stranger = await asked("answer-stranger@example.com");
     const question = about(owner.profile, "Kubernetes");
 
     const response = await answer(stranger.cookie, question.id, {
@@ -351,7 +369,9 @@ describe("what belongs to somebody else, and what is gone (US11, Failure modes)"
     });
 
     expect(response.status).toBe(404);
-    expect(itemNamed(await profileOf(owner.cookie), "Kubernetes").rule).toBeNull();
+    const theirs = await profileOf(owner.cookie);
+    expect(itemNamed(theirs, "Kubernetes").concern).toBeNull();
+    expect(about(theirs, "Kubernetes").state).toBe("waiting");
   });
 
   it("answers 404 once the item has been removed, and the question is gone with it", async () => {
@@ -368,68 +388,29 @@ describe("what belongs to somebody else, and what is gone (US11, Failure modes)"
       false,
     );
   });
-});
 
-/**
- * The same handler as the answer's own-words path, with no question attached. It is
- * mounted and proved here because that is what it is; **its screen is `SL5`'s**.
- */
-describe("a rule on an item nobody asked about (SL5's caller)", () => {
-  it("writes what the person said as that item's rule", async () => {
-    const person = await asked("rule-without-a-question@example.com");
-    const docker = itemNamed(person.profile, "Docker");
+  it("answers 404 for an action the assistant does not name, and for an assistant no definition names", async () => {
+    const person = await asked("answer-unknown-action@example.com");
+    const question = about(person.profile, "Kubernetes");
 
-    const response = await ruleOn(person.cookie, docker.id, "I only ever wrote the Dockerfiles");
-    expect(response.status).toBe(200);
-
-    const item = itemNamed(await profileOf(person.cookie), "Docker");
-    expect(item.rule?.text).toBe("Docker: I only ever wrote the Dockerfiles");
-    expect(item.rule?.source).toBe("own words");
-  });
-
-  it("answers 404 for an item that is not this person's", async () => {
-    const owner = await asked("rule-owner@example.com");
-    const stranger = await signedIn("rule-stranger@example.com");
-    const docker = itemNamed(owner.profile, "Docker");
-
-    expect((await ruleOn(stranger.cookie, docker.id, "not mine")).status).toBe(404);
-    expect(itemNamed(await profileOf(owner.cookie), "Docker").rule).toBeNull();
-  });
-
-  /**
-   * A line is a fact of its post and carries no rule of its own (`rule.item_id`), so what
-   * a person says about one is kept on the post, about the line, in the line's own words
-   * (the person, 2026-09-13: a line is clickable too).
-   */
-  it("keeps what is said about one of the item's lines as the item's rule, about the line", async () => {
-    const person = await asked("rule-on-a-line@example.com");
-    const post = person.profile.experience.find((each) => each.lines.length > 0);
-    if (post === undefined) throw new Error("the shipped case has no post with lines");
-    const line = post.lines[0];
-    if (line === undefined) throw new Error("the post has no line");
-
-    const response = await ruleOn(
-      person.cookie,
-      post.id,
-      "I coordinated it, others ran it",
-      line.id,
+    expect((await act(person.cookie, "delete_question", { questionId: question.id })).status).toBe(
+      404,
     );
-    expect(response.status).toBe(200);
-
-    const again = (await profileOf(person.cookie)).experience.find((each) => each.id === post.id);
-    expect(again?.rule?.text).toBe(`${line.text}: I coordinated it, others ran it`);
-    expect(again?.rule?.source).toBe("own words");
+    expect(
+      (await act(person.cookie, "skip_question", { questionId: question.id }, "unknown")).status,
+    ).toBe(404);
+    expect(about(await profileOf(person.cookie), "Kubernetes").state).toBe("waiting");
   });
 
-  it("answers 404 for a line that is not under that item", async () => {
-    const person = await asked("rule-on-a-foreign-line@example.com");
-    const post = person.profile.experience.find((each) => each.lines.length > 0);
-    if (post === undefined) throw new Error("the shipped case has no post with lines");
-    const docker = itemNamed(person.profile, "Docker");
-    const line = post.lines[0];
-    if (line === undefined) throw new Error("the post has no line");
+  it("answers 409 before any reading, and opens nothing", async () => {
+    const person = await signedIn("answer-before-a-reading@example.com");
 
-    expect((await ruleOn(person.cookie, docker.id, "not its line", line.id)).status).toBe(404);
-    expect(itemNamed(await profileOf(person.cookie), "Docker").rule).toBeNull();
+    const response = await skip(person.cookie, "a-question-of-nobody");
+
+    expect(response.status).toBe(409);
+    expect(
+      (await app.request("/api/conversations/profile", { headers: { cookie: person.cookie } }))
+        .status,
+    ).toBe(409);
   });
 });

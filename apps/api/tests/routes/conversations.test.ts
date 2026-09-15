@@ -95,7 +95,8 @@ const aTestAssistant: AssistantDefinition = {
   tools: [],
   actions: [],
   opening: async (_tx, person) => [{ kind: "text", text: `Hello, ${person}.`, scripted: true }],
-  context: async () => [],
+  // What the model reads after the prompt is the definition's since `SL4` (D10).
+  context: async () => ["The person's profile, as this definition gives it."],
   stepPhrase: () => "Working",
   describe: () => null,
 };
@@ -366,11 +367,21 @@ describe("a free message (US2, SL3)", () => {
   /** What the agent is doing, streamed and never stored (`S7.5`, `ID210`, spec `H27`). */
   it("streams the step's phrase as a status leaf before the reply's words, and stores none of it", async () => {
     const person = await signedIn("message-status@example.com");
+    await documentsFor(
+      person.id,
+      [theSet.cvFrench.filename],
+      objects.storage as ReturnType<typeof localStorageIn>,
+    );
+    await (
+      await app.request("/api/intake/read", { method: "POST", headers: { cookie: person.cookie } })
+    ).text();
 
+    // The phrase is the profile assistant's own (D10): the application as it is composed.
     const { leaves } = await post(
       "/api/conversations/profile/messages",
       "Which document did you read first?",
       person.cookie,
+      app,
     );
 
     const status = leaves.findIndex((leaf) => leaf.kind === "status");
@@ -453,8 +464,9 @@ describe("a free message (US2, SL3)", () => {
       return { person, item };
     };
 
+    // Where the words sit is the profile assistant's to say (D12): the application as composed.
     const postAbout = async (cookie: string, body: unknown) => {
-      const response = await routes.request("/api/conversations/profile/messages", {
+      const response = await app.request("/api/conversations/profile/messages", {
         method: "POST",
         headers: { "content-type": "application/json", cookie },
         body: JSON.stringify(body),
@@ -503,7 +515,8 @@ describe("a free message (US2, SL3)", () => {
 
     it("answers 404 for another person's item, and writes nothing", async () => {
       const { item } = await aPersonWithAnItem("about-the-owner@example.com");
-      const other = await signedIn("about-somebody-else@example.com");
+      // A stranger with a profile of their own, so their conversation opens (`ID202`).
+      const { person: other } = await aPersonWithAnItem("about-somebody-else@example.com");
 
       const { status } = await postAbout(other.cookie, {
         text: "Not mine to say.",
