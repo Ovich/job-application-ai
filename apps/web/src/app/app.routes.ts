@@ -38,7 +38,8 @@ export const routes: Routes = [
     children: [
       {
         path: "",
-        loadComponent: () => import("./intake/documents/documents").then((m) => m.AppDocuments),
+        loadComponent: () =>
+          import("./intake/documents/documents-page/documents-page").then((m) => m.DocumentsPage),
       },
     ],
   },

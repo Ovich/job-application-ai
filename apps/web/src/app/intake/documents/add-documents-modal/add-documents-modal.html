@@ -1,0 +1,3 @@
+<ui-modal title="Add documents" width="lg" (close)="closed.emit()">
+  <documents-drop-zone [embedded]="true" (done)="done.emit()" />
+</ui-modal>
