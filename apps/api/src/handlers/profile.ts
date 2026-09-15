@@ -17,13 +17,8 @@ import {
   question,
   questionOption,
 } from "@app/db";
-import { and, asc, desc, eq, inArray, isNull } from "drizzle-orm";
+import { asc, desc, eq, inArray } from "drizzle-orm";
 import { createFactory } from "hono/factory";
-import { validator } from "hono/validator";
-import { z } from "zod";
-import { profileAssistant } from "../assistants/profile";
-import { Refused } from "../lib/agent";
-import { append, open, type Transaction } from "../lib/conversation";
 import { db } from "../lib/db";
 import { asking, refused } from "../lib/session";
 
@@ -346,109 +341,6 @@ export const profileOf = async (userId: string): Promise<ProfileAnswer> => {
     notAsked: questions.filter((row) => !row.asked).length,
   };
 };
-
-/**
- * What a person says when a question is open: a row, their own words, both, or neither
- * yet. `skip` is the fourth thing they can do and it is an answer of its own — the
- * question is kept, not deleted, and offered again the first time a CV needs it (`US7`).
- */
-const answering = z.object({
-  optionId: z.string().min(1).optional(),
-  words: z.string().optional(),
-  skip: z.boolean().optional(),
-});
-
-/** The profile assistant's action by its name (D9), which this route runs until SL7. */
-const actionNamed = (name: string) => {
-  const action = profileAssistant.actions.find((each) => each.name === name);
-  if (action === undefined) throw new Error(`the profile assistant has no ${name}`);
-  return action;
-};
-
-/** The item's current profile concern, as the answer returns it once kept. */
-const currentConcern = async (
-  tx: Transaction,
-  person: string,
-  questionId: string,
-): Promise<ProfileConcernAnswer> => {
-  const [written] = await tx
-    .select()
-    .from(profileConcern)
-    .where(
-      and(
-        eq(profileConcern.questionId, questionId),
-        eq(profileConcern.userId, person),
-        isNull(profileConcern.supersededBy),
-      ),
-    )
-    .orderBy(desc(profileConcern.createdAt))
-    .limit(1);
-  if (written === undefined) throw new Error("the profile concern could not be kept");
-  return {
-    id: written.id,
-    text: written.text,
-    kind: written.kind,
-    source: written.source,
-    createdAt: written.createdAt.toISOString(),
-    supersededBy: null,
-  };
-};
-
-/**
- * One question answered, or put off (`S4.3`, `S4.4`, `US6`, `US7`).
- *
- * Until SL7 this route stays, and runs the profile assistant's own actions (`ID253`), so one
- * implementation serves it and `POST /api/conversations/profile/actions/:action`. The body
- * is validated as it always was; the conversation is opened, the action run and the person's
- * entry appended in one transaction (D9), and a failed entry leaves nothing written.
- *
- * A question that is not this person's is a `404` and never a `403`: a `403` would confirm
- * that somebody else's question exists.
- */
-export const answerQuestion = factory.createHandlers(
-  // The body is validated at the boundary, and the shape travels out to the browser
-  // through `AppType` as every answer does: the screen is typed by the route.
-  validator("json", (value, c) => {
-    const said = answering.safeParse(value);
-    if (!said.success) return c.json({ error: "say which row, or say it in your own words" }, 400);
-    return said.data;
-  }),
-  async (c) => {
-    const person = await asking(c);
-    if (person === null) return refused(c);
-
-    const said = c.req.valid("json");
-    const questionId = c.req.param("id") ?? "";
-    const skip = said.skip === true;
-    const action = actionNamed(skip ? "skip_question" : "answer_question");
-    const input = skip
-      ? { questionId }
-      : {
-          questionId,
-          ...(said.optionId === undefined ? {} : { optionId: said.optionId }),
-          ...(said.words === undefined ? {} : { words: said.words }),
-        };
-
-    try {
-      const kept = await db.transaction(async (tx) => {
-        const conversation = await open(
-          person,
-          profileAssistant.name,
-          null,
-          (writer) => profileAssistant.opening(writer, person.id),
-          tx,
-        );
-        const parts = await action.run(tx, person.id, input);
-        await append(tx, conversation, "person", parts);
-        return skip ? null : await currentConcern(tx, person.id, questionId);
-      });
-      return kept === null ? c.json({ skipped: questionId }, 200) : c.json({ concern: kept }, 200);
-    } catch (thrown) {
-      if (thrown instanceof Refused) return c.json({ error: thrown.message }, thrown.status);
-      throw thrown;
-    }
-  },
-);
 
 /** This person's whole profile, or an empty one. Never anybody else's, and never a 404. */
 export const readProfile = factory.createHandlers(async (c) => {
