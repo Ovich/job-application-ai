@@ -95,5 +95,14 @@ export default defineConfig({
       fullyParallel: false,
       workers: 1,
     },
+    {
+      name: "capture",
+      // The profile page's look, captured by hand before the assistant architecture
+      // migration (assistant-architecture SL1, ID240, ID256): a walk that writes images
+      // rather than a spec, so neither project above collects it. Local only, since dev
+      // holds other people's data. SL10 turns it into `profile-look.spec.ts`.
+      testMatch: /profile-look\.capture\.ts$/,
+      use: { baseURL: "http://localhost:4200" },
+    },
   ],
 });
