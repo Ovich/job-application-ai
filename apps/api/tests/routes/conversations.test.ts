@@ -94,6 +94,9 @@ const aTestAssistant: AssistantDefinition = {
   prompt: "",
   tools: [],
   opening: async (_tx, person) => [{ kind: "text", text: `Hello, ${person}.`, scripted: true }],
+  context: async () => [],
+  stepPhrase: () => "Working",
+  describe: () => null,
 };
 
 const routes = new Hono().route("/api/conversations", conversationsOf([aTestAssistant]));

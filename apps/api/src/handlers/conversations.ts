@@ -1,5 +1,3 @@
-import { itemLine, type Part, profileItem } from "@app/db";
-import { and, asc, eq } from "drizzle-orm";
 import type { Context } from "hono";
 import { createFactory } from "hono/factory";
 import { stream } from "hono/streaming";
@@ -40,30 +38,6 @@ const said = z.object({
   subject: z.string().min(1).optional(),
   about: z.object({ itemId: z.string().min(1), lineId: z.string().min(1).optional() }).optional(),
 });
-
-/**
- * Where the words are, composed from the person's own profile: the item's title, and for
- * a line `<title> · row <n>`, the row counted as the sheet counts it. `null` when the item
- * is not the person's or the line not the item's, which is a 404 either way.
- */
-const whereOf = async (
-  userId: string,
-  about: { itemId: string; lineId?: string | undefined },
-): Promise<string | null> => {
-  const [item] = await db
-    .select({ id: profileItem.id, title: profileItem.title })
-    .from(profileItem)
-    .where(and(eq(profileItem.id, about.itemId), eq(profileItem.userId, userId)));
-  if (item === undefined) return null;
-  if (about.lineId === undefined) return item.title;
-  const lines = await db
-    .select({ id: itemLine.id })
-    .from(itemLine)
-    .where(eq(itemLine.itemId, item.id))
-    .orderBy(asc(itemLine.position));
-  const at = lines.findIndex((line) => line.id === about.lineId);
-  return at === -1 ? null : `${item.title} · row ${at + 1}`;
-};
 
 /** The sentence a failed reply ends on. What the person wrote is kept (`ID169`). */
 const couldNotAnswer = "The assistant could not answer this time. Your message is kept.";
@@ -128,8 +102,9 @@ export const openConversation = (definitions: AssistantDefinition[]) =>
 /**
  * `POST /:assistant/messages` `{ text, subject?, about? }` → a stream (`ID163`, `ID169`,
  * `ID170`): the person's entry, the reply's text as it arrives, the reply's entry, done.
- * With `about`, the person's entry is `[about, text]`, and a 404 when the item or the line
- * is not the person's (`S8.7`, `ID233`).
+ * With `about`, the person's entry is `[about, text]`, the part resolved by the
+ * definition's `about`, and a 404 when it answers `null` or the definition takes no words
+ * about anything (`S8.7`, `ID233`, D12).
  *
  * **The person's entry commits before the model is asked, in its own transaction**, and
  * no transaction is open while the stream runs: the reply's entry is written only once
@@ -157,23 +132,21 @@ export const postMessage = (definitions: AssistantDefinition[]) =>
       if ("notYet" in found) return c.json({ error: found.notYet }, 409);
       const { person, definition, conversation } = found;
 
-      // What the words are about, read from the person's own profile (`S8.7`, `ID233`).
-      const where = about === undefined ? null : await whereOf(person.id, about);
-      if (about !== undefined && where === null) return c.json({ error: "no such item" }, 404);
-      const aboutIt: Part[] =
-        about === undefined || where === null
-          ? []
-          : [
-              {
-                kind: "about",
-                itemId: about.itemId,
-                ...(about.lineId === undefined ? {} : { lineId: about.lineId }),
-                where,
-              },
-            ];
+      // What the words are about, resolved by the definition (`S8.7`, `ID233`, D12).
+      const resolve = definition.about;
+      const aboutIt =
+        about === undefined
+          ? undefined
+          : resolve === undefined
+            ? null
+            : await db.transaction((tx) => resolve(tx, person.id, about));
+      if (aboutIt === null) return c.json({ error: "no such item" }, 404);
 
       const mine = await db.transaction((tx) =>
-        append(tx, conversation, "person", [...aboutIt, { kind: "text", text }]),
+        append(tx, conversation, "person", [
+          ...(aboutIt === undefined ? [] : [aboutIt]),
+          { kind: "text", text },
+        ]),
       );
 
       // The raw stream helper and the headers the server-sent-event one would set, as the
