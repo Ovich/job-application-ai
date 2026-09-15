@@ -16,7 +16,12 @@ vi.mock("../../../src/lib/db", async () => ({
   db: (await import("../../support/database")).testDb,
 }));
 
-const { asMessages } = await import("../../../src/lib/conversation");
+const { asMessages: asMessagesWith } = await import("../../../src/lib/conversation");
+const { profileAssistant } = await import("../../../src/assistants/profile");
+
+// Since `SL4` the wording of the non-core parts is the definition's (D11); `SL10` rewrites
+// these cases at the seam with a stand-in `describe`.
+const asMessages = (said: Entry[]) => asMessagesWith(said, profileAssistant.describe);
 
 let position = 0;
 

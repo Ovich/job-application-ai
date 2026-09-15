@@ -10,7 +10,6 @@ import {
   type Transaction,
 } from "../conversation";
 import { db } from "../db";
-import { itemsOf } from "../profile-edit";
 
 /**
  * The agent loop, and what a concrete assistant contributes to it (`ID179`, `ID186`,
@@ -62,13 +61,27 @@ export class NotYet extends Error {}
  * prompt and its tools, which every step of the loop is given; and its opening, written
  * as entry 1 when a conversation is created and never again (`ID189`), or `NotYet`
  * thrown when there is nothing to open on.
+ *
+ * What the loop takes from it and knows nothing of itself (D10 to D12): the `context` the
+ * model reads after the prompt, one string per system message, read fresh before each
+ * step; the `stepPhrase` a step shows before its first words; how a part beyond text and
+ * tools reads to the model, or `null` to leave it out; and, when the assistant takes
+ * words about something, the part saying where they sit, or `null` when it is not the
+ * person's.
  */
 export type AssistantDefinition = {
   name: string;
   prompt: string;
   tools: AgentTool[];
   opening: (tx: Transaction, person: string) => Promise<Part[]>;
+  context: (tx: Transaction, person: string) => Promise<string[]>;
+  stepPhrase: (n: number) => string;
+  describe: (part: Part) => string | null;
+  about?: (tx: Transaction, person: string, input: About) => Promise<Part | null>;
 };
+
+/** What a person's words are about, as the browser names it: an item, and a line of it or none. */
+export type About = { itemId: string; lineId?: string | undefined };
 
 /**
  * What the loop says as it runs: what it is doing now, in a short phrase (`ID210`), never
@@ -78,10 +91,6 @@ export type Ran =
   | { kind: "activity"; text: string }
   | { kind: "text"; text: string }
   | { kind: "entry"; entry: Entry };
-
-/** What a step is doing before its first words: the first reads the profile, a later one what changed. */
-const stepPhrase = (n: number): string =>
-  n === 1 ? "Reading your profile" : "Reading what changed";
 
 /** The called tool's own summary of a call, or nothing for a call it would refuse. */
 const summaryOf = (definition: AssistantDefinition, call: ToolCall): string | null => {
@@ -107,16 +116,13 @@ const offered = (definition: AssistantDefinition): Tool[] =>
   }));
 
 /**
- * The profile as it stands, as the model reads it (`ID193`): a system message after the
- * prompt, read fresh before each step in its own short read, so a step sees what the
- * step before it changed.
+ * The definition's context as the model reads it (D10): system messages after the prompt,
+ * read fresh before each step in its own short read, so a step sees what the step before
+ * it changed.
  */
-const theProfile = async (person: string): Promise<Message> => {
-  const items = await db.transaction((tx) => itemsOf(tx, person));
-  return {
-    role: "system",
-    content: `The person's profile as it stands, as JSON. Every item, and every line of an item, carries the id an edit names it by.\n${JSON.stringify(items)}`,
-  };
+const contextOf = async (definition: AssistantDefinition, person: string): Promise<Message[]> => {
+  const said = await db.transaction((tx) => definition.context(tx, person));
+  return said.map((content) => ({ role: "system", content }));
 };
 
 /** What one call did, as the `tool_result` part that records it. A refusal is a value. */
@@ -159,13 +165,13 @@ export async function* run(
   const tools = offered(definition);
 
   for (let n = 1; n <= stepLimit; n += 1) {
-    yield { kind: "activity", text: stepPhrase(n) };
+    yield { kind: "activity", text: definition.stepPhrase(n) };
     const messages: Message[] = [
       ...(definition.prompt === ""
         ? []
         : [{ role: "system" as const, content: definition.prompt }]),
-      await theProfile(person),
-      ...asMessages(await entries(conversation)),
+      ...(await contextOf(definition, person)),
+      ...asMessages(await entries(conversation), definition.describe),
     ];
     const step = ai.askWithTools(
       messages,

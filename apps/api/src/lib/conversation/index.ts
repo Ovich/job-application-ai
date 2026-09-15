@@ -1,13 +1,10 @@
 import { randomUUID } from "node:crypto";
 import type * as schema from "@app/db";
 import {
-  aboutPart,
   conversation,
   conversationEntry,
   type Part,
   parts as partsOf,
-  questionAnsweredPart,
-  questionSkippedPart,
   toolResultPart,
   toolUsePart,
 } from "@app/db";
@@ -141,35 +138,16 @@ export const entries = async (of: Conversation): Promise<Entry[]> =>
 
 /**
  * One part of the person's entry, in the words the model reads (`S7.2`): their text as it
- * is, and their use of the assistant's tool said as they would say it. A part of a kind
- * this does not know says nothing.
+ * is, and any other part as the assistant's `describe` words it (D11). A part it answers
+ * `null` for says nothing.
  */
-const personSays = (part: Part): string[] => {
-  if (part.kind === "text" && typeof part["text"] === "string") return [part["text"]];
-  // What the words after it are about, with the ids a tool call targets (`S8.7`, `ID233`).
-  const about = aboutPart.safeParse(part);
-  if (about.success) {
-    const { where, itemId, lineId } = about.data;
-    const line = lineId === undefined ? "" : `, lineId ${lineId}`;
-    return [`About "${where}" (itemId ${itemId}${line}):`];
-  }
-  const answered = questionAnsweredPart.safeParse(part);
-  if (answered.success) {
-    const { lead, where, options, picked, words } = answered.data;
-    const option = options.find((each) => each.id === picked);
-    const asked = `I answered "${lead}" (${where})`;
-    if (option === undefined) return [`${asked} in my own words: ${words ?? ""}`];
-    const chose = `${asked}: ${option.label} (${option.hint}).`;
-    return [words === null ? chose : `${chose} In my own words: ${words}`];
-  }
-  const skipped = questionSkippedPart.safeParse(part);
-  if (skipped.success) {
-    return [
-      `I skipped "${skipped.data.lead}" (${skipped.data.where}) for now, without answering it.`,
-    ];
-  }
-  return [];
-};
+const personSays =
+  (describe: (part: Part) => string | null) =>
+  (part: Part): string[] => {
+    if (part.kind === "text" && typeof part["text"] === "string") return [part["text"]];
+    const described = describe(part);
+    return described === null ? [] : [described];
+  };
 
 /**
  * The conversation as the model reads it (`ID162`), in the protocol's own messages.
@@ -179,9 +157,10 @@ const personSays = (part: Part): string[] => {
  * input written back as the arguments string the model sent. A `tool` entry is one
  * `tool` message per `tool_result`, answering its call's id with the before and after, or
  * the refusal. An entry with nothing to say is left out rather than sent empty; a part of
- * a kind this does not know is left out of the message. `SL5` adds the question parts.
+ * a kind this does not know is left out of the message, except in the person's entry,
+ * where `describe` words it or leaves it out (D11).
  */
-export const asMessages = (said: Entry[]): Message[] =>
+export const asMessages = (said: Entry[], describe: (part: Part) => string | null): Message[] =>
   said.flatMap((entry): Message[] => {
     if (entry.author === "tool") {
       return entry.parts.flatMap((part): Message[] => {
@@ -204,7 +183,7 @@ export const asMessages = (said: Entry[]): Message[] =>
       )
       .join("\n\n");
     if (entry.author === "person") {
-      const said = entry.parts.flatMap(personSays).join("\n\n");
+      const said = entry.parts.flatMap(personSays(describe)).join("\n\n");
       return said === "" ? [] : [{ role: "user", content: said }];
     }
 
