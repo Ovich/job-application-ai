@@ -583,6 +583,71 @@ describe("failures (US6, the spec's Failure modes)", () => {
   });
 });
 
+/**
+ * What the loop takes from the definition and knows nothing of itself (D10): the context,
+ * as system messages after the prompt, and each step's phrase. A stand-in definition, so
+ * nothing the profile assistant says can make these pass.
+ */
+describe("a definition's context and step phrases (D10)", () => {
+  it("sends its context strings as system messages after the prompt, and yields its stepPhrase(n) for each step", async () => {
+    const at = await planted();
+    const conversation = await conversationOf(at.person);
+    const standIn = {
+      ...profileAssistant,
+      prompt: "The stand-in's prompt.",
+      context: async (_tx: unknown, person: string) => [`First of ${person}.`, "Second."],
+      stepPhrase: (n: number) => `Step ${n} of the stand-in`,
+    };
+    const cases = withCases({
+      [stepOf(conversation, 1)]: {
+        stands_for: "an edit",
+        content: "I will shorten it.",
+        tool_calls: [
+          {
+            id: "call_1",
+            name: "edit_profile",
+            arguments: {
+              itemId: at.post,
+              operations: [{ op: "set", field: "title", value: "Senior platform engineer" }],
+            },
+          },
+        ],
+      },
+      [stepOf(conversation, 2)]: { stands_for: "the reply", content: "Done." },
+    });
+
+    let ran: { said: Ran[]; thrown: unknown };
+    try {
+      ran = await ranThrough(run(standIn, conversation, at.person, aiThroughTheApp()));
+    } finally {
+      cases.dispose();
+    }
+
+    expect(ran.thrown).toBeUndefined();
+    expect(requestsSent()).toHaveLength(2);
+    for (const index of requestsSent().keys()) {
+      expect(bodyOf(index).messages.slice(0, 4)).toEqual([
+        { role: "system", content: "The stand-in's prompt." },
+        { role: "system", content: `First of ${at.person}.` },
+        { role: "system", content: "Second." },
+        { role: "assistant", content: "I read your 1 document." },
+      ]);
+    }
+    const steps = ran.said.flatMap((each) =>
+      each.kind === "activity" && each.text.endsWith("of the stand-in") ? [each.text] : [],
+    );
+    expect(steps).toEqual(["Step 1 of the stand-in", "Step 2 of the stand-in"]);
+    // A tool step still commits its call and its result together (4.3).
+    expect((await entries(conversation)).map((entry) => entry.author)).toEqual([
+      "assistant",
+      "person",
+      "assistant",
+      "tool",
+      "assistant",
+    ]);
+  });
+});
+
 describe("every request (S4.4, ID181, ID193)", () => {
   it("carries the profile definition's system prompt first, the profile second, and the edit tool", async () => {
     const at = await planted();

@@ -16,7 +16,12 @@ vi.mock("../../../src/lib/db", async () => ({
   db: (await import("../../support/database")).testDb,
 }));
 
-const { asMessages } = await import("../../../src/lib/conversation");
+const { asMessages: asMessagesWith } = await import("../../../src/lib/conversation");
+const { profileAssistant } = await import("../../../src/assistants/profile");
+
+// Since `SL4` the wording of the non-core parts is the definition's (D11): the cases below
+// read the profile assistant's own words, and the last block a stand-in `describe`.
+const asMessages = (said: Entry[]) => asMessagesWith(said, profileAssistant.describe);
 
 let position = 0;
 
@@ -289,6 +294,89 @@ describe("a message about an item, as the model reads it (S8.7)", () => {
         content: 'About "Platform engineer" (itemId item-nexplore):\n\nIt was part-time.',
       },
     ]);
+  });
+});
+
+/**
+ * The core knows text and tool parts only (D11): every other part reads as the definition's
+ * `describe` says, and a part it answers `null` for is left out of the message.
+ */
+describe("a part beyond text and tools, as the definition describes it (D11)", () => {
+  const skipped = {
+    kind: "question_skipped",
+    lead: "Which was it?",
+    where: "What you work with",
+    options: [{ id: "q1-1", label: "Ran the cluster", hint: "nodes" }],
+  };
+
+  it("renders text and tool parts itself, whatever describe says", () => {
+    const silent = () => "never asked";
+
+    expect(
+      asMessagesWith(
+        [
+          entry("person", [{ kind: "text", text: "Shorten it." }]),
+          entry("assistant", [
+            { kind: "tool_use", id: "call_1", name: "edit_profile", input: edit },
+          ]),
+          entry("tool", [
+            { kind: "tool_result", id: "call_1", name: "edit_profile", before, after },
+          ]),
+        ],
+        silent,
+      ),
+    ).toEqual([
+      { role: "user", content: "Shorten it." },
+      {
+        role: "assistant",
+        content: null,
+        tool_calls: [
+          {
+            id: "call_1",
+            type: "function",
+            function: { name: "edit_profile", arguments: JSON.stringify(edit) },
+          },
+        ],
+      },
+      { role: "tool", tool_call_id: "call_1", content: JSON.stringify({ before, after }) },
+    ]);
+  });
+
+  it("reads question_answered, question_skipped and about in the words describe gives", () => {
+    const described = (part: { kind: string }) => `[${part.kind}]`;
+
+    expect(
+      asMessagesWith(
+        [
+          entry("person", [{ ...skipped, kind: "question_answered", picked: "q1-1", words: null }]),
+          entry("person", [skipped]),
+          entry("person", [
+            { kind: "about", itemId: "item-1", where: "Kubernetes" },
+            { kind: "text", text: "Only the charts." },
+          ]),
+        ],
+        described,
+      ),
+    ).toEqual([
+      { role: "user", content: "[question_answered]" },
+      { role: "user", content: "[question_skipped]" },
+      { role: "user", content: "[about]\n\nOnly the charts." },
+    ]);
+  });
+
+  it("leaves out a part describe answers null for", () => {
+    expect(
+      asMessagesWith(
+        [
+          entry("person", [skipped]),
+          entry("person", [
+            { kind: "about", itemId: "item-1", where: "Kubernetes" },
+            { kind: "text", text: "Only the charts." },
+          ]),
+        ],
+        () => null,
+      ),
+    ).toEqual([{ role: "user", content: "Only the charts." }]);
   });
 });
 

@@ -5,10 +5,10 @@ import {
   itemExperience,
   itemLine,
   itemProject,
+  profileConcern,
   profileItem,
   provenance,
   question,
-  rule,
 } from "@app/db";
 import { betterAuth } from "better-auth";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
@@ -164,10 +164,10 @@ const beforeDelete = async (user: { id: string }): Promise<void> => {
     const documentIds = documents.map((each) => each.id);
 
     // Ordered by the foreign keys and not by the register's sentence: the questions and
-    // the rules point at items, the provenance at items and documents, the lines at
-    // items, and every per-kind row at the item it completes.
+    // the profile concerns point at items, the provenance at items and documents, the lines
+    // at items, and every per-kind row at the item it completes.
     await tx.delete(question).where(eq(question.userId, user.id));
-    await tx.delete(rule).where(eq(rule.userId, user.id));
+    await tx.delete(profileConcern).where(eq(profileConcern.userId, user.id));
     if (documentIds.length > 0) {
       await tx.delete(provenance).where(inArray(provenance.documentId, documentIds));
     }

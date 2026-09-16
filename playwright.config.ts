@@ -60,6 +60,18 @@ export default defineConfig({
       use: { baseURL: "http://localhost:4200" },
     },
     {
+      name: "look",
+      // `profile-look`, assistant-architecture SL10 (ID240, ID266): the profile page's
+      // states compared pixel for pixel with SL1's images, the dated lines masked. Run by
+      // hand, `pnpm exec playwright test --project=look`, on the machine its baselines were
+      // rendered on: pixels differ between platforms, and only Windows baselines exist, so
+      // neither `local` (which the pipeline runs on Linux) nor `deployed` collects it. Local
+      // only in any case, since dev holds other people's data.
+      testMatch: /profile-look\.spec\.ts$/,
+      snapshotPathTemplate: "{testDir}/profile-look/{arg}-{platform}{ext}",
+      use: { baseURL: "http://localhost:4200" },
+    },
+    {
       name: "deployed",
       // Widened at S5.5 (ID69): the cloud has client apps of its own now, so the specs
       // that open the page and the specs that ask the library who is signed in are

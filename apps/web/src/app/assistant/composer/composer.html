@@ -66,7 +66,7 @@
           type="text"
           data-part="composer"
           aria-label="Message"
-          placeholder="Say it in your own words, or click anything in your profile"
+          [placeholder]="placeholder()"
           [value]="draft()"
           (input)="typed($event)"
           (keydown)="pressed($event)"

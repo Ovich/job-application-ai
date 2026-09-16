@@ -195,8 +195,8 @@ describe("the questions a reading leaves open, over the cases the product ships 
       "Used it as a developer",
       "Something else",
     ]);
-    expect(kubernetes?.options.at(-1)?.rule).toBeNull();
-    expect(kubernetes?.options[0]?.rule).toBe(
+    expect(kubernetes?.options.at(-1)?.concern).toBeNull();
+    expect(kubernetes?.options[0]?.concern).toBe(
       "Kubernetes: cluster administration, and the services on it",
     );
   });

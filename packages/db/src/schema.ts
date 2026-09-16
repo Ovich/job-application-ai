@@ -287,9 +287,9 @@ export const question = pgTable("question", {
  * One answer a question offers: rows, not a JSON column (`F8`), at most four per
  * question.
  *
- * `rule` is what picking this row writes on the item, in the row's own words rather
+ * `concern` is what picking this row writes on the item, in the row's own words rather
  * than a sentence built about it. It is null on the last row and only there, because
- * the last row is always the person's own words and carries no rule of its own.
+ * the last row is always the person's own words and carries no concern of its own.
  */
 export const questionOption = pgTable("question_option", {
   id: text("id").primaryKey(),
@@ -299,29 +299,28 @@ export const questionOption = pgTable("question_option", {
   position: integer("position").notNull(),
   label: text("label").notNull(),
   hint: text("hint").notNull(),
-  rule: text("rule"),
+  concern: text("concern"),
 });
 
-/** What a rule is about: the person's part in a fact, or what must never be claimed. */
-export const ruleKind = pgEnum("rule_kind", ["scope", "constraint"]);
+/** What a profile concern is about: the person's part in a fact, or what must never be claimed. */
+export const profileConcernKind = pgEnum("profile_concern_kind", ["scope", "constraint"]);
 
 /** Where the words came from: a row the person picked, or the words they typed. */
-export const ruleSource = pgEnum("rule_source", ["answer", "own words"]);
+export const profileConcernSource = pgEnum("profile_concern_source", ["answer", "own words"]);
 
 /**
- * What the person said about an item (`ID121`, the spec's *The rules*).
+ * What the person's answer settles about an item: a profile concern (`ID121`, D14, once
+ * called a rule).
  *
- * **A rule is inserted, never updated.** Answering again inserts a row and sets the old
- * row's `superseded_by` to the new one's id, so the history of what the person said
+ * **A profile concern is inserted, never updated.** Answering again inserts a row and sets
+ * the old row's `superseded_by` to the new one's id, so the history of what the person said
  * survives being changed. An `update` here would pass every test that reads only the
- * current rule and quietly destroy the one thing this table exists to keep. The item's
- * current rule is the single row whose `superseded_by` is null.
+ * current concern and quietly destroy the one thing this table exists to keep. The item's
+ * current concern is the single row whose `superseded_by` is null.
  *
- * `question_id` is nullable because a rule may come from no question at all: the tool
- * the person opens themselves proposes nothing and asks nothing, and what they write in
- * it is still a rule (`SL5`, and `POST /items/:id/rule`, mounted here).
+ * `question_id` is nullable because a concern may come from no question at all.
  */
-export const rule = pgTable("rule", {
+export const profileConcern = pgTable("profile_concern", {
   id: text("id").primaryKey(),
   userId: text("user_id")
     .notNull()
@@ -329,25 +328,25 @@ export const rule = pgTable("rule", {
   itemId: text("item_id")
     .notNull()
     .references(() => profileItem.id, { onDelete: "cascade" }),
-  kind: ruleKind("kind").notNull(),
+  kind: profileConcernKind("kind").notNull(),
   text: text("text").notNull(),
-  source: ruleSource("source").notNull(),
+  source: profileConcernSource("source").notNull(),
   questionId: text("question_id").references(() => question.id, { onDelete: "set null" }),
   createdAt: timestamp("created_at").notNull().defaultNow(),
-  supersededBy: text("superseded_by").references((): AnyPgColumn => rule.id),
+  supersededBy: text("superseded_by").references((): AnyPgColumn => profileConcern.id),
 });
 
-/** The row shapes of the questions and the rules, named once, inferred as the rest are. */
+/** The row shapes of the questions and the profile concerns, named once, inferred as the rest are. */
 export type Question = typeof question.$inferSelect;
 export type NewQuestion = typeof question.$inferInsert;
 export type QuestionOption = typeof questionOption.$inferSelect;
 export type NewQuestionOption = typeof questionOption.$inferInsert;
-export type Rule = typeof rule.$inferSelect;
-export type NewRule = typeof rule.$inferInsert;
+export type ProfileConcern = typeof profileConcern.$inferSelect;
+export type NewProfileConcern = typeof profileConcern.$inferInsert;
 export type QuestionKind = (typeof questionKind.enumValues)[number];
 export type QuestionState = (typeof questionState.enumValues)[number];
-export type RuleKind = (typeof ruleKind.enumValues)[number];
-export type RuleSource = (typeof ruleSource.enumValues)[number];
+export type ProfileConcernKind = (typeof profileConcernKind.enumValues)[number];
+export type ProfileConcernSource = (typeof profileConcernSource.enumValues)[number];
 
 /**
  * A conversation: one person's history with one assistant, about an optional subject

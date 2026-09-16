@@ -97,10 +97,10 @@
   >
 </ng-template>
 
-<!-- A part that is not text: the component a provider names, or the placeholder. -->
+<!-- A part that is not text: the concrete assistant's #part, or the placeholder (D4). -->
 <ng-template #other let-part>
-  @if (componentFor(part.kind); as component) {
-    <ng-container *ngComponentOutlet="component; inputs: { part }" />
+  @if (drawPart(); as drawn) {
+    <ng-container [ngTemplateOutlet]="drawn" [ngTemplateOutletContext]="{ $implicit: part }" />
   } @else {
     <p data-part="placeholder" uiText variant="body" tone="muted">
       This part cannot be shown here.

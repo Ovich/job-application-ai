@@ -1,11 +1,9 @@
-import { itemLine, type Part, profileItem } from "@app/db";
-import { and, asc, eq } from "drizzle-orm";
 import type { Context } from "hono";
 import { createFactory } from "hono/factory";
 import { stream } from "hono/streaming";
 import { validator } from "hono/validator";
 import { z } from "zod";
-import { type AssistantDefinition, NotYet, run } from "../lib/agent";
+import { type AssistantDefinition, NotYet, Refused, run } from "../lib/agent";
 import { ask, askFor, askStreaming, askWithTools } from "../lib/ai";
 import { append, type Conversation, type Entry, entries, open } from "../lib/conversation";
 import { db } from "../lib/db";
@@ -40,30 +38,6 @@ const said = z.object({
   subject: z.string().min(1).optional(),
   about: z.object({ itemId: z.string().min(1), lineId: z.string().min(1).optional() }).optional(),
 });
-
-/**
- * Where the words are, composed from the person's own profile: the item's title, and for
- * a line `<title> · row <n>`, the row counted as the sheet counts it. `null` when the item
- * is not the person's or the line not the item's, which is a 404 either way.
- */
-const whereOf = async (
-  userId: string,
-  about: { itemId: string; lineId?: string | undefined },
-): Promise<string | null> => {
-  const [item] = await db
-    .select({ id: profileItem.id, title: profileItem.title })
-    .from(profileItem)
-    .where(and(eq(profileItem.id, about.itemId), eq(profileItem.userId, userId)));
-  if (item === undefined) return null;
-  if (about.lineId === undefined) return item.title;
-  const lines = await db
-    .select({ id: itemLine.id })
-    .from(itemLine)
-    .where(eq(itemLine.itemId, item.id))
-    .orderBy(asc(itemLine.position));
-  const at = lines.findIndex((line) => line.id === about.lineId);
-  return at === -1 ? null : `${item.title} · row ${at + 1}`;
-};
 
 /** The sentence a failed reply ends on. What the person wrote is kept (`ID169`). */
 const couldNotAnswer = "The assistant could not answer this time. Your message is kept.";
@@ -126,10 +100,57 @@ export const openConversation = (definitions: AssistantDefinition[]) =>
   );
 
 /**
+ * `POST /:assistant/actions/:action` with the action's input → `{ entries }` (D9): what the
+ * person did with the assistant's own tool. **One transaction** opens the conversation when
+ * it does not exist yet, runs the action, and appends the person's entry with the parts the
+ * action returns, so a failed entry leaves nothing of the action written.
+ *
+ * 400 for an input the action's schema refuses, or one the action refuses as saying
+ * nothing; 404 for an unknown assistant or action, or a thing that is not the person's;
+ * 409 before there is anything to open on (`NotYet`).
+ */
+export const runAction = (definitions: AssistantDefinition[]) =>
+  factory.createHandlers(
+    validator("json", (value) => value as unknown),
+    async (c) => {
+      const person = await asking(c);
+      if (person === null) return refused(c);
+
+      const definition = definitions.find((each) => each.name === c.req.param("assistant"));
+      if (definition === undefined) return c.json({ error: "no such assistant" }, 404);
+      const action = definition.actions.find((each) => each.name === c.req.param("action"));
+      if (action === undefined) return c.json({ error: "no such action" }, 404);
+
+      const input = action.input.safeParse(c.req.valid("json"));
+      if (!input.success) return c.json({ error: `the input does not fit ${action.name}` }, 400);
+
+      try {
+        const mine = await db.transaction(async (tx) => {
+          const conversation = await open(
+            person,
+            definition.name,
+            null,
+            (writer) => definition.opening(writer, person.id),
+            tx,
+          );
+          const said = await action.run(tx, person.id, input.data);
+          return append(tx, conversation, "person", said);
+        });
+        return c.json({ entries: [onTheWire(mine)] }, 200);
+      } catch (thrown) {
+        if (thrown instanceof NotYet) return c.json({ error: thrown.message }, 409);
+        if (thrown instanceof Refused) return c.json({ error: thrown.message }, thrown.status);
+        throw thrown;
+      }
+    },
+  );
+
+/**
  * `POST /:assistant/messages` `{ text, subject?, about? }` → a stream (`ID163`, `ID169`,
  * `ID170`): the person's entry, the reply's text as it arrives, the reply's entry, done.
- * With `about`, the person's entry is `[about, text]`, and a 404 when the item or the line
- * is not the person's (`S8.7`, `ID233`).
+ * With `about`, the person's entry is `[about, text]`, the part resolved by the
+ * definition's `about`, and a 404 when it answers `null` or the definition takes no words
+ * about anything (`S8.7`, `ID233`, D12).
  *
  * **The person's entry commits before the model is asked, in its own transaction**, and
  * no transaction is open while the stream runs: the reply's entry is written only once
@@ -157,23 +178,21 @@ export const postMessage = (definitions: AssistantDefinition[]) =>
       if ("notYet" in found) return c.json({ error: found.notYet }, 409);
       const { person, definition, conversation } = found;
 
-      // What the words are about, read from the person's own profile (`S8.7`, `ID233`).
-      const where = about === undefined ? null : await whereOf(person.id, about);
-      if (about !== undefined && where === null) return c.json({ error: "no such item" }, 404);
-      const aboutIt: Part[] =
-        about === undefined || where === null
-          ? []
-          : [
-              {
-                kind: "about",
-                itemId: about.itemId,
-                ...(about.lineId === undefined ? {} : { lineId: about.lineId }),
-                where,
-              },
-            ];
+      // What the words are about, resolved by the definition (`S8.7`, `ID233`, D12).
+      const resolve = definition.about;
+      const aboutIt =
+        about === undefined
+          ? undefined
+          : resolve === undefined
+            ? null
+            : await db.transaction((tx) => resolve(tx, person.id, about));
+      if (aboutIt === null) return c.json({ error: "no such item" }, 404);
 
       const mine = await db.transaction((tx) =>
-        append(tx, conversation, "person", [...aboutIt, { kind: "text", text }]),
+        append(tx, conversation, "person", [
+          ...(aboutIt === undefined ? [] : [aboutIt]),
+          { kind: "text", text },
+        ]),
       );
 
       // The raw stream helper and the headers the server-sent-event one would set, as the

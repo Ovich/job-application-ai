@@ -1,34 +1,20 @@
 import { Hono } from "hono";
-import {
-  addDocument,
-  answerQuestion,
-  listDocuments,
-  readDocuments,
-  readProfile,
-  removeDocument,
-  writeItemRule,
-} from "../handlers/intake";
+import { addDocument, listDocuments, removeDocument } from "../handlers/documents";
+import { readProfile } from "../handlers/profile";
+import { readDocuments } from "../handlers/reading";
 
 /**
  * The intake routes: paths and handlers, nothing else. What each one proves is written
- * where it is done, in `apps/api/src/handlers/intake.ts`.
+ * where it is done, in `apps/api/src/handlers/documents.ts`, `reading.ts` and `profile.ts`.
  *
- * `ID118` lists six routes for the intake across SL2 to SL5, and with SL4 all six are
- * mounted: the documents, the reading run, the profile that run produces, the answer to
- * one of its questions, and the rule the person writes on an item nobody asked about.
- *
- * This is not an interface change and `ID118`'s row would say so if it were: the route
- * object is the same one SL2 exported, and every path here is on the register's own list.
- *
- * **Skip is not a route.** It is what `POST /questions/:id/answer` does when the body
- * says `skip`, because skipping is one of the things a person does to an open question
- * and `ID118` names six routes, not seven.
+ * The documents, the reading run, and the profile that run produces. The route that wrote a
+ * rule on an item nobody asked about had no caller and is gone (D14), and so is the one that
+ * answered a question: an answer or a skip is the profile assistant's action, run by
+ * `POST /api/conversations/profile/actions/:action` (D9, S7.2).
  */
 export const intake = new Hono()
   .post("/documents", ...addDocument)
   .get("/documents", ...listDocuments)
   .delete("/documents/:id", ...removeDocument)
   .post("/read", ...readDocuments)
-  .get("/profile", ...readProfile)
-  .post("/questions/:id/answer", ...answerQuestion)
-  .post("/items/:id/rule", ...writeItemRule);
+  .get("/profile", ...readProfile);

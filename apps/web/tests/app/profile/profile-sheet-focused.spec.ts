@@ -55,7 +55,7 @@ const aProfile = (): Profile => ({
         }),
         chip("docker", "Docker"),
         chip("terraform", "Terraform", {
-          rule: {
+          concern: {
             id: "r1",
             text: "Terraform: covered in a course, never production",
             kind: "constraint",
@@ -148,11 +148,11 @@ describe("the mark and the check line", () => {
     expect(regionOf("docker")?.querySelector("[data-part=ask]")).toBeNull();
   });
 
-  it("shows the rule under an answered item, and takes the mark away", async () => {
+  it("shows the concern under an answered item, and takes the mark away", async () => {
     const { regionOf } = await rendered(false, null);
 
     const answered = regionOf("terraform");
-    expect(answered?.querySelector("[data-part=rule]")?.textContent?.trim()).toBe(
+    expect(answered?.querySelector("[data-part=concern]")?.textContent?.trim()).toBe(
       "✓ Terraform: covered in a course, never production",
     );
     expect(answered?.querySelector("[data-part=ask]")).toBeNull();

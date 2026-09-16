@@ -23,7 +23,7 @@ export const routes: Routes = [
       {
         path: "",
         loadComponent: () =>
-          import("./profile/profile-viewer/profile-viewer").then((m) => m.ProfileViewer),
+          import("./profile/profile-page/profile-page").then((m) => m.ProfilePage),
       },
     ],
   },
@@ -38,7 +38,8 @@ export const routes: Routes = [
     children: [
       {
         path: "",
-        loadComponent: () => import("./intake/documents/documents").then((m) => m.AppDocuments),
+        loadComponent: () =>
+          import("./intake/documents/documents-page/documents-page").then((m) => m.DocumentsPage),
       },
     ],
   },

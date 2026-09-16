@@ -1,13 +1,8 @@
 import { Injectable, inject, signal } from "@angular/core";
-import type { InferResponseType } from "hono/client";
 import { api } from "../lib/api";
 import { framesOf } from "../lib/stream";
+import type { Entry } from "./entry";
 import { ASSISTANT } from "./provide-assistant";
-
-type Conversation = InferResponseType<(typeof api.conversations)[":assistant"]["$get"], 200>;
-
-/** One entry as the API answers it: inferred from `AppType`, never declared here. */
-export type Entry = Conversation["entries"][number];
 
 /** What a message's stream says, as far as the core reads it (`ID170`). */
 type Leaf =
@@ -92,6 +87,29 @@ export class AssistantCore {
     } catch {
       this.held.set([]);
       this.refused.set("the conversation could not be reached");
+    }
+  }
+
+  /**
+   * Something the person did with the concrete assistant's tool, not a message (D9): the
+   * action named, run by the API with its input in one transaction. The entries it answers
+   * join `entries`, and it resolves `true` when kept and `false` when refused or unreachable.
+   *
+   * **A refusal writes no `failure`** (D19): today's column says a decision was not kept in
+   * its own words, beside the tool, and draws no failure line under the conversation.
+   */
+  public async act(action: string, input: unknown): Promise<boolean> {
+    try {
+      const answer = await api.conversations[":assistant"].actions[":action"].$post({
+        param: { assistant: this.assistant.name, action },
+        json: input,
+      });
+      if (!answer.ok) return false;
+      const kept = (await answer.json()) as { entries: Entry[] };
+      this.held.update((entries) => [...entries, ...kept.entries]);
+      return true;
+    } catch {
+      return false;
     }
   }
 

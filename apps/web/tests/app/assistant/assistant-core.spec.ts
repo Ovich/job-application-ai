@@ -8,6 +8,8 @@ import {
   entryOf,
   intakeRequests,
   messagesPosted,
+  profileIs,
+  questionOf,
   resetIntake,
   theReply,
 } from "../../support/intake";
@@ -35,9 +37,53 @@ afterEach(() => {
 });
 
 const coreOf = (name: string): AssistantCore => {
-  TestBed.configureTestingModule({ providers: provideAssistant({ name, parts: [] }) });
+  TestBed.configureTestingModule({ providers: provideAssistant({ name }) });
   return TestBed.inject(AssistantCore);
 };
+
+/**
+ * Seam W: what the person did with the concrete assistant's own tool, as an action (D9,
+ * `ID263`). The action route is stood in for at `fetch` with the profile it acts on.
+ */
+describe("acting through the assistant's tool (D9)", () => {
+  const opening = entryOf(1, [{ kind: "text", text: "I read your 2 documents." }]);
+  const asked = questionOf({ id: "q1", itemId: "k8s", lead: "Which was it?" });
+
+  it("appends the entries the action answered, and resolves true", async () => {
+    profileIs({ documents: 2, questions: [asked] });
+    conversationIs([opening]);
+    const core = coreOf("profile");
+    await core.open();
+
+    const kept = await core.act("skip_question", { questionId: "q1" });
+
+    expect(kept).toBe(true);
+    expect(core.entries()).toEqual([
+      opening,
+      expect.objectContaining({
+        author: "person",
+        parts: [expect.objectContaining({ kind: "question_skipped", lead: "Which was it?" })],
+      }),
+    ]);
+    expect(intakeRequests()).toContainEqual({
+      method: "POST",
+      address: "/api/conversations/profile/actions/skip_question",
+    });
+  });
+
+  it("resolves false on a refusal, keeps the entries as they were, and sets no failure (ID263)", async () => {
+    profileIs({ documents: 2, questions: [asked] });
+    conversationIs([opening]);
+    const core = coreOf("profile");
+    await core.open();
+
+    const kept = await core.act("answer_question", { questionId: "a-question-nobody-asked" });
+
+    expect(kept).toBe(false);
+    expect(core.entries()).toEqual([opening]);
+    expect(core.failure()).toBeNull();
+  });
+});
 
 describe("opening the conversation", () => {
   it("holds the entries the conversation answered, and no failure", async () => {

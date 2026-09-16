@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { routes } from "../../../src/app/app.routes";
 import type { RegionRef } from "../../../src/app/profile/profile-region/profile-region";
 import { ProfileSheet } from "../../../src/app/profile/profile-sheet/profile-sheet";
+import { ProfileViewer } from "../../../src/app/profile/profile-viewer/profile-viewer";
 import {
   conversationIs,
   documentsAre,
@@ -586,7 +587,7 @@ describe("the person's tool use in the conversation (agent-consolidation SL7, S7
     );
   });
 
-  it("reads the conversation again after an answer, and draws the pick on the person's side", async () => {
+  it("draws the pick on the person's side after an answer, from the entry the action answered (D9)", async () => {
     profileIs({ ...aFullProfile(), questions: [kubernetes] });
     const { page, eventually } = await opened();
     await eventually(() =>
@@ -604,13 +605,13 @@ describe("the person's tool use in the conversation (agent-consolidation SL7, S7
     await eventually(() =>
       expect(personSide(page)).toEqual([expect.stringContaining("Ran services on it")]),
     );
-    const conversationReads = intakeRequests().filter(
-      (each) => each.method === "GET" && each.address === "/api/conversations/profile",
-    );
-    expect(conversationReads.length).toBeGreaterThanOrEqual(2);
+    expect(intakeRequests()).toContainEqual({
+      method: "POST",
+      address: "/api/conversations/profile/actions/answer_question",
+    });
   });
 
-  it("reads the conversation again after a skip, and draws the skip on the person's side", async () => {
+  it("draws the skip on the person's side after a skip, from the entry the action answered (D9)", async () => {
     profileIs({ ...aFullProfile(), questions: [kubernetes] });
     const { page, eventually } = await opened();
     await eventually(() =>
@@ -620,6 +621,36 @@ describe("the person's tool use in the conversation (agent-consolidation SL7, S7
     page()?.querySelector<HTMLButtonElement>("profile-assistant [data-action=skip]")?.click();
 
     await eventually(() => expect(personSide(page)).toEqual([expect.stringMatching(/skipped/i)]));
+  });
+});
+
+/** The observer and the listeners the reveal set up go with the viewer (`ID248`). */
+describe("the viewer going (ID248)", () => {
+  it("stops following the column it revealed a region in", async () => {
+    profileIs({
+      ...aFullProfile(),
+      questions: [
+        questionOf({
+          id: "q1",
+          itemId: "chip-k8s",
+          itemTitle: "Kubernetes",
+          lead: "Which was it?",
+        }),
+      ],
+    });
+    const fixture = TestBed.createComponent(ProfileViewer);
+    fixture.componentRef.setInput("activated", { itemId: "chip-k8s" });
+    const element = fixture.nativeElement as HTMLElement;
+    await vi.waitFor(async () => {
+      fixture.detectChanges();
+      await fixture.whenStable();
+      expect(element.querySelector("[data-at]")?.getAttribute("data-at")).toBe("region");
+    });
+    const column = element.querySelector("[data-at]");
+
+    fixture.destroy();
+
+    expect(column?.hasAttribute("data-at")).toBe(false);
   });
 });
 

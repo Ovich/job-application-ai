@@ -188,7 +188,7 @@ describe("a click on a region with no question waiting (criteria 1 and 3)", () =
     (at("[data-action=clear]") as HTMLButtonElement).click();
 
     await eventually(() => expect(at("scope-tool")).toBeNull());
-    expect(at("[data-part=rule]")).toBeNull();
+    expect(at("[data-part=concern]")).toBeNull();
   });
 });
 
@@ -274,7 +274,7 @@ describe("a click on a line (the person, 2026-09-13)", () => {
     await eventually(() =>
       expect(textOf(at("profile-assistant [data-msg=person] [data-part=about]"))).toBe(where),
     );
-    expect(region("post-heig")?.querySelector("[data-part=rule]")).toBeNull();
+    expect(region("post-heig")?.querySelector("[data-part=concern]")).toBeNull();
   });
 });
 
@@ -332,7 +332,7 @@ describe("what the person writes about an item is a message naming it (S8.7)", (
     expect(about?.classList.contains("bg-send")).toBe(true);
     expect(about?.classList.contains("text-white")).toBe(true);
     expect(textOf(at("profile-assistant"))).not.toContain("This part cannot be shown here.");
-    expect(region(id)?.querySelector("[data-part=rule]")).toBeNull();
+    expect(region(id)?.querySelector("[data-part=concern]")).toBeNull();
   });
 });
 
@@ -435,7 +435,7 @@ describe("a second visit, days later (criterion 7)", () => {
           kind: "group",
           title: "DevOps and cloud",
           children: [
-            chip("chip-k8s", "Kubernetes", { rule: already, rules: [already] }),
+            chip("chip-k8s", "Kubernetes", { concern: already, concerns: [already] }),
             chip("chip-docker", "Docker"),
           ],
         }),
@@ -443,12 +443,12 @@ describe("a second visit, days later (criterion 7)", () => {
     };
   };
 
-  it("shows the profile, the rule already given, the count as it stands, and the first question still waiting", async () => {
+  it("shows the profile, the concern already given, the count as it stands, and the first question still waiting", async () => {
     profileIs(aReturn());
     const { at, page, region } = await opened();
 
     expect(at("profile-sheet")).not.toBeNull();
-    expect(textOf(region("chip-k8s")?.querySelector("[data-part=rule]"))).toBe(
+    expect(textOf(region("chip-k8s")?.querySelector("[data-part=concern]"))).toBe(
       "✓ Kubernetes: shipping to a cluster run by others",
     );
     expect(textOf(at("[data-part=count]"))).toBe("1 of 2 answered");
