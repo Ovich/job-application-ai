@@ -313,6 +313,85 @@ describe("the reading run (criterion 10, D8)", () => {
   });
 });
 
+/**
+ * What a reading pushes into the profile conversation (SL8, D34): once the profile is
+ * written, the person's profile conversation, when there is one, gets one `system` entry
+ * saying so. Read back through `GET /api/conversations/profile`, as the column reads it.
+ */
+describe("the profile conversation, told of a reading (D34)", () => {
+  const notice =
+    "Your profile was updated from your documents. Read it again before relying on it.";
+
+  type Conversation = { entries: { author: string; parts: Record<string, unknown>[] }[] };
+
+  const conversationOf = async (cookie: string): Promise<Conversation> => {
+    const answer = await app.request("/api/conversations/profile", { headers: { cookie } });
+    expect(answer.status).toBe(200);
+    return (await answer.json()) as Conversation;
+  };
+
+  const systemEntriesOf = (conversation: Conversation) =>
+    conversation.entries.filter((entry) => entry.author === "system");
+
+  /** The person's one document read, the conversation opened on it, and the document unread again. */
+  const readThenOpened = async (email: string) => {
+    const person = await signedIn(email);
+    await documentsFor(person.id, [theSet.cvEnglish.filename], storage);
+    await (await read(person.cookie)).text();
+    const opened = await conversationOf(person.cookie);
+    await testDb.update(document).set({ status: "waiting" }).where(eq(document.userId, person.id));
+    return { person, opened };
+  };
+
+  it("appends one system entry of the notice after a reading, with the conversation open", async () => {
+    const { person, opened } = await readThenOpened("notified-after-reading@example.com");
+
+    await (await read(person.cookie)).text();
+
+    const after = await conversationOf(person.cookie);
+    expect(after.entries.slice(0, opened.entries.length)).toEqual(opened.entries);
+    expect(after.entries.slice(opened.entries.length)).toEqual([
+      expect.objectContaining({ author: "system", parts: [{ kind: "notice", text: notice }] }),
+    ]);
+  });
+
+  it("writes nothing to a conversation that does not exist yet, and opens none", async () => {
+    const person = await signedIn("notified-with-no-conversation@example.com");
+    await documentsFor(person.id, [theSet.cvEnglish.filename], storage);
+
+    await (await read(person.cookie)).text();
+
+    // The first GET creates the conversation: its opening alone, no notice before it.
+    expect(systemEntriesOf(await conversationOf(person.cookie))).toEqual([]);
+  });
+
+  it("notifies nothing when the reading fails", async () => {
+    const { person, opened } = await readThenOpened("not-notified-on-failure@example.com");
+    const nothingUsable = withCases({
+      "intake.read:2026-08-30_cv_EN": { content: "No pre generated text" },
+    });
+    try {
+      await (await read(person.cookie)).text();
+    } finally {
+      nothingUsable.dispose();
+    }
+
+    expect(await statusesOf(person.id)).toEqual([["2026-08-30_cv_EN.pdf", "failed"]]);
+    expect(await conversationOf(person.cookie)).toEqual(opened);
+  });
+
+  it("notifies nothing on a run with nothing new to read", async () => {
+    const person = await signedIn("not-notified-on-nothing-new@example.com");
+    await documentsFor(person.id, [theSet.cvEnglish.filename], storage);
+    await (await read(person.cookie)).text();
+    const opened = await conversationOf(person.cookie);
+
+    await (await read(person.cookie)).text();
+
+    expect(await conversationOf(person.cookie)).toEqual(opened);
+  });
+});
+
 describe("resume is a read of the rows (criterion 11, US3)", () => {
   it("leaves the rows where the run got to when the reader walks away mid-stream", async () => {
     const person = await signedIn("walks-away@example.com");

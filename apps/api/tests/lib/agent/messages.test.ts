@@ -1,5 +1,11 @@
 import { parts } from "@app/db";
-import { AIMessage, type BaseMessage, HumanMessage, ToolMessage } from "@langchain/core/messages";
+import {
+  AIMessage,
+  type BaseMessage,
+  HumanMessage,
+  SystemMessage,
+  ToolMessage,
+} from "@langchain/core/messages";
 import { describe, expect, it } from "vitest";
 import { profileAssistant } from "../../../src/assistants/profile";
 import { asMessages as asMessagesWith } from "../../../src/lib/agent/messages";
@@ -454,5 +460,31 @@ describe("a tool_result in the catalogue (ID301)", () => {
 
     expect(parsed.success).toBe(false);
     expect(String(parsed.error)).toContain("before and after, or a refusal, or a read");
+  });
+});
+
+/** A notice under the `system` author (SL8, D34): a system message where it sits. */
+describe("a system entry's notice (D34)", () => {
+  const notice =
+    "Your profile was updated from your documents. Read it again before relying on it.";
+
+  it("renders the notice as a SystemMessage at its place, never as the person's words", () => {
+    const messages = asMessages([
+      entry("assistant", [{ kind: "text", text: "I read your 2 documents." }]),
+      entry("person", [{ kind: "text", text: "Shorten my Nexplore post." }]),
+      entry("system", [{ kind: "notice", text: notice }]),
+      entry("person", [{ kind: "text", text: "And the other one?" }]),
+    ]);
+
+    expect(messages.map((message) => message.type)).toEqual(["ai", "human", "system", "human"]);
+    expect(SystemMessage.isInstance(messages[2])).toBe(true);
+    expect(messages[2]?.content).toBe(notice);
+    expect(
+      messages.filter((message) => HumanMessage.isInstance(message)).map((m) => m.content),
+    ).toEqual(["Shorten my Nexplore post.", "And the other one?"]);
+  });
+
+  it("leaves out a system entry with no notice in it", () => {
+    expect(asMessages([entry("system", [{ kind: "text", text: "Not a notice." }])])).toEqual([]);
   });
 });

@@ -1103,3 +1103,94 @@ describe("a read, then words (D33, D37)", () => {
     ]);
   });
 });
+
+/**
+ * What changed outside the conversation, pushed into its history (SL8, D34, ID303):
+ * `notify` appends one `system` entry through the store in the agent's transaction and asks
+ * no model; the next message reads the notice as a system message where it sits.
+ */
+describe("notify (D34)", () => {
+  const notice =
+    "Your profile was updated from your documents. Read it again before relying on it.";
+  const theMessage = "Shorten the second line of my Nexplore post.";
+
+  it("appends one system entry of one notice, resolves it, and calls no model", async () => {
+    const at = await planted();
+    const conversation = await conversationOf(at.person);
+
+    const written = await agent.notify(conversation, notice);
+
+    expect(written).toMatchObject({
+      position: 3,
+      author: "system",
+      parts: [{ kind: "notice", text: notice }],
+    });
+    expect(await entries(conversation)).toEqual([
+      expect.objectContaining({ author: "assistant" }),
+      expect.objectContaining({ author: "person" }),
+      written,
+    ]);
+    expect(requestsSent()).toEqual([]);
+  });
+
+  it.each([
+    ["an empty text", ""],
+    ["a blank text", "   "],
+  ])("refuses %s and writes nothing", async (_what, text) => {
+    const at = await planted();
+    const conversation = await conversationOf(at.person);
+
+    await expect(agent.notify(conversation, text)).rejects.toThrow(/empty/);
+    expect(await entries(conversation)).toHaveLength(2);
+    expect(requestsSent()).toEqual([]);
+  });
+
+  it("writes nothing when the store fails, and throws", async () => {
+    const at = await planted();
+    const conversation = await conversationOf(at.person);
+    const failure = await failingOn(testDb, "INJECTED-FAILURE-8");
+
+    try {
+      await expect(agent.notify(conversation, "INJECTED-FAILURE-8")).rejects.toThrow(
+        /INJECTED-FAILURE-8/,
+      );
+    } finally {
+      await failure.dispose();
+    }
+    expect(await entries(conversation)).toHaveLength(2);
+  });
+
+  it("sends the notice as a system message at its place, and the last user message is unchanged", async () => {
+    const at = await planted();
+    const conversation = await conversationOf(at.person);
+    await agent.notify(conversation, notice);
+    const cases = withCases({
+      [`notice:${conversation.id}`]: {
+        stands_for: "the person's message, answered past the notice",
+        answers: theMessage,
+        content: "Which words should go?",
+      },
+    });
+
+    // What the mock answered is read before the cases are disposed of, which forgets it.
+    let ran: { said: Ran[]; thrown: unknown };
+    let answered: ReturnType<typeof requestsAnswered>;
+    try {
+      ran = await ranThrough(agent.run(profileAssistant, conversation, at.person));
+      answered = [...requestsAnswered()];
+    } finally {
+      cases.dispose();
+    }
+
+    expect(ran.thrown).toBeUndefined();
+    expect(textOf(ran.said)).toBe("Which words should go?");
+    expect(requestsSent()).toHaveLength(1);
+    expect(bodyOf(0).messages.slice(1)).toEqual([
+      { role: "assistant", content: "I read your 1 document." },
+      { role: "user", content: theMessage },
+      { role: "system", content: notice },
+    ]);
+    expect(answered.at(-1)).toMatchObject({ lastUserMessage: theMessage });
+    expect(answered.at(-1)?.picked).not.toBeNull();
+  });
+});

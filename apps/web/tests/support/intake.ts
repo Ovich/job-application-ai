@@ -374,7 +374,7 @@ const uploadIn = (body: unknown): { filename?: string; address?: string } => {
 export type Entry = {
   id: string;
   position: number;
-  author: "person" | "assistant" | "tool";
+  author: "person" | "assistant" | "tool" | "system";
   parts: { kind: string; [key: string]: unknown }[];
   createdAt: string;
 };

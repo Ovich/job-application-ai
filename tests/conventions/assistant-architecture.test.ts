@@ -103,6 +103,19 @@ describe("who builds the conversation agent (SL5f, rule 7)", () => {
     expect(reaching).toEqual([]);
   });
 
+  // SL8, D34: the reading notifies through the agent, handed over as the conversations
+  // routes are handed it.
+  it("has the intake routes built from the agent app.ts holds, and the reading build none", () => {
+    expect(codeOf(join(api, "app.ts"))).toMatch(/\.route\("\/intake", intakeOf\(agent\b/);
+    expect(codeOf(join(api, "routes/intake.ts"))).toMatch(
+      /export const intakeOf = \(agent: ConversationsAgent\b/,
+    );
+    expect(codeOf(join(api, "handlers/reading.ts"))).toMatch(
+      /export const readDocuments = \(agent: ConversationsAgent\b/,
+    );
+    expect(codeOf(join(api, "routes/intake.ts"))).not.toMatch(/export const intake\b/);
+  });
+
   it("has the person-side contract in lib/assistant, and lib/agent name none of it", () => {
     const contract = codeOf(join(api, "lib/assistant/index.ts"));
     for (const named of ["NotYet", "Refused", "AgentAction", "About", "opening", "actions"]) {

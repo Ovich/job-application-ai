@@ -107,6 +107,32 @@ describe("appending to a conversation (S2.1)", () => {
   });
 });
 
+describe("a notice under the system author (SL8, D34)", () => {
+  it("stores a system entry of one notice part, and reads it back as written", async () => {
+    const person = await aPerson();
+    const conversation = await open(person, "profile", null, async () => opening);
+    const said = [{ kind: "notice" as const, text: "Your profile was updated." }];
+
+    const written = await testDb.transaction((tx) => append(tx, conversation, "system", said));
+
+    expect(written).toMatchObject({ position: 2, author: "system", parts: said });
+    const [, second] = await entries(conversation);
+    expect(second).toMatchObject({ position: 2, author: "system", parts: said });
+  });
+
+  it("refuses a notice with no text, and writes nothing", async () => {
+    const person = await aPerson();
+    const conversation = await open(person, "profile", null, async () => opening);
+
+    await expect(
+      testDb.transaction((tx) =>
+        append(tx, conversation, "system", [{ kind: "notice", text: "" }] as never),
+      ),
+    ).rejects.toThrow();
+    expect(await entries(conversation)).toHaveLength(1);
+  });
+});
+
 describe("deleting the account (US5)", () => {
   it("takes the conversation and its entries, so opening again creates it afresh", async () => {
     const person = await aPerson();

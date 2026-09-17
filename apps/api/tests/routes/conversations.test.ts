@@ -128,6 +128,28 @@ describe("opening the profile's conversation (US8)", () => {
   });
 });
 
+describe("a system entry (SL8, D34)", () => {
+  it("answers a notice the agent wrote like any other entry, in its place", async () => {
+    const person = await signedIn("conversation-notified@example.com");
+    const opened = await get("/api/conversations/profile", person.cookie);
+    const notice = "Your profile was updated from your documents.";
+    await agentOn().notify(
+      { id: opened.body.id, userId: person.id, assistant: "profile", subject: null },
+      notice,
+    );
+
+    const { status, body } = await get("/api/conversations/profile", person.cookie);
+
+    expect(status).toBe(200);
+    expect(
+      body.entries.map(({ position, author, parts }) => ({ position, author, parts })),
+    ).toEqual([
+      { position: 1, author: "assistant", parts: [expect.objectContaining({ kind: "text" })] },
+      { position: 2, author: "system", parts: [{ kind: "notice", text: notice }] },
+    ]);
+  });
+});
+
 describe("somebody else (US5)", () => {
   it("opens their own conversation, holding none of the first person's entries", async () => {
     const first = await signedIn("conversation-first@example.com");
