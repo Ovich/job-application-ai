@@ -1,6 +1,4 @@
 import { describe, expect, it } from "vitest";
-import { app } from "../../../src/app";
-import { withCases } from "../../support/ai";
 import {
   anthropicEvent,
   anthropicWhole,
@@ -8,6 +6,7 @@ import {
   openAiChunk,
   openAiWhole,
 } from "../../support/envelopes";
+import { request, withCases } from "./model";
 
 /**
  * Seam A, the envelopes' half: a recorded answer that calls a tool (`S4.1`, `ID190`).
@@ -40,12 +39,12 @@ const recorded = {
 };
 
 const ask = (path: string, body: object, pace = "tps=1000;chunk=1") =>
-  app.request(`/mock/v1${path}`, {
+  request(path, {
     method: "POST",
     headers: {
       "content-type": "application/json",
-      "X-Jobapp-Case": step,
-      "X-Jobapp-Mock-Pace": pace,
+      "x-mock-case": step,
+      "x-mock-pace": pace,
     },
     body: JSON.stringify({ model: "m", messages: [], ...body }),
   });

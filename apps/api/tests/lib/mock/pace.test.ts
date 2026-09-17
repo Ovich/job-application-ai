@@ -41,13 +41,11 @@ describe("a pace read from its four names", () => {
   });
 
   it("falls back whole when nothing is asked for", () => {
-    expect(paceOf(new Headers(), "X-Jobapp-Mock-Pace", defaultPace)).toEqual(defaultPace);
+    expect(paceOf(new Headers(), "x-mock-pace", defaultPace)).toEqual(defaultPace);
   });
 
   it("reads the request's own header when it carries one", () => {
-    expect(
-      paceOf(new Headers({ "X-Jobapp-Mock-Pace": "tps=0" }), "X-Jobapp-Mock-Pace", defaultPace),
-    ).toEqual({
+    expect(paceOf(new Headers({ "x-mock-pace": "tps=0" }), "x-mock-pace", defaultPace)).toEqual({
       ...defaultPace,
       tokensPerSecond: 0,
     });
@@ -55,7 +53,7 @@ describe("a pace read from its four names", () => {
 });
 
 /**
- * The chunking, at the level below the wire. The router's own tests prove the envelopes;
+ * The chunking, at the level below the wire. The mock's own tests prove the envelopes;
  * this proves the one thing both envelopes rest on, and proves it on the awkward
  * content — runs of spaces, a newline, an empty answer — that a split-and-join gets
  * wrong quietly.

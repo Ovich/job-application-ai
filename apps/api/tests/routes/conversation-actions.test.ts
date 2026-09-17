@@ -50,7 +50,7 @@ const { testDb } = await import("../support/database");
 const { app } = await import("../../src/app");
 const { cookiesSetBy, signInThrough, signedInAs } = await import("../support/sign-in");
 const { documentsFor, theSet } = await import("../support/documents");
-const { forgetRequests, requestsSent, withCases } = await import("../support/ai");
+const { forgetRequests, requestsAnswered, requestsSent, withCases } = await import("../support/ai");
 const { conversationsOf } = await import("../../src/routes/conversations");
 const { profileAssistant } = await import("../../src/assistants/profile");
 const { itemNamed } = await import("../support/intake");
@@ -529,6 +529,41 @@ describe("a tool used is a message to the agent (D31, ID291)", () => {
       "person",
       "assistant",
     ]);
+  });
+
+  /**
+   * `ID292`: no case is written for a conversation, whose id changes on every run, so the
+   * mock answers by the exact message the decision became. The shipped answers, no case of
+   * this test's own: the preset CV read alone, its Java question answered `Earlier work`.
+   */
+  it("streams the reply written for the preset CV's Java question answered with `Earlier work`", async () => {
+    const person = await signedIn("java-earlier-work@example.com");
+    await documentsFor(person.id, [theSet.cvEnglish.filename], storage);
+    await (
+      await app.request("/api/intake/read", { method: "POST", headers: { cookie: person.cookie } })
+    ).text();
+    const question = about(await profileOf(person.cookie), "Java");
+    const picked = question.options.find((option) => option.label === "Earlier work");
+    const written =
+      "Java, before HEIG-VD, in professional work: noted. I will keep it as earlier experience and not tie it to the CIIP platform. If you remember the employer or the kind of system, say so and I will place it with that post.";
+
+    const response = await answer(person.cookie, question.id, { optionId: picked?.id });
+
+    expect(picked).toBeDefined();
+    expect(response.status).toBe(200);
+    expect(shapeOf(response.leaves)).toEqual(["entry", "status", "text", "entry", "done"]);
+    expect(
+      response.leaves
+        .filter((leaf) => leaf.kind === "text")
+        .map((leaf) => leaf.text)
+        .join(""),
+    ).toBe(written);
+    expect(response.leaves.at(-2)?.entry).toMatchObject({
+      author: "assistant",
+      parts: [{ kind: "text", text: written }],
+    });
+    // The mock's own evidence: picked by the message, the file's path its id.
+    expect(requestsAnswered().at(-1)?.picked).toBe("profile/java-earlier-work");
   });
 
   it("keeps the answer written and ends on the error frame when the model fails mid-stream", async () => {

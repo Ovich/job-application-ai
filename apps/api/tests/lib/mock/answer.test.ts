@@ -1,6 +1,4 @@
 import { describe, expect, it, vi } from "vitest";
-import { app } from "../../../src/app";
-import { withCases } from "../../support/ai";
 import {
   anthropicEvent,
   anthropicWhole,
@@ -8,11 +6,11 @@ import {
   openAiChunk,
   openAiWhole,
 } from "../../support/envelopes";
+import { request, withCases } from "./model";
 
 /**
- * Seam B: the mock's router, reached the way HTTP reaches it, through the application's
- * own handler. Behind it are the fixture files and nothing else; the fixtures' contents
- * are not tested here, because they are data.
+ * Seam B: the mock, reached the way a client reaches it, through `ModelMock.fetch` and
+ * no application (`ID295`). Behind it are the answers a test gives it and nothing else.
  *
  * One case answers on both paths, and the two answers carry the same text in different
  * wrappers. That is the whole of decision D11: the difference between the protocols is
@@ -21,7 +19,7 @@ import {
  */
 
 // A run over one of the person's own documents. The step is `read` and there is no
-// other, because a run is one call now (`ID157`); what the content says is the router's
+// other, because a run is one call now (`ID157`); what the content says is the mock's
 // business only in that it comes back byte for byte in either envelope.
 const cvFr = "intake.read:2026-08-30_cv_FR" as const;
 const content = '{"items":[],"candidates":[]}';
@@ -36,9 +34,9 @@ const recorded = {
 
 /** A request as a client of either protocol sends it: the case in the header, JSON in. */
 const askFor = (path: string, body: unknown, headers: Record<string, string> = {}) =>
-  app.request(`/mock/v1${path}`, {
+  request(path, {
     method: "POST",
-    headers: { "content-type": "application/json", "X-Jobapp-Case": cvFr, ...headers },
+    headers: { "content-type": "application/json", "x-mock-case": cvFr, ...headers },
     body: JSON.stringify(body),
   });
 
@@ -90,7 +88,7 @@ describe("a recorded case, whole", () => {
  */
 describe("a case nobody recorded (ID166)", () => {
   const placeholder = "No pre generated text";
-  const missed = { "X-Jobapp-Case": "intake.read:no-such-document" };
+  const missed = { "x-mock-case": "intake.read:no-such-document" };
 
   it("answers the placeholder in the OpenAI envelope, and logs the case asked for", async () => {
     const cases = withCases(recorded);
@@ -113,7 +111,7 @@ describe("a case nobody recorded (ID166)", () => {
     const cases = withCases(recorded);
     const logged = vi.spyOn(console, "warn").mockImplementation(() => {});
     try {
-      const answer = await app.request("/mock/v1/chat/completions", {
+      const answer = await request("/chat/completions", {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ model: "m", messages: [] }),
@@ -150,7 +148,7 @@ describe("a case nobody recorded (ID166)", () => {
     const cases = withCases(recorded);
     const logged = vi.spyOn(console, "warn").mockImplementation(() => {});
     try {
-      const streamed = { "X-Jobapp-Mock-Pace": "tps=1000;chunk=1", ...missed };
+      const streamed = { "x-mock-pace": "tps=1000;chunk=1", ...missed };
       const openAi = await askFor(
         "/chat/completions",
         { model: "m", messages: [], stream: true },

@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { app } from "../../../src/app";
-import { withCases } from "../../support/ai";
 import { anthropicEvent, framesOf, openAiChunk } from "../../support/envelopes";
+import { request, withCases } from "./model";
 
 /**
  * Streaming, which is the protocol's own `stream: true` and not an endpoint of ours.
@@ -35,12 +34,12 @@ const recorded = {
 
 /** A streamed request, with an optional pace asked for the way a provider would ignore. */
 const stream = (path: string, pace?: string) =>
-  app.request(`/mock/v1${path}`, {
+  request(path, {
     method: "POST",
     headers: {
       "content-type": "application/json",
-      "X-Jobapp-Case": cvFr,
-      ...(pace === undefined ? {} : { "X-Jobapp-Mock-Pace": pace }),
+      "x-mock-case": cvFr,
+      ...(pace === undefined ? {} : { "x-mock-pace": pace }),
     },
     body: JSON.stringify({ model: "m", messages: [], stream: true }),
   });
@@ -71,9 +70,9 @@ describe("the OpenAI stream", () => {
 
 describe("the OpenAI stream's usage (D29)", () => {
   const asking = (body: object) =>
-    app.request("/mock/v1/chat/completions", {
+    request("/chat/completions", {
       method: "POST",
-      headers: { "content-type": "application/json", "X-Jobapp-Case": cvFr },
+      headers: { "content-type": "application/json", "x-mock-case": cvFr },
       body: JSON.stringify({ model: "m", messages: [], stream: true, ...body }),
     });
 
