@@ -1,10 +1,12 @@
 import type { AIMessageChunk } from "@langchain/core/messages";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { z } from "zod";
+import { createChatModel } from "../../../src/lib/ai/client";
 import {
   aiThroughTheApp,
   chatModelThroughTheApp,
   forgetRequests,
+  recordingFetch,
   requestsSent,
   withCases,
 } from "../../support/ai";
@@ -445,6 +447,38 @@ describe("chatModel", () => {
       expect.objectContaining({ id: "call_1", name: "edit_profile", args: botched }),
     ]);
     expect(requestsSent()[0]?.headers["x-jobapp-case"]).toBe(step);
+  });
+
+  // A model name the library would send to the Responses API (`ID281`): the class keeps
+  // it on chat completions, the one path the mock and every compatible endpoint serve.
+  it("keeps a model name ChatOpenAI would route away on the chat-completions path", async () => {
+    const cases = withCases({ [step]: { stands_for: "a reply", content: said } });
+    const urls: string[] = [];
+    const model = createChatModel({
+      baseUrl: "http://api.test/mock/v1",
+      apiKey: "the-mock-ignores-this",
+      model: "gpt-5.2-pro",
+      fetch: (input, init) => {
+        urls.push(new Request(input, init).url);
+        return recordingFetch(input, init);
+      },
+    });
+    let answer: AIMessageChunk | undefined;
+    try {
+      // The call options' type does not name the field (see `streamed`).
+      const callOptions = { headers: { "X-Jobapp-Case": step } } as Parameters<
+        typeof model.stream
+      >[1];
+      for await (const chunk of await model.stream([{ role: "user", content: "?" }], callOptions)) {
+        answer = answer === undefined ? chunk : answer.concat(chunk);
+      }
+    } finally {
+      cases.dispose();
+    }
+
+    expect(urls).toEqual(["http://api.test/mock/v1/chat/completions"]);
+    expect(requestsSent()[0]?.body).toMatchObject({ model: "gpt-5.2-pro", stream: true });
+    expect(answer?.content).toBe(said);
   });
 });
 

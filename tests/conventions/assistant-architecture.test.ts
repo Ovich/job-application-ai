@@ -108,6 +108,53 @@ describe("the API core reads no profile (SL4, D10 to D12)", () => {
   });
 });
 
+describe("the LangChain packages' import boundary (langgraph-agent SL4, spec 3.1)", () => {
+  /** The API files, as `apps/api/src/...`, whose imports include one `specifier` matches. */
+  const importers = (specifier: RegExp): string[] =>
+    sources(api)
+      .filter((file) => importsOf(file).some((it) => specifier.test(it)))
+      .map(name);
+
+  const outside = (files: string[], ...dirs: string[]) =>
+    files.filter((file) => !dirs.some((dir) => file.startsWith(`apps/api/src/${dir}/`)));
+
+  it("has langchain and @langchain/langgraph imported by lib/agent alone", () => {
+    const reaching = importers(/^(langchain|@langchain\/langgraph)(\/|$)/);
+    expect(reaching).toContain("apps/api/src/lib/agent/index.ts");
+    expect(outside(reaching, "lib/agent")).toEqual([]);
+  });
+
+  it("has @langchain/core/tools imported by lib/agent alone", () => {
+    const reaching = importers(/^@langchain\/core\/tools$/);
+    expect(reaching).toContain("apps/api/src/lib/agent/index.ts");
+    expect(outside(reaching, "lib/agent")).toEqual([]);
+  });
+
+  it("has @langchain/core/messages imported by lib/agent and lib/conversation alone", () => {
+    const reaching = importers(/^@langchain\/core\/messages$/);
+    expect(reaching).toEqual(
+      expect.arrayContaining([
+        "apps/api/src/lib/agent/index.ts",
+        "apps/api/src/lib/conversation/index.ts",
+      ]),
+    );
+    expect(outside(reaching, "lib/agent", "lib/conversation")).toEqual([]);
+  });
+
+  it("has no assistant, handler or route import a langchain or @langchain package", () => {
+    const reaching = importers(/^(langchain|@langchain\/)/);
+    expect(
+      reaching.filter((file) => /^apps\/api\/src\/(assistants|handlers|routes)\//.test(file)),
+    ).toEqual([]);
+  });
+
+  it("has handlers/conversations import no lib/ai", () => {
+    const reached = importsOf(join(api, "handlers/conversations.ts"));
+    expect(reached.length).toBeGreaterThan(0);
+    expect(reached.filter((it) => /\/lib\/ai(\/|$)/.test(it))).toEqual([]);
+  });
+});
+
 describe("the documents service (SL6, D15)", () => {
   it("is the only caller of api.intake.documents and api.intake.read", () => {
     expect(matching(/api\.intake\.(documents|read)\b/, web)).toEqual([

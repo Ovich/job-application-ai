@@ -577,6 +577,90 @@ describe("failures (US6, the spec's Failure modes)", () => {
       "Shipped the developer platform.",
     );
   });
+
+  /**
+   * Arguments that are not JSON fail the message as the loop did (migration `O6`, spec
+   * section 7, `ID283`): arguments that are not JSON at all, which the library files as
+   * invalid, and arguments cut short, which it reads as partial JSON and hands on as a call.
+   */
+  it.each([
+    ["not JSON at all", (post: string) => `{"itemId": ${post}}`],
+    ["cut short", (post: string) => `{"itemId": "${post.slice(0, 8)}`],
+  ])(
+    "writes nothing of a step whose call's arguments are %s, and throws naming the case",
+    async (_shape, botched) => {
+      const at = await planted();
+      const conversation = await conversationOf(at.person);
+      const before = await standing(at.person, at.post);
+      const cases = withCases({
+        [stepOf(conversation, 1)]: {
+          stands_for: "a call the model botched",
+          content: "I will change it.",
+          tool_calls: [{ id: "call_1", name: "edit_profile", arguments: botched(at.post) }],
+        },
+        [stepOf(conversation, 2)]: { stands_for: "never asked", content: "Done." },
+      });
+
+      let ran: { said: Ran[]; thrown: unknown };
+      try {
+        ran = await ranThrough(run(profileAssistant, conversation, at.person));
+      } finally {
+        cases.dispose();
+      }
+
+      expect(String(ran.thrown)).toContain(stepOf(conversation, 1));
+      expect(String(ran.thrown)).toMatch(/not JSON/);
+      expect(entriesOf(ran.said)).toEqual([]);
+      expect(requestsSent()).toHaveLength(1);
+      expect(await standing(at.person, at.post)).toEqual(before);
+      expect((await entries(conversation)).map((entry) => entry.author)).toEqual([
+        "assistant",
+        "person",
+      ]);
+    },
+  );
+});
+
+/**
+ * The case header per model call (D22, D26, `ID282`): the graph streams, so the header
+ * must reach the streamed request, and each call names its own step.
+ */
+describe("the case header (D22, D26)", () => {
+  it("names each step on its own streamed model call", async () => {
+    const at = await planted();
+    const conversation = await conversationOf(at.person);
+    const cases = withCases({
+      [stepOf(conversation, 1)]: {
+        stands_for: "an edit",
+        content: "I will change the title.",
+        tool_calls: [
+          {
+            id: "call_1",
+            name: "edit_profile",
+            arguments: {
+              itemId: at.post,
+              operations: [{ op: "set", field: "title", value: "Staff engineer" }],
+            },
+          },
+        ],
+      },
+      [stepOf(conversation, 2)]: { stands_for: "the reply", content: "Done." },
+    });
+    try {
+      await ranThrough(run(profileAssistant, conversation, at.person));
+    } finally {
+      cases.dispose();
+    }
+
+    expect(requestsSent().map((sent) => sent.headers["x-jobapp-case"])).toEqual([
+      stepOf(conversation, 1),
+      stepOf(conversation, 2),
+    ]);
+    expect(requestsSent().map((sent) => (sent.body as { stream?: boolean }).stream)).toEqual([
+      true,
+      true,
+    ]);
+  });
 });
 
 /**
