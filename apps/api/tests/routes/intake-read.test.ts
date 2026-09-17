@@ -43,9 +43,8 @@ vi.mock("../../src/lib/storage", async (importOriginal) => ({
 // asserted and how "no provider is reached from anywhere" is held.
 vi.mock("../../src/lib/ai", async (importOriginal) => {
   const real = await importOriginal<typeof import("../../src/lib/ai")>();
-  const { aiThroughTheApp } = await import("../support/ai");
-  const ai = aiThroughTheApp();
-  return { ...real, ask: ai.ask, askStreaming: ai.askStreaming, askFor: ai.askFor };
+  const { askForThroughTheApp } = await import("../support/ai");
+  return { ...real, askFor: askForThroughTheApp() };
 });
 
 const { testDb } = await import("../support/database");

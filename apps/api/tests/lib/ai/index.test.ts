@@ -1,9 +1,9 @@
-import type { AIMessageChunk } from "@langchain/core/messages";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { type AIMessageChunk, HumanMessage } from "@langchain/core/messages";
+import { afterEach, describe, expect, it } from "vitest";
 import { z } from "zod";
 import { createChatModel } from "../../../src/lib/ai/client";
 import {
-  aiThroughTheApp,
+  askForThroughTheApp,
   chatModelThroughTheApp,
   forgetRequests,
   recordingFetch,
@@ -35,144 +35,11 @@ const cvFr = "intake.read:2026-08-30_cv_FR" as const;
  * literal rather than against the client's own arithmetic.
  */
 const aboutCvFr = { feature: "intake", step: "read", input: "2026-08-30_cv_FR" };
-const aboutNothingRecorded = { feature: "intake", step: "read", input: "never-recorded" };
 
 const content = '{"kind":"cv","language":"fr","confidence":0.97}';
 
 afterEach(() => {
   forgetRequests();
-});
-
-describe("a call through lib/ai", () => {
-  it("carries the case header, set by the module and not by the caller", async () => {
-    const cases = withCases({ [cvFr]: { stands_for: "a CV", content, tool_calls: [] } });
-    try {
-      await aiThroughTheApp().ask([{ role: "user", content: "read this" }], aboutCvFr);
-    } finally {
-      cases.dispose();
-    }
-
-    const [sent] = requestsSent();
-    expect(sent?.headers["x-jobapp-case"]).toBe(cvFr);
-  });
-
-  /**
-   * Criterion 3, and the forbidden edge it defends: `lib/ai` holds no provider branch,
-   * so the body it sends is the protocol's own fields and nothing else. A field only
-   * the double would understand is exactly what would make a real run diverge from a
-   * mocked one, and it would be found in production rather than here.
-   */
-  it("sends a body of protocol fields only, nothing a provider would reject", async () => {
-    const cases = withCases({ [cvFr]: { stands_for: "a CV", content, tool_calls: [] } });
-    try {
-      await aiThroughTheApp().ask([{ role: "user", content: "read this" }], aboutCvFr);
-    } finally {
-      cases.dispose();
-    }
-
-    const [sent] = requestsSent();
-    expect(Object.keys(sent?.body as object).sort()).toEqual(["messages", "model"]);
-    expect(sent?.body).toMatchObject({
-      model: "mock-model",
-      messages: [{ role: "user", content: "read this" }],
-    });
-  });
-
-  it("answers a recorded case with that case's content", async () => {
-    const cases = withCases({ [cvFr]: { stands_for: "a CV", content, tool_calls: [] } });
-    try {
-      const answer = await aiThroughTheApp().ask(
-        [{ role: "user", content: "read this" }],
-        aboutCvFr,
-      );
-
-      expect(answer).toBe(content);
-    } finally {
-      cases.dispose();
-    }
-  });
-
-  // A miss answers the mock's placeholder since `ID166`; the case asked for is named in
-  // the mock's log rather than in the answer.
-  it("throws on a case nobody recorded, naming the case asked for", async () => {
-    const cases = withCases({ [cvFr]: { stands_for: "a CV", content, tool_calls: [] } });
-    const logged = vi.spyOn(console, "warn").mockImplementation(() => {});
-    try {
-      await expect(
-        aiThroughTheApp().ask([{ role: "user", content: "?" }], aboutNothingRecorded),
-      ).resolves.toBe("No pre generated text");
-      expect(String(logged.mock.calls[0]?.[0])).toMatch(/intake\.read:never-recorded/);
-    } finally {
-      logged.mockRestore();
-      cases.dispose();
-    }
-  });
-});
-
-/**
- * Streaming, as a step meets it: an async iterable of pieces. That it is the protocol's
- * own `stream: true` and not an endpoint of ours is what makes the same code work
- * against the double and against a provider, so the only thing asserted here is what a
- * caller sees — more than one piece, and the same answer as the whole one.
- */
-describe("askStreaming", () => {
-  const long = "A CV in French, read once. Nothing was folded away and nothing was inferred.";
-
-  it("yields the recorded content in pieces that join to the whole answer", async () => {
-    const cases = withCases({ [cvFr]: { stands_for: "a CV", content: long } });
-    try {
-      const ai = aiThroughTheApp();
-      const pieces: string[] = [];
-      for await (const piece of ai.askStreaming(
-        [{ role: "user", content: "read this" }],
-        aboutCvFr,
-      )) {
-        pieces.push(piece);
-      }
-
-      expect(pieces.join("")).toBe(long);
-      expect(pieces.join("")).toBe(
-        await ai.ask([{ role: "user", content: "read this" }], aboutCvFr),
-      );
-    } finally {
-      cases.dispose();
-    }
-  });
-
-  it("asks for the stream with the protocol's own field, and still nothing else", async () => {
-    const cases = withCases({ [cvFr]: { stands_for: "a CV", content: long } });
-    try {
-      for await (const _ of aiThroughTheApp().askStreaming(
-        [{ role: "user", content: "?" }],
-        aboutCvFr,
-      ));
-    } finally {
-      cases.dispose();
-    }
-
-    const [sent] = requestsSent();
-    expect(Object.keys(sent?.body as object).sort()).toEqual(["messages", "model", "stream"]);
-    expect(sent?.headers["x-jobapp-case"]).toBe(cvFr);
-  });
-
-  // A miss streams the mock's placeholder since `ID166`.
-  it("throws on a case nobody recorded, before a single piece is yielded", async () => {
-    const cases = withCases({ [cvFr]: { stands_for: "a CV", content: long } });
-    const logged = vi.spyOn(console, "warn").mockImplementation(() => {});
-    try {
-      const pieces: string[] = [];
-      for await (const piece of aiThroughTheApp().askStreaming(
-        [{ role: "user", content: "?" }],
-        aboutNothingRecorded,
-      )) {
-        pieces.push(piece);
-      }
-      expect(pieces.join("")).toBe("No pre generated text");
-    } finally {
-      logged.mockRestore();
-      cases.dispose();
-    }
-  });
 });
 
 /**
@@ -367,11 +234,7 @@ describe("askFor", () => {
   it("parses the answer into the shape asked for", async () => {
     const cases = withCases({ [cvFr]: { stands_for: "a CV", content, tool_calls: [] } });
     try {
-      const read = await aiThroughTheApp().askFor(
-        [{ role: "user", content: "?" }],
-        aboutCvFr,
-        shape,
-      );
+      const read = await askForThroughTheApp()([new HumanMessage("?")], aboutCvFr, shape);
 
       expect(read).toEqual({ kind: "cv", language: "fr" });
     } finally {
@@ -385,7 +248,7 @@ describe("askFor", () => {
     });
     try {
       await expect(
-        aiThroughTheApp().askFor([{ role: "user", content: "?" }], aboutCvFr, shape),
+        askForThroughTheApp()([new HumanMessage("?")], aboutCvFr, shape),
       ).rejects.toThrow();
     } finally {
       cases.dispose();
@@ -398,7 +261,7 @@ describe("askFor", () => {
     });
     try {
       await expect(
-        aiThroughTheApp().askFor([{ role: "user", content: "?" }], aboutCvFr, shape),
+        askForThroughTheApp()([new HumanMessage("?")], aboutCvFr, shape),
       ).rejects.toThrow();
     } finally {
       cases.dispose();

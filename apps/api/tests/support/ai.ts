@@ -6,7 +6,7 @@ import { ChatOpenAICompletions } from "@langchain/openai";
 // route that calls `lib/ai` stands that index in through `vi.mock`, whose factory
 // reaches this file; importing the index here would put this module inside the graph of
 // the module it is standing in for, and the two would wait on each other for ever.
-import { type AiConfig, createAi, createChatModel } from "../../src/lib/ai/client";
+import { type AiConfig, createAskFor, createChatModel } from "../../src/lib/ai/client";
 import { type RecordedCaseFile, withAnswersFrom } from "../../src/lib/mock";
 
 /**
@@ -68,13 +68,14 @@ const throughTheApp: AiConfig = {
   fetch: recordingFetch,
 };
 
-export const aiThroughTheApp = () => createAi(throughTheApp);
-
 /**
- * The agent's chat model (ID274): `createChatModel` on the same configuration and the
- * same recording fetch as `aiThroughTheApp`.
+ * The chat model (ID274): `createChatModel` on the configuration above and its recording
+ * fetch.
  */
 export const chatModelThroughTheApp = () => createChatModel(throughTheApp);
+
+/** The reading's call (D30): `createAskFor` on `chatModelThroughTheApp()`. */
+export const askForThroughTheApp = () => createAskFor(chatModelThroughTheApp());
 
 /**
  * A chat model whose request for the case ending in `at` fails mid-stream (D25, ID274):

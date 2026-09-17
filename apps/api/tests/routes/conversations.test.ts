@@ -32,14 +32,11 @@ vi.mock("../../src/lib/storage", async (importOriginal) => ({
 
 vi.mock("../../src/lib/ai", async (importOriginal) => {
   const real = await importOriginal<typeof import("../../src/lib/ai")>();
-  const { aiThroughTheApp, chatModelThroughTheApp, failingMidStream } =
+  const { askForThroughTheApp, chatModelThroughTheApp, failingMidStream } =
     await import("../support/ai");
-  const ai = aiThroughTheApp();
   return {
     ...real,
-    ask: ai.ask,
-    askStreaming: ai.askStreaming,
-    askFor: ai.askFor,
+    askFor: askForThroughTheApp(),
     // The agent's model (D25): a call that fails mid-stream, one piece then the throw, when
     // a case says so. A definition's graph keeps the model it was built with, so such a
     // case answers through a definition built while `objects.failing` is set.

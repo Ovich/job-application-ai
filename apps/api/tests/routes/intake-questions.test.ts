@@ -41,9 +41,8 @@ vi.mock("../../src/lib/storage", async (importOriginal) => ({
 
 vi.mock("../../src/lib/ai", async (importOriginal) => {
   const real = await importOriginal<typeof import("../../src/lib/ai")>();
-  const { aiThroughTheApp } = await import("../support/ai");
-  const ai = aiThroughTheApp();
-  return { ...real, ask: ai.ask, askStreaming: ai.askStreaming, askFor: ai.askFor };
+  const { askForThroughTheApp } = await import("../support/ai");
+  return { ...real, askFor: askForThroughTheApp() };
 });
 
 const { app } = await import("../../src/app");

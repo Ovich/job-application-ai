@@ -130,22 +130,32 @@ describe("the LangChain packages' import boundary (langgraph-agent SL4, SL5, spe
     expect(outside(reaching, "lib/agent")).toEqual([]);
   });
 
-  it("has @langchain/core/messages imported by lib/agent and lib/conversation alone", () => {
+  // SL5b, D30: the reading builds the LangChain messages `askFor` takes.
+  const reading = "apps/api/src/handlers/reading.ts";
+
+  it("has @langchain/core/messages imported by lib/agent, lib/conversation, lib/ai and the reading alone", () => {
     const reaching = importers(/^@langchain\/core\/messages$/);
     expect(reaching).toEqual(
       expect.arrayContaining([
         "apps/api/src/lib/agent/index.ts",
         "apps/api/src/lib/conversation/index.ts",
+        "apps/api/src/lib/ai/client.ts",
+        reading,
       ]),
     );
-    expect(outside(reaching, "lib/agent", "lib/conversation")).toEqual([]);
+    expect(
+      outside(reaching, "lib/agent", "lib/conversation", "lib/ai").filter((it) => it !== reading),
+    ).toEqual([]);
   });
 
-  it("has no assistant, handler or route import a langchain or @langchain package", () => {
+  it("has no assistant, handler or route import a langchain or @langchain package, the reading's messages aside", () => {
     const reaching = importers(/^(langchain|@langchain\/)/);
     expect(
       reaching.filter((file) => /^apps\/api\/src\/(assistants|handlers|routes)\//.test(file)),
-    ).toEqual([]);
+    ).toEqual([reading]);
+    expect(
+      importsOf(join(root, reading)).filter((it) => /^(langchain|@langchain\/)/.test(it)),
+    ).toEqual(["@langchain/core/messages"]);
   });
 
   it("has handlers/conversations import no lib/ai", () => {
@@ -168,8 +178,8 @@ describe("the LangChain packages' import boundary (langgraph-agent SL4, SL5, spe
     expect(reached.filter((it) => /(^|\/)ai(\/|$)/.test(it))).toEqual([]);
   });
 
-  // SL5, D24: lib/ai's public face is the spec's 3.1 list, the loop's names gone.
-  it("has lib/ai export the spec's list and nothing else", () => {
+  // SL5b, D30: lib/ai's public face is D30's list; the openai client's names are gone.
+  it("has lib/ai export D30's list and nothing else", () => {
     const code = codeOf(join(api, "lib/ai/index.ts"));
     const exported = [
       ...[...code.matchAll(/export const (\w+)/g)].map(([, it]) => it),
@@ -182,18 +192,14 @@ describe("the LangChain packages' import boundary (langgraph-agent SL4, SL5, spe
     ];
     expect(exported.sort()).toEqual(
       [
-        "createAi",
-        "ask",
-        "askStreaming",
-        "askFor",
+        "About",
+        "AiConfig",
         "createChatModel",
         "chatModel",
+        "createAskFor",
+        "askFor",
         "answeredInProcessBy",
         "answeringOwnAddress",
-        "About",
-        "Ai",
-        "AiConfig",
-        "Message",
         "Fetch",
         "OwnAddress",
       ].sort(),
