@@ -18,7 +18,13 @@ vi.mock("../../src/lib/db", async () => ({
 
 const { profileAssistant } = await import("../../src/assistants/profile");
 
-type Written = { case?: string; answers?: string; content: string; tool_calls?: unknown[] };
+type Written = {
+  case?: string;
+  answers?: string;
+  content?: string;
+  tool_calls?: { name: string; arguments: unknown }[];
+  then?: { content?: string; tool_calls?: unknown[] };
+};
 
 const written = (file: string): Written =>
   JSON.parse(readFileSync(join(mockAnswers, file), "utf8")) as Written;
@@ -92,7 +98,8 @@ describe("the answers this project ships", () => {
       );
       const body = (await response.json()) as { choices: { message: { content: string } }[] };
 
-      expect(body.choices[0]?.message.content).toBe(answer.content);
+      // A chain answers its call first, without words (D37).
+      expect(body.choices[0]?.message.content).toBe(answer.content ?? "");
     }
     expect(model.requests.map((each) => each.picked)).toEqual(
       files.map((file) => written(file).case ?? file.slice(0, -".json".length)),
@@ -108,7 +115,9 @@ describe("the profile's replies to the preset CV's decisions (ID292)", () => {
     options: { label: string; hint: string }[];
   };
 
-  const { candidates } = JSON.parse(written("intake/read__2026-08-30_cv_EN.json").content) as {
+  const { candidates } = JSON.parse(
+    written("intake/read__2026-08-30_cv_EN.json").content ?? "",
+  ) as {
     candidates: Candidate[];
   };
 
@@ -136,10 +145,30 @@ describe("the profile's replies to the preset CV's decisions (ID292)", () => {
     expect(candidates.map((each) => each.item)).toEqual(["Java", "Roster", "Charrette"]);
   });
 
+  /**
+   * The three Java answers are chains (D37): the whole profile read, then the words. The
+   * Roster and Charrette answers stay single: words, and no tool call.
+   */
   it.each([
     ["Java", "The CIIP platform", "profile/java-the-ciip-platform.json"],
     ["Java", "Earlier work", "profile/java-earlier-work.json"],
     ["Java", "Studies", "profile/java-studies.json"],
+  ])(
+    "%s answered with `%s` is what %s answers: read_profile with no arguments, then words",
+    (item, label, file) => {
+      const answer = written(file);
+
+      expect(answer.answers).toBe(messageFor(item, label));
+      expect(answer.answers).toContain(`: ${label} (`);
+      expect(answer.case).toBeUndefined();
+      expect(answer.tool_calls).toEqual([{ name: "read_profile", arguments: {} }]);
+      expect(answer.then?.tool_calls ?? []).toEqual([]);
+      expect(answer.then?.content?.length).toBeGreaterThan(0);
+      expect(answer.then?.content).not.toBe("No pre generated text");
+    },
+  );
+
+  it.each([
     ["Roster", "Work at HEIG-VD", "profile/roster-work-at-heig-vd.json"],
     ["Roster", "A personal project", "profile/roster-a-personal-project.json"],
     ["Roster", "Both, over time", "profile/roster-both-over-time.json"],
@@ -159,7 +188,7 @@ describe("the profile's replies to the preset CV's decisions (ID292)", () => {
       expect(answer.answers).toContain(`: ${label} (`);
       expect(answer.case).toBeUndefined();
       expect(answer.tool_calls ?? []).toEqual([]);
-      expect(answer.content.length).toBeGreaterThan(0);
+      expect(answer.content?.length).toBeGreaterThan(0);
       expect(answer.content).not.toBe("No pre generated text");
     },
   );

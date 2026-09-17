@@ -55,7 +55,11 @@
             <history-edit-part [part]="given" />
           }
           @case ("tool_result") {
-            <history-edit-part [part]="given" />
+            @if (given.read !== undefined) {
+              <history-read-part [part]="given" />
+            } @else {
+              <history-edit-part [part]="given" />
+            }
           }
           @case ("question_answered") {
             <history-answer-part [part]="given" />

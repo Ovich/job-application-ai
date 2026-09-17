@@ -80,8 +80,6 @@ const aTestAssistant: Assistant = {
   tools: [],
   actions: [],
   opening: async (_tx, person) => [{ kind: "text", text: `Hello, ${person}.`, scripted: true }],
-  // What the model reads after the prompt is the definition's since `SL4` (D10).
-  context: async () => ["The person's profile, as this definition gives it."],
   stepPhrase: () => "Working",
   describe: () => null,
 };
@@ -322,13 +320,12 @@ describe("a free message (US2, SL3)", () => {
     ]);
 
     // Step 1 of this conversation's message, named per step (`ID182`), asked with the
-    // profile as it stands as a system message (`ID193`; this test's definition has no
-    // prompt of its own), then the conversation as messages (`ID162`).
+    // conversation as messages and nothing ahead of it (`ID162`, D33; this test's
+    // definition has no prompt of its own).
     const [sent] = requestsSent();
     expect(requestsSent()).toHaveLength(1);
     expect(sent?.headers["x-jobapp-case"]).toBe(`profile.message:${body.id}#1`);
     expect((sent?.body as { messages: unknown[] } | undefined)?.messages).toEqual([
-      { role: "system", content: expect.stringContaining("profile") },
       { role: "assistant", content: `Hello, ${person.id}.` },
       { role: "user", content: "I ran the services, not the cluster." },
     ]);
@@ -369,7 +366,7 @@ describe("a free message (US2, SL3)", () => {
       await app.request("/api/intake/read", { method: "POST", headers: { cookie: person.cookie } })
     ).text();
 
-    // The phrase is the profile assistant's own (D10): the application as it is composed.
+    // The phrase is the profile assistant's own (D10, D33): the application as it is composed.
     const { leaves } = await post(
       "/api/conversations/profile/messages",
       "Which document did you read first?",
@@ -378,10 +375,10 @@ describe("a free message (US2, SL3)", () => {
     );
 
     const status = leaves.findIndex((leaf) => leaf.kind === "status");
-    expect(leaves[status]).toEqual({ kind: "status", text: "Reading your profile" });
+    expect(leaves[status]).toEqual({ kind: "status", text: "Thinking about your message" });
     expect(status).toBeLessThan(leaves.findIndex((leaf) => leaf.kind === "text"));
     const { body } = await get("/api/conversations/profile", person.cookie);
-    expect(JSON.stringify(body)).not.toContain("Reading your profile");
+    expect(JSON.stringify(body)).not.toContain("Thinking about your message");
   });
 
   it("answers 401 to nobody signed in", async () => {

@@ -555,19 +555,36 @@ describe("a tool used is a message to the agent (D31, ID291)", () => {
 
     expect(picked).toBeDefined();
     expect(response.status).toBe(200);
-    expect(shapeOf(response.leaves)).toEqual(["entry", "status", "text", "entry", "done"]);
+    // The answer is a chain (D37): the whole profile read first, then the written reply.
+    expect(shapeOf(response.leaves)).toEqual([
+      "entry",
+      "status",
+      "entry",
+      "status",
+      "text",
+      "entry",
+      "done",
+    ]);
+    expect(
+      response.leaves.filter((leaf) => leaf.kind === "entry").map((leaf) => leaf.entry),
+    ).toMatchObject([
+      { author: "person" },
+      { author: "assistant", parts: [{ kind: "tool_use", name: "read_profile", input: {} }] },
+      { author: "tool", parts: [{ kind: "tool_result", name: "read_profile" }] },
+      { author: "assistant", parts: [{ kind: "text", text: written }] },
+    ]);
     expect(
       response.leaves
         .filter((leaf) => leaf.kind === "text")
         .map((leaf) => leaf.text)
         .join(""),
     ).toBe(written);
-    expect(response.leaves.at(-2)?.entry).toMatchObject({
-      author: "assistant",
-      parts: [{ kind: "text", text: written }],
-    });
-    // The mock's own evidence: picked by the message, the file's path its id.
-    expect(requestsAnswered().at(-1)?.picked).toBe("profile/java-earlier-work");
+    // The mock's own evidence: picked by the message, the file's path its id, then its link.
+    expect(
+      requestsAnswered()
+        .slice(-2)
+        .map((each) => each.picked),
+    ).toEqual(["profile/java-earlier-work", "profile/java-earlier-work#then"]);
   });
 
   it("keeps the answer written and ends on the error frame when the model fails mid-stream", async () => {

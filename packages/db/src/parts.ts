@@ -38,8 +38,9 @@ export const toolUsePart = z.object({
 });
 
 /**
- * What a call did (`SL4`): the call's id and the tool's name, and either the thing it
- * changed before and after, or the reason it was refused. Never both, never neither.
+ * What a call did (`SL4`, `ID301`): the call's id and the tool's name, and one of three
+ * outcomes: the thing it changed before and after, the reason it was refused, or what it
+ * read. Never two, never none.
  */
 export const toolResultPart = z
   .object({
@@ -49,14 +50,14 @@ export const toolResultPart = z
     before: z.record(z.string(), z.unknown()).optional(),
     after: z.record(z.string(), z.unknown()).optional(),
     refused: z.string().optional(),
+    read: z.unknown().optional(),
   })
-  .refine(
-    (result) =>
-      result.refused === undefined
-        ? result.before !== undefined && result.after !== undefined
-        : result.before === undefined && result.after === undefined,
-    "a tool_result carries before and after, or a refusal",
-  );
+  .refine((result) => {
+    const edited = result.before !== undefined && result.after !== undefined;
+    const halfEdited = (result.before === undefined) !== (result.after === undefined);
+    const outcomes = [edited, result.refused !== undefined, result.read !== undefined];
+    return !halfEdited && outcomes.filter(Boolean).length === 1;
+  }, "a tool_result carries before and after, or a refusal, or a read, never two");
 
 /** One option a question offered, as the person saw it: never the concern it writes. */
 const offeredOption = z.object({ id: z.string().min(1), label: z.string(), hint: z.string() });

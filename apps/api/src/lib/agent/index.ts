@@ -20,14 +20,16 @@ import type { ZodType } from "zod";
  *
  * **No transaction is open while the model is asked** (`ID179`): the caller's connection
  * may be one, and a transaction held across a model call would block every other query of
- * the request. The conversation and the definition's context are read before a step asks,
- * each in its own short read; a step's calls, its assistant entry and its tool entry are
+ * the request. The conversation is read before the first step asks, in its own short
+ * read; a step's calls, its assistant entry and its tool entry are
  * one transaction once its answer is whole. An entry is yielded only after it committed.
  */
 
-/** What a tool did: the thing it changed, before and after, or why it refused. */
+/** What a tool did: the thing it changed, before and after, why it refused, or what it read. */
 export type ToolOutcome =
-  { before: Record<string, unknown>; after: Record<string, unknown> } | { refused: string };
+  | { before: Record<string, unknown>; after: Record<string, unknown> }
+  | { refused: string }
+  | { read: unknown };
 
 /**
  * One thing the agent may do, its input validated by zod (`ID187`). `Tx` is the caller's
@@ -45,15 +47,14 @@ export type AgentTool<Tx, I = unknown, R extends ToolOutcome = ToolOutcome> = {
 
 /**
  * One concrete assistant: what the loop takes from it, and nothing of the project (D10 to
- * D12). Its `name` is the `:assistant` of a route and the first half of a step's case; its
- * `context` is read fresh before each step, one string per system message; `stepPhrase` is
- * what a step shows before its first words.
+ * D12). Its `name` is the `:assistant` of a route and the first half of a step's case;
+ * `stepPhrase` is what a step shows before its first words. Nothing volatile is sent ahead
+ * of the history (D33): what the agent needs to know of the world, it reads with a tool.
  */
 export type AssistantDefinition<Tx> = {
   name: string;
   prompt: string;
   tools: AgentTool<Tx>[];
-  context: (tx: Tx, person: string) => Promise<string[]>;
   stepPhrase: (n: number) => string;
   /** A person's part beyond plain text, in the words the model reads; null for one it does not. */
   describe: (part: Record<string, unknown>) => string | null;
@@ -76,6 +77,7 @@ export type AgentPart =
       before?: unknown;
       after?: unknown;
       refused?: string;
+      read?: unknown;
     };
 
 /** The least the module reads of a conversation and of a stored entry; the project's own types extend them. */

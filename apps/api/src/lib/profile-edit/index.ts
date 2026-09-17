@@ -4,11 +4,15 @@ import {
   itemEducation,
   itemEntry,
   itemExperience,
+  itemKind,
   itemLine,
   itemProject,
+  type ProfileConcernKind,
+  type ProfileConcernSource,
+  profileConcern,
   profileItem,
 } from "@app/db";
-import { and, asc, eq, inArray } from "drizzle-orm";
+import { and, asc, eq, inArray, isNull } from "drizzle-orm";
 import { z } from "zod";
 import type { AgentTool } from "../agent";
 import type { Transaction } from "../conversation";
@@ -26,9 +30,14 @@ import type { Transaction } from "../conversation";
  * one after the other on a draft, before a single row is written; a refusal is a value
  * with its reason, never a throw. A database error still throws.
  *
+ * **The read beside the edit** (`ID301`, D33): `read_profile` answers every item, one
+ * kind's, or one item, in the shape an edit answers an item, with the concerns kept on
+ * each; it writes nothing.
+ *
  * **It knows no assistant and no use case.** It is offered to the agent as
- * `profileEditTool`, and the one thing it takes from `lib/agent` is that tool's type; the
- * transaction that type is parameterised by is the project's, from `lib/conversation`.
+ * `profileReadTool` and `profileEditTool`, and the one thing it takes from `lib/agent` is
+ * the tool's type; the transaction that type is parameterised by is the project's, from
+ * `lib/conversation`.
  */
 
 /** The transaction a tool runs in: the project's own, threaded through `AgentTool` (OD2). */
@@ -215,20 +224,56 @@ const shapeOf = async (tx: Tx, person: string, itemId: string): Promise<ItemShap
   return { ...item, block: await blockOf(tx, item.kind, itemId), lines, children };
 };
 
+/** A concern kept on an item, as a read shows it: what it settles, in whose words. */
+export type KeptConcern = { kind: ProfileConcernKind; text: string; source: ProfileConcernSource };
+
+/** An item as a read answers it: the shape an edit answers, and the concerns kept on it. */
+export type ItemRead = ItemShape & { concerns: KeptConcern[] };
+
+/** The concerns nothing has superseded on the item, oldest first. */
+const concernsOf = async (tx: Tx, person: string, itemId: string): Promise<KeptConcern[]> =>
+  tx
+    .select({
+      kind: profileConcern.kind,
+      text: profileConcern.text,
+      source: profileConcern.source,
+    })
+    .from(profileConcern)
+    .where(
+      and(
+        eq(profileConcern.itemId, itemId),
+        eq(profileConcern.userId, person),
+        isNull(profileConcern.supersededBy),
+      ),
+    )
+    .orderBy(asc(profileConcern.createdAt), asc(profileConcern.id));
+
+/** The item as a read answers it, or nothing when the person has no such item. */
+const readOf = async (tx: Tx, person: string, itemId: string): Promise<ItemRead | undefined> => {
+  const item = await shapeOf(tx, person, itemId);
+  return item === undefined
+    ? undefined
+    : { ...item, concerns: await concernsOf(tx, person, itemId) };
+};
+
 /**
- * Every item of the person's profile as it stands, in the shape an edit reads it and in
- * the profile's order (`ID193`): what the agent is shown, so an edit can name each item
+ * The person's items as they stand, of one kind or of every kind, in the shape a read
+ * answers them and in the profile's order (`ID193`, D33): so an edit can name each item
  * and each line it changes by its id.
  */
-export const itemsOf = async (tx: Tx, person: string): Promise<ItemShape[]> => {
+export const itemsOf = async (tx: Tx, person: string, kind?: ItemKind): Promise<ItemRead[]> => {
   const ids = await tx
     .select({ id: profileItem.id })
     .from(profileItem)
-    .where(eq(profileItem.userId, person))
+    .where(
+      kind === undefined
+        ? eq(profileItem.userId, person)
+        : and(eq(profileItem.userId, person), eq(profileItem.kind, kind)),
+    )
     .orderBy(asc(profileItem.position), asc(profileItem.id));
-  const items: ItemShape[] = [];
+  const items: ItemRead[] = [];
   for (const { id } of ids) {
-    const item = await shapeOf(tx, person, id);
+    const item = await readOf(tx, person, id);
     if (item !== undefined) items.push(item);
   }
   return items;
@@ -392,6 +437,85 @@ const operationPhrase = (said: Operation): string => {
     case "remove_child":
       return "Removing an item under it";
   }
+};
+
+/** What a read is asked: one kind, one item, or neither for the whole profile. */
+export const readInput = z.object({
+  kind: z
+    .enum(itemKind.enumValues)
+    .optional()
+    .describe("read only the items of this kind; leave out to read every kind"),
+  itemId: z
+    .string()
+    .min(1)
+    .optional()
+    .describe("read only this item; leave out to read more than one"),
+});
+
+export type ReadInput = z.infer<typeof readInput>;
+
+/**
+ * What a read answers: what was asked, and the items. Built key by key, so two reads of an
+ * unchanged profile are the same bytes.
+ */
+export type Read = { kind?: ItemKind; itemId?: string; items: ItemRead[] };
+
+/** A kind as a person reads it: `Experience`, `Projects`. */
+export const kindTitles: Record<ItemKind, string> = {
+  summary: "Summary",
+  identity: "Identity",
+  experience: "Experience",
+  project: "Projects",
+  education: "Education",
+  publication: "Publications",
+  language: "Languages",
+  group: "Groups",
+  entry: "Entries",
+};
+
+/** Said when a read names what the profile does not have. */
+const readAgain = "read the whole profile, with no argument, to see what it has";
+
+/**
+ * The read, in the caller's transaction: it writes nothing. A refusal is a value, in words
+ * the model can act on.
+ */
+export const read = async (
+  tx: Tx,
+  person: string,
+  { kind, itemId }: ReadInput,
+): Promise<{ read: Read } | { refused: string }> => {
+  if (kind !== undefined && itemId !== undefined) {
+    return {
+      refused:
+        "Give a kind or an itemId, not both: an itemId alone reads that item, and neither reads the whole profile.",
+    };
+  }
+  if (itemId !== undefined) {
+    const item = await readOf(tx, person, itemId);
+    return item === undefined
+      ? { refused: `There is no item ${itemId} in this profile; ${readAgain}.` }
+      : { read: { itemId, items: [item] } };
+  }
+  const items = await itemsOf(tx, person, kind);
+  if (kind === undefined) return { read: { items } };
+  return items.length === 0
+    ? { refused: `The profile has no item of kind ${kind}; ${readAgain}.` }
+    : { read: { kind, items } };
+};
+
+/** The profile as the agent reads it (`ID301`, D33): everything, one kind, or one item. */
+export const profileReadTool: AgentTool<Tx, ReadInput, { read: Read } | { refused: string }> = {
+  name: "read_profile",
+  description:
+    "Read the person's profile as it stands: every item with no argument, the items of one kind, or one item by its id. Each item comes with its id, its fields, its lines with their ids, the items under it, and the concerns the person settled about it. Nothing is changed.",
+  input: readInput,
+  run: (tx, person, input) => read(tx, person, input),
+  summarise: ({ kind, itemId }) => {
+    if (itemId !== undefined) return "Reading an item of your profile";
+    if (kind !== undefined) return `Reading: ${kindTitles[kind]}`;
+    return "Reading your profile";
+  },
 };
 
 /** The capability as the agent is offered it (`ID187`): one tool any definition lists. */

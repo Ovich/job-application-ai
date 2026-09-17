@@ -1,4 +1,4 @@
-import { AIMessage, SystemMessage, ToolMessage } from "@langchain/core/messages";
+import { AIMessage, ToolMessage } from "@langchain/core/messages";
 import { createMiddleware } from "langchain";
 import { z } from "zod";
 import { callsOf, resultOf, summaryOf } from "./calls";
@@ -21,11 +21,11 @@ import { resultMessage, unnamed } from "./messages";
  * two calls would become two tool entries, and a call's entry could stand while its edit
  * failed.
  *
- * Beside that (D22, D26; spec 3.5): the step count and its phrase, the step limit, the
- * context and the case header per model call.
+ * Beside that (D22, D26; spec 3.5): the step count and its phrase, the step limit, and
+ * the case header per model call. The profile is no longer read before a call (D33): the
+ * agent reads it with a tool, and a read is a step's call like any other.
  *
- * **No transaction is open while the model is asked** (`ID179`): the context is read in
- * its own short transaction before the handler is called, and the step's transaction
+ * **No transaction is open while the model is asked** (`ID179`): the step's transaction
  * opens in `afterModel`, once the model's answer is whole.
  */
 
@@ -107,18 +107,15 @@ export const stepMiddleware = <Tx, C extends ConversationRef, E extends StoredEn
     },
     wrapModelCall: async (request, handler) => {
       const context = request.runtime.context as RunContext<C>;
-      // The definition's context, read fresh before each call (D10), never put in the state.
-      const said = await wiring.transaction((tx) => definition.context(tx, context.person));
       const caseHeader = { [wiring.caseHeader]: caseOf(context, request.state.step) };
       // The streamed path forwards a top-level `headers`, the unstreamed one
       // `options.headers` (D26, `ID282`); neither is in the call options' type.
       const modelSettings: unknown = { headers: caseHeader, options: { headers: caseHeader } };
+      // The system prompt and the tools, then the history as it was appended (D33):
+      // nothing volatile sits ahead of it.
       return handler({
         ...request,
-        messages: [
-          ...said.map((text) => new SystemMessage(text)),
-          ...request.messages.map(unnamed),
-        ],
+        messages: request.messages.map(unnamed),
         modelSettings: modelSettings as Record<string, unknown>,
       });
     },
