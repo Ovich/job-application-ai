@@ -174,7 +174,7 @@ jobs:
           # at this app's own mock by default, which the function answers in process,
           # reading these from beside the bundle at run time; nothing else puts them in
           # the zip.
-          cp -R apps/api/src/lib/mock/documents dist/lambda/documents
+          cp -R apps/api/src/mock-answers/documents dist/lambda/documents
           (cd dist/lambda && zip --quiet --recurse-paths ../api.zip .)
           key="api/${GITHUB_SHA}.zip"
           aws s3 cp dist/api.zip "s3://job-application-artefacts-${AWS_ACCOUNT}-${AWS_REGION}/${key}"

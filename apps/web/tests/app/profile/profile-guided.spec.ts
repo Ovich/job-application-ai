@@ -305,7 +305,8 @@ describe("a brand-new conversation, performed (S8.1, S8.2)", () => {
     await eventually(() => expect(active()).toEqual(everythingActive));
     expect(at("profile-assistant")?.hasAttribute("data-guide")).toBe(false);
     expect(textOf(at("[data-part=opening]"))).toBe(sentence);
-    expect(textOf(at("[data-part=opener]"))).toBe("First, Kubernetes.");
+    // A resumed column says no opener (`ID297`): what is stored, and the tool.
+    expect(at("[data-part=opener]")).toBeNull();
     expect(textOf(at("[data-part=waiting]"))).toContain("Kubernetes");
   });
 
@@ -376,13 +377,13 @@ describe("the column keeps its thread for the visit (S8.4b, ID227)", () => {
       "opening",
       "First, Kubernetes.",
       "answered",
-      "Noted.",
-      "Next, Docker.",
       "skipped",
-      "Put aside for later.",
-      "Next, Terraform.",
       "waiting",
     ]);
+    // One reply to one decision (`ID293`): nothing of the column's own after a kept one.
+    for (const said of ["Noted.", "Put aside for later.", "Next, Docker.", "Next, Terraform."]) {
+      expect(textOf(at("profile-assistant"))).not.toContain(said);
+    }
 
     // A reload keeps nothing in the page: the stored entries come back, the lines said
     // on the way do not.
@@ -402,8 +403,37 @@ describe("the column keeps its thread for the visit (S8.4b, ID227)", () => {
   });
 });
 
-describe("between tools (S8.3, ID217, ID219)", () => {
-  it("thinks while the answer is saved, then says Noted., names the next question and activates it", async () => {
+describe("a decision, then the agent's reply (D31, ID291)", () => {
+  /** What the column reads: each performed line's words, the person's decision, the agent's words. */
+  const column = (all: (selector: string) => Element[]): string[] =>
+    all(
+      "profile-assistant :is([data-part=opener], [data-part=ack], [data-part=answered], [data-part=skipped], [data-entry][data-msg=assistant])",
+    ).map((each) =>
+      each.hasAttribute("data-entry")
+        ? `agent: ${textOf(each.querySelector("p"))}`
+        : each.getAttribute("data-part") === "opener" || each.getAttribute("data-part") === "ack"
+          ? textOf(each)
+          : (each.getAttribute("data-part") ?? ""),
+    );
+
+  it("reads the agent's reply as the one reply to the person's decision, no Noted. and no Next line (ID293)", async () => {
+    profileIs(aProfile([kubernetes, docker]));
+    const { at, all, active, pick, eventually } = await opened();
+    await eventually(() => expect(active()).toEqual(everythingActive));
+
+    await pick(0);
+    await eventually(() => expect(textOf(at("scope-tool [data-part=lead]"))).toBe(docker.lead));
+
+    expect(column(all)).toEqual(["First, Kubernetes.", "answered", "agent: No pre generated text"]);
+    expect(active()).toEqual(everythingActive);
+    expect(intakeRequests().filter((request) => request.address.includes("/actions/"))).toEqual([
+      { method: "POST", address: "/api/conversations/profile/actions/answer_question" },
+    ]);
+  });
+});
+
+describe("between tools (S8.3, ID217, ID293)", () => {
+  it("thinks while the answer is saved, then says nothing of its own and activates the next question", async () => {
     profileIs(aProfile([kubernetes, docker]));
     let release = (): void => {};
     const saving = new Promise<void>((resolve) => {
@@ -425,15 +455,16 @@ describe("between tools (S8.3, ID217, ID219)", () => {
 
     await eventually(() => expect(textOf(at("scope-tool [data-part=lead]"))).toBe(docker.lead));
     expect(at("[data-part=activity]")).toBeNull();
-    expect(textOf(at("[data-part=ack]"))).toBe("Noted.");
-    expect(all("[data-part=opener]").map(textOf)).toEqual(["First, Kubernetes.", "Next, Docker."]);
+    expect(at("[data-part=ack]")).toBeNull();
+    expect(all("[data-part=opener]").map(textOf)).toEqual(["First, Kubernetes."]);
     const said = textOf(at("profile-assistant"));
-    expect(said.indexOf("Noted.")).toBeLessThan(said.indexOf("Next, Docker."));
+    expect(said).not.toContain("Noted.");
+    expect(said).not.toContain("Next, Docker.");
     expect(active()).toEqual(everythingActive);
     expect(textOf(at("[data-part=waiting]"))).toContain("Docker");
   });
 
-  it("says Put aside for later. after a skip, names the next question and activates it", async () => {
+  it("says nothing of its own after a skip, no Put aside for later., and activates the next question", async () => {
     profileIs(aProfile([kubernetes, docker]));
     const { at, all, active, eventually } = await opened();
     await eventually(() => expect(active()).toEqual(everythingActive));
@@ -441,9 +472,11 @@ describe("between tools (S8.3, ID217, ID219)", () => {
     (at("[data-action=skip]") as HTMLButtonElement).click();
 
     await eventually(() => expect(textOf(at("scope-tool [data-part=lead]"))).toBe(docker.lead));
-    expect(textOf(at("[data-part=ack]"))).toBe("Put aside for later.");
-    expect(all("[data-part=opener]").map(textOf)).toEqual(["First, Kubernetes.", "Next, Docker."]);
+    expect(at("[data-part=ack]")).toBeNull();
+    expect(textOf(at("profile-assistant"))).not.toContain("Put aside for later.");
+    expect(all("[data-part=opener]").map(textOf)).toEqual(["First, Kubernetes."]);
     expect(active()).toEqual(everythingActive);
+    expect(textOf(at("[data-part=waiting]"))).toContain("Docker");
   });
 
   it("activates nothing, draws no waiting line and says That is all I needed. after the last decision", async () => {
@@ -458,7 +491,17 @@ describe("between tools (S8.3, ID217, ID219)", () => {
     );
     expect(at("scope-tool")).toBeNull();
     expect(at("[data-part=waiting]")).toBeNull();
-    expect(textOf(at("[data-part=ack]"))).toBe("Noted.");
+    expect(at("[data-part=ack]")).toBeNull();
+    expect(textOf(at("[data-part=ready]"))).toContain("Your profile is ready.");
+    // The reply, then the two closing lines (`ID293`).
+    const said = textOf(at("profile-assistant"));
+    expect(said.indexOf("No pre generated text")).toBeGreaterThan(-1);
+    expect(said.indexOf("No pre generated text")).toBeLessThan(
+      said.indexOf("That is all I needed."),
+    );
+    expect(said.indexOf("That is all I needed.")).toBeLessThan(
+      said.indexOf("Your profile is ready."),
+    );
     // The first opener stays for the visit (`ID227`); no next one is said after the last.
     expect(all("[data-part=opener]").map(textOf)).toEqual(["First, Kubernetes."]);
     expect(active()).toMatchObject({ label: false, choices: false, lifted: false, waiting: false });

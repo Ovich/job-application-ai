@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { chunksOf, defaultPace, paceFrom, paceOf } from "../../../src/lib/mock";
+// The library's own suite reads the pace below its entry: the spec string and the chunking
+// are what both envelopes rest on, and the entry exports the class and its types alone.
+import { chunksOf, defaultPace, paceFrom, paceOf } from "../../../src/lib/mock/pace";
 
 /**
  * The four named settings, read from a value that configuration and the per-request
@@ -39,11 +41,11 @@ describe("a pace read from its four names", () => {
   });
 
   it("falls back whole when nothing is asked for", () => {
-    expect(paceOf(new Headers(), defaultPace)).toEqual(defaultPace);
+    expect(paceOf(new Headers(), "x-mock-pace", defaultPace)).toEqual(defaultPace);
   });
 
   it("reads the request's own header when it carries one", () => {
-    expect(paceOf(new Headers({ "X-Jobapp-Mock-Pace": "tps=0" }), defaultPace)).toEqual({
+    expect(paceOf(new Headers({ "x-mock-pace": "tps=0" }), "x-mock-pace", defaultPace)).toEqual({
       ...defaultPace,
       tokensPerSecond: 0,
     });
@@ -51,7 +53,7 @@ describe("a pace read from its four names", () => {
 });
 
 /**
- * The chunking, at the level below the wire. The router's own tests prove the envelopes;
+ * The chunking, at the level below the wire. The mock's own tests prove the envelopes;
  * this proves the one thing both envelopes rest on, and proves it on the awkward
  * content — runs of spaces, a newline, an empty answer — that a split-and-join gets
  * wrong quietly.

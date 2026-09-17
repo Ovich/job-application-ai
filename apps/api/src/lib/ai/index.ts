@@ -1,5 +1,5 @@
 import { env } from "../../env";
-import { createAi } from "./client";
+import { createAskFor, createChatModel } from "./client";
 import { answeringOwnAddress } from "./own-address";
 
 /**
@@ -8,8 +8,8 @@ import { answeringOwnAddress } from "./own-address";
  * key, the model or the header the call's metadata travels in.
  *
  * The instance is built from `env.ts`, the one reader of the process environment, and
- * the values reach it as arguments. `createAi` is exported beside it for the callers
- * that must configure their own — the suite, and the deployed function that answers
+ * the values reach it as arguments. `createChatModel` and `createAskFor` are exported
+ * beside it for the callers that must configure their own — the suite, and the deployed function that answers
  * itself in process (`ID130`, `ID150`).
  */
 
@@ -30,7 +30,7 @@ export const answeredInProcessBy = (answer: (request: Request) => Promise<Respon
   answersItself = answer;
 };
 
-const ai = createAi({
+const configured = {
   baseUrl: env.AI_BASE_URL,
   apiKey: env.AI_API_KEY,
   model: env.AI_MODEL,
@@ -47,28 +47,19 @@ const ai = createAi({
     },
     otherwise: (input, init) => fetch(input, init),
   }),
-});
+};
 
-/** A whole answer, as text. */
-export const ask = ai.ask;
+/** The one client (D24, D30): the agent's model and the reading's alike. */
+const model = createChatModel(configured);
 
-/** The same answer in pieces, as the protocol's own `stream: true` delivers them. */
-export const askStreaming = ai.askStreaming;
+/**
+ * The model, a LangChain chat model on the chat-completions path (D24). A function
+ * rather than the instance, so a test stands it in.
+ */
+export const chatModel = () => model;
 
 /** The answer parsed into the shape the step asked for, or an error. Never half of one. */
-export const askFor = ai.askFor;
+export const askFor = createAskFor(model);
 
-/** A step that may call the tools offered: its text in pieces, then its calls. */
-export const askWithTools = ai.askWithTools;
-
-export {
-  type About,
-  type Ai,
-  type AiConfig,
-  createAi,
-  type Message,
-  type Step,
-  type Tool,
-  type ToolCall,
-} from "./client";
+export { type About, type AiConfig, createAskFor, createChatModel } from "./client";
 export { answeringOwnAddress, type Fetch, type OwnAddress } from "./own-address";

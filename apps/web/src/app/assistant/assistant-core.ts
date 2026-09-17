@@ -91,25 +91,38 @@ export class AssistantCore {
   }
 
   /**
-   * Something the person did with the concrete assistant's tool, not a message (D9): the
-   * action named, run by the API with its input in one transaction. The entries it answers
-   * join `entries`, and it resolves `true` when kept and `false` when refused or unreachable.
+   * Something the person did with the concrete assistant's tool (D9): the action named, run
+   * by the API with its input in one transaction, and then, as after a message, the agent's
+   * reply read from the stream (D31): entries join `entries`, text grows `replying`, a
+   * status sets `activity`, an error frame sets `failure`.
    *
-   * **A refusal writes no `failure`** (D19): today's column says a decision was not kept in
-   * its own words, beside the tool, and draws no failure line under the conversation.
+   * Resolves once the stream ends: `true` when the person's entry was kept, whatever the
+   * reply did after it, and `false` when refused or unreachable.
+   *
+   * **A refusal writes no `failure`** (D19, `ID217`): the column says a decision was not
+   * kept in its own words, beside the tool, and draws no failure line under the
+   * conversation. **An act or a post while one is on its way is refused and sends nothing.**
    */
   public async act(action: string, input: unknown): Promise<boolean> {
+    if (this.posting) return false;
+    this.posting = true;
+    let kept = false;
     try {
       const answer = await api.conversations[":assistant"].actions[":action"].$post({
         param: { assistant: this.assistant.name, action },
         json: input,
       });
-      if (!answer.ok) return false;
-      const kept = (await answer.json()) as { entries: Entry[] };
-      this.held.update((entries) => [...entries, ...kept.entries]);
-      return true;
+      if (!answer.ok || answer.body === null) return false;
+      this.refused.set(null);
+      await this.readReply(answer.body, () => {
+        kept = true;
+      });
+      return kept;
     } catch {
-      return false;
+      if (kept) this.refused.set("the reply could not be read");
+      return kept;
+    } finally {
+      this.settle();
     }
   }
 
@@ -142,20 +155,34 @@ export class AssistantCore {
         this.refused.set(said.error ?? "the message could not be sent");
         return;
       }
-      for await (const frame of framesOf(answer.body)) {
-        const leaf = frame.leaf as Leaf;
-        this.doing.set(leaf.kind === "status" ? leaf.text : null);
-        if (leaf.kind === "entry") this.held.update((entries) => [...entries, leaf.entry]);
-        if (leaf.kind === "text") this.streamed.update((so) => (so ?? "") + leaf.text);
-        if (leaf.kind === "error") this.refused.set(leaf.message);
-        if (leaf.kind === "entry" && leaf.entry.author !== "person") this.streamed.set(null);
-      }
+      await this.readReply(answer.body, () => undefined);
     } catch {
       this.refused.set("the message could not be sent");
     } finally {
-      this.streamed.set(null);
-      this.doing.set(null);
-      this.posting = false;
+      this.settle();
     }
+  }
+
+  /**
+   * The stream a message and an action both answer (`ID170`, D31), read as it arrives.
+   * `mine` is told when the person's own entry has arrived, which is when it is kept.
+   */
+  private async readReply(body: ReadableStream<Uint8Array>, mine: () => void): Promise<void> {
+    for await (const frame of framesOf(body)) {
+      const leaf = frame.leaf as Leaf;
+      this.doing.set(leaf.kind === "status" ? leaf.text : null);
+      if (leaf.kind === "entry") this.held.update((entries) => [...entries, leaf.entry]);
+      if (leaf.kind === "entry" && leaf.entry.author === "person") mine();
+      if (leaf.kind === "text") this.streamed.update((so) => (so ?? "") + leaf.text);
+      if (leaf.kind === "error") this.refused.set(leaf.message);
+      if (leaf.kind === "entry" && leaf.entry.author !== "person") this.streamed.set(null);
+    }
+  }
+
+  /** The stream ended, however it did: nothing is replying and nothing is on its way. */
+  private settle(): void {
+    this.streamed.set(null);
+    this.doing.set(null);
+    this.posting = false;
   }
 }

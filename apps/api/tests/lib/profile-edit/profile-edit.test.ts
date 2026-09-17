@@ -364,10 +364,12 @@ describe("what it imports (S4.2)", () => {
     ).toEqual([]);
   });
 
-  it("imports nothing of lib/conversation, and of lib/agent only the AgentTool type", async () => {
-    expect((await imports()).filter((statement) => /\/conversation"/.test(statement))).toEqual([]);
+  it("imports of lib/agent only the AgentTool type, and of lib/conversation only the Transaction", async () => {
     expect((await imports()).filter((statement) => /\/agent"/.test(statement))).toEqual([
       'import type { AgentTool } from "../agent";',
+    ]);
+    expect((await imports()).filter((statement) => /\/conversation"/.test(statement))).toEqual([
+      'import type { Transaction } from "../conversation";',
     ]);
   });
 });

@@ -1,16 +1,8 @@
 import { randomUUID } from "node:crypto";
 import type * as schema from "@app/db";
-import {
-  conversation,
-  conversationEntry,
-  type Part,
-  parts as partsOf,
-  toolResultPart,
-  toolUsePart,
-} from "@app/db";
+import { conversation, conversationEntry, type Part, parts as partsOf } from "@app/db";
 import { and, asc, type ExtractTablesWithRelations, eq, isNull, max } from "drizzle-orm";
 import type { PgQueryResultHKT, PgTransaction } from "drizzle-orm/pg-core";
-import type { Message } from "../ai";
 import { db } from "../db";
 import { isDuplicate } from "../db/duplicate";
 import type { Asking } from "../session";
@@ -147,76 +139,6 @@ export const entries = async (of: Conversation): Promise<Entry[]> =>
     .from(conversationEntry)
     .where(eq(conversationEntry.conversationId, of.id))
     .orderBy(asc(conversationEntry.position));
-
-/**
- * One part of the person's entry, in the words the model reads (`S7.2`): their text as it
- * is, and any other part as the assistant's `describe` words it (D11). A part it answers
- * `null` for says nothing.
- */
-const personSays =
-  (describe: (part: Part) => string | null) =>
-  (part: Part): string[] => {
-    if (part.kind === "text" && typeof part["text"] === "string") return [part["text"]];
-    const described = describe(part);
-    return described === null ? [] : [described];
-  };
-
-/**
- * The conversation as the model reads it (`ID162`), in the protocol's own messages.
- *
- * The person's entry is a `user` message of its `text` parts, joined. An assistant's
- * entry is one `assistant` message: its text, and its `tool_use` parts as the calls, the
- * input written back as the arguments string the model sent. A `tool` entry is one
- * `tool` message per `tool_result`, answering its call's id with the before and after, or
- * the refusal. An entry with nothing to say is left out rather than sent empty; a part of
- * a kind this does not know is left out of the message, except in the person's entry,
- * where `describe` words it or leaves it out (D11).
- */
-export const asMessages = (said: Entry[], describe: (part: Part) => string | null): Message[] =>
-  said.flatMap((entry): Message[] => {
-    if (entry.author === "tool") {
-      return entry.parts.flatMap((part): Message[] => {
-        const read = toolResultPart.safeParse(part);
-        if (!read.success) return [];
-        const { id, before, after, refused } = read.data;
-        return [
-          {
-            role: "tool",
-            tool_call_id: id,
-            content: JSON.stringify(refused === undefined ? { before, after } : { refused }),
-          },
-        ];
-      });
-    }
-
-    const text = entry.parts
-      .flatMap((part) =>
-        part.kind === "text" && typeof part["text"] === "string" ? [part["text"]] : [],
-      )
-      .join("\n\n");
-    if (entry.author === "person") {
-      const said = entry.parts.flatMap(personSays(describe)).join("\n\n");
-      return said === "" ? [] : [{ role: "user", content: said }];
-    }
-
-    const calls = entry.parts.flatMap((part) => {
-      const read = toolUsePart.safeParse(part);
-      if (!read.success) return [];
-      return [
-        {
-          id: read.data.id,
-          type: "function" as const,
-          // The model's own string when the part holds it (`ID206`), else the input as JSON.
-          function: {
-            name: read.data.name,
-            arguments: read.data.arguments ?? JSON.stringify(read.data.input ?? {}),
-          },
-        },
-      ];
-    });
-    if (calls.length === 0) return text === "" ? [] : [{ role: "assistant", content: text }];
-    return [{ role: "assistant", content: text === "" ? null : text, tool_calls: calls }];
-  });
 
 /** One entry written after the last, in the caller's transaction. */
 export const append = async (

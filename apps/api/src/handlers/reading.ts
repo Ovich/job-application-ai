@@ -15,11 +15,12 @@ import {
   questionKind,
   questionOption,
 } from "@app/db";
+import { type BaseMessage, HumanMessage, SystemMessage } from "@langchain/core/messages";
 import { asc, eq, inArray } from "drizzle-orm";
 import { createFactory } from "hono/factory";
 import { stream } from "hono/streaming";
 import { z } from "zod";
-import { type About, askFor, type Message } from "../lib/ai";
+import { type About, askFor } from "../lib/ai";
 import { db } from "../lib/db";
 import { slugOf } from "../lib/documents";
 import { asking, refused } from "../lib/session";
@@ -465,13 +466,11 @@ const proposal = z.object({ candidates: z.array(candidate) });
  * part it came from and the words that part used, and `writeProfile` refuses a citation
  * naming a part this run did not read.
  */
-const readingAll = (document: string): Message[] => [
-  {
-    role: "system",
-    content:
-      "You read everything a job seeker has handed over, given as one document whose parts are marked <<<DOCUMENT name>>> … <<<END>>>, and you write their profile and the questions it leaves open. Answer with JSON alone, as an object with items and candidates. Each item has kind, one of summary, identity, experience, project, education, publication, language, group, entry; title; the optional subtitle, start_text and end_text as the documents wrote them; the block for its kind (experience, project, education, entry); lines; children; and sources. A source is the name of the part the fact came from and what that part said, word for word in that part's own language. A fact stated by several parts carries one source per part and no third wording of your own. Never state a figure no part states: no duration, no seniority, no total. Each candidate is a question the documents themselves cannot answer, with kind, one of scope (a fact says what was done but not what the person's part was), conflict (two parts state the same thing differently) or provenance (a term appears in a way that leaves its standing unclear); item, the exact title of the item it is about; where, the item's place said the way the profile says it; lead, the question itself in one or two sentences; and options, two to four answers, each with label, hint and the concern that answer writes, the last of which is the person's own words and carries no concern. Never ask about a fact the parts agree on and state plainly, never ask about a date a part states, and never ask what a person can be assumed to know about their own job.",
-  },
-  { role: "user", content: document },
+const readingAll = (document: string): BaseMessage[] => [
+  new SystemMessage(
+    "You read everything a job seeker has handed over, given as one document whose parts are marked <<<DOCUMENT name>>> … <<<END>>>, and you write their profile and the questions it leaves open. Answer with JSON alone, as an object with items and candidates. Each item has kind, one of summary, identity, experience, project, education, publication, language, group, entry; title; the optional subtitle, start_text and end_text as the documents wrote them; the block for its kind (experience, project, education, entry); lines; children; and sources. A source is the name of the part the fact came from and what that part said, word for word in that part's own language. A fact stated by several parts carries one source per part and no third wording of your own. Never state a figure no part states: no duration, no seniority, no total. Each candidate is a question the documents themselves cannot answer, with kind, one of scope (a fact says what was done but not what the person's part was), conflict (two parts state the same thing differently) or provenance (a term appears in a way that leaves its standing unclear); item, the exact title of the item it is about; where, the item's place said the way the profile says it; lead, the question itself in one or two sentences; and options, two to four answers, each with label, hint and the concern that answer writes, the last of which is the person's own words and carries no concern. Never ask about a fact the parts agree on and state plainly, never ask about a date a part states, and never ask what a person can be assumed to know about their own job.",
+  ),
+  new HumanMessage(document),
 ];
 
 /** What a reading is about: the run's documents, by name, in the run's order. */

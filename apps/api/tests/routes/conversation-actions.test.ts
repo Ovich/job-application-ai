@@ -1,3 +1,4 @@
+import { Hono } from "hono";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type * as Support from "../support/intake";
 import { subjectAt } from "../support/providers";
@@ -32,16 +33,31 @@ vi.mock("../../src/lib/storage", async (importOriginal) => ({
 
 vi.mock("../../src/lib/ai", async (importOriginal) => {
   const real = await importOriginal<typeof import("../../src/lib/ai")>();
-  const { aiThroughTheApp } = await import("../support/ai");
-  const ai = aiThroughTheApp();
-  return { ...real, ask: ai.ask, askStreaming: ai.askStreaming, askFor: ai.askFor };
+  const { askForThroughTheApp, chatModelThroughTheApp } = await import("../support/ai");
+  return {
+    ...real,
+    askFor: askForThroughTheApp(),
+    // The agent's model (D25, D31). A case that wants a call failing mid-stream builds its
+    // own agent on such a model (`ID298`); the application's agent is built on this one.
+    chatModel: () => chatModelThroughTheApp(),
+  };
 });
 
 const { testDb } = await import("../support/database");
 const { app } = await import("../../src/app");
 const { cookiesSetBy, signInThrough, signedInAs } = await import("../support/sign-in");
 const { documentsFor, theSet } = await import("../support/documents");
-const { forgetRequests } = await import("../support/ai");
+const {
+  chatModelThroughTheApp,
+  failingMidStream,
+  forgetRequests,
+  requestsAnswered,
+  requestsSent,
+  withCases,
+} = await import("../support/ai");
+const { conversationsOf } = await import("../../src/routes/conversations");
+const { agentOn } = await import("../support/agent");
+const { profileAssistant } = await import("../../src/assistants/profile");
 const { itemNamed } = await import("../support/intake");
 
 let storage: ReturnType<typeof localStorageIn>;
@@ -87,12 +103,47 @@ const asked = async (email: string) => {
   return { ...person, profile: await profileOf(person.cookie) };
 };
 
-const act = (cookie: string, action: string, input: unknown, assistant = "profile") =>
-  app.request(`/api/conversations/${assistant}/actions/${action}`, {
+/** One leaf of the stream an action answers once kept (D31), as the browser reads it. */
+type Leaf = {
+  kind: string;
+  text?: string;
+  message?: string;
+  entry?: { position: number; author: string; parts: Record<string, unknown>[] };
+};
+
+/** The leaves of an event stream, in order: every `data:` line, parsed. */
+const leavesOf = (body: string): Leaf[] =>
+  body
+    .split("\n\n")
+    .map((block) => block.split("\n").find((line) => line.startsWith("data: ")))
+    .filter((line): line is string => line !== undefined)
+    .map((line) => (JSON.parse(line.slice("data: ".length)) as { leaf: Leaf }).leaf);
+
+/**
+ * An action, answered to the end: a kept one is a stream, read whole so the agent's run has
+ * finished before a case reads anything back; a refused one is JSON.
+ */
+const act = async (
+  cookie: string,
+  action: string,
+  input: unknown,
+  assistant = "profile",
+  through: { request: (path: string, init: RequestInit) => Response | Promise<Response> } = app,
+) => {
+  const response = await through.request(`/api/conversations/${assistant}/actions/${action}`, {
     method: "POST",
     headers: { cookie, "content-type": "application/json" },
     body: JSON.stringify(input),
   });
+  const type = response.headers.get("content-type") ?? "";
+  const body = await response.text();
+  return {
+    status: response.status,
+    type,
+    leaves: type.includes("text/event-stream") ? leavesOf(body) : [],
+    json: type.includes("application/json") ? (JSON.parse(body) as unknown) : undefined,
+  };
+};
 
 const answer = (
   cookie: string,
@@ -261,12 +312,16 @@ describe("an answer or a skip, written into the conversation (S7.1, H4, D9)", ()
       picked: picked?.id,
       words: null,
     };
-    // The entry the route answers is the one the conversation holds.
-    expect(
-      ((await response.json()) as Stored).entries.map((entry) => [entry.author, entry.parts]),
-    ).toEqual([["person", [part]]]);
+    // The entry the route answers first is the one the conversation holds.
+    expect([response.leaves[0]?.entry?.author, response.leaves[0]?.entry?.parts]).toEqual([
+      "person",
+      [part],
+    ]);
     expect(about(await profileOf(person.cookie), "Kubernetes").state).toBe("answered");
-    expect(since(before, await conversationOf(person.cookie))).toEqual([["person", [part]]]);
+    expect(since(before, await conversationOf(person.cookie))).toEqual([
+      ["person", [part]],
+      ["assistant", [{ kind: "text", text: "No pre generated text" }]],
+    ]);
   });
 
   it("carries the person's words beside the pick, in the same part", async () => {
@@ -290,6 +345,7 @@ describe("an answer or a skip, written into the conversation (S7.1, H4, D9)", ()
           }),
         ],
       ],
+      ["assistant", [{ kind: "text", text: "No pre generated text" }]],
     ]);
   });
 
@@ -313,6 +369,7 @@ describe("an answer or a skip, written into the conversation (S7.1, H4, D9)", ()
           },
         ],
       ],
+      ["assistant", [{ kind: "text", text: "No pre generated text" }]],
     ]);
   });
 
@@ -326,6 +383,7 @@ describe("an answer or a skip, written into the conversation (S7.1, H4, D9)", ()
     expect(stored.entries.map((entry) => [entry.position, entry.author])).toEqual([
       [1, "assistant"],
       [2, "person"],
+      [3, "assistant"],
     ]);
     expect(stored.entries[0]?.parts[0]).toMatchObject({ kind: "text", scripted: true });
     expect(stored.entries[1]?.parts[0]).toMatchObject({ kind: "question_skipped" });
@@ -412,5 +470,160 @@ describe("what belongs to somebody else, and what is gone (US11, Failure modes, 
       (await app.request("/api/conversations/profile", { headers: { cookie: person.cookie } }))
         .status,
     ).toBe(409);
+  });
+});
+
+/**
+ * Seam B, D31: a tool used is a message to the agent. Once the action has committed, the
+ * route answers the stream a message answers, the agent's reply read through the mock.
+ */
+describe("a tool used is a message to the agent (D31, ID291)", () => {
+  type Stored = { id: string; entries: { author: string; parts: Record<string, unknown>[] }[] };
+
+  const conversationOf = async (cookie: string): Promise<Stored> =>
+    (await (
+      await app.request("/api/conversations/profile", { headers: { cookie } })
+    ).json()) as Stored;
+
+  /** The kinds in order, a run of text frames read as one. */
+  const shapeOf = (leaves: Leaf[]): string[] =>
+    leaves.map((leaf) => leaf.kind).filter((kind, at, all) => all[at - 1] !== kind);
+
+  it("streams the person's entry first, then the agent's frames through the mock, then done", async () => {
+    const person = await asked("action-then-agent@example.com");
+    const before = await conversationOf(person.cookie);
+    forgetRequests();
+    const question = about(person.profile, "Kubernetes");
+    const cases = withCases({
+      [`profile.message:${before.id}#1`]: {
+        stands_for: "the agent acknowledges the skip",
+        content: "Understood, we can come back to Kubernetes later.",
+      },
+    });
+
+    let response: Awaited<ReturnType<typeof act>>;
+    try {
+      response = await skip(person.cookie, question.id);
+    } finally {
+      cases.dispose();
+    }
+
+    expect(response.status).toBe(200);
+    expect(response.type).toContain("text/event-stream");
+    expect(shapeOf(response.leaves)).toEqual(["entry", "status", "text", "entry", "done"]);
+    expect(response.leaves[0]?.entry).toMatchObject({
+      author: "person",
+      parts: [{ kind: "question_skipped" }],
+    });
+    expect(
+      response.leaves
+        .filter((leaf) => leaf.kind === "text")
+        .map((leaf) => leaf.text)
+        .join(""),
+    ).toBe("Understood, we can come back to Kubernetes later.");
+    expect(response.leaves.at(-2)?.entry).toMatchObject({
+      author: "assistant",
+      parts: [{ kind: "text", text: "Understood, we can come back to Kubernetes later." }],
+    });
+    expect(requestsSent().map((sent) => sent.headers["x-jobapp-case"])).toEqual([
+      `profile.message:${before.id}#1`,
+    ]);
+    const after = await conversationOf(person.cookie);
+    expect(after.entries.slice(before.entries.length).map((entry) => entry.author)).toEqual([
+      "person",
+      "assistant",
+    ]);
+  });
+
+  /**
+   * `ID292`: no case is written for a conversation, whose id changes on every run, so the
+   * mock answers by the exact message the decision became. The shipped answers, no case of
+   * this test's own: the preset CV read alone, its Java question answered `Earlier work`.
+   */
+  it("streams the reply written for the preset CV's Java question answered with `Earlier work`", async () => {
+    const person = await signedIn("java-earlier-work@example.com");
+    await documentsFor(person.id, [theSet.cvEnglish.filename], storage);
+    await (
+      await app.request("/api/intake/read", { method: "POST", headers: { cookie: person.cookie } })
+    ).text();
+    const question = about(await profileOf(person.cookie), "Java");
+    const picked = question.options.find((option) => option.label === "Earlier work");
+    const written =
+      "Java, before HEIG-VD, in professional work: noted. I will keep it as earlier experience and not tie it to the CIIP platform. If you remember the employer or the kind of system, say so and I will place it with that post.";
+
+    const response = await answer(person.cookie, question.id, { optionId: picked?.id });
+
+    expect(picked).toBeDefined();
+    expect(response.status).toBe(200);
+    expect(shapeOf(response.leaves)).toEqual(["entry", "status", "text", "entry", "done"]);
+    expect(
+      response.leaves
+        .filter((leaf) => leaf.kind === "text")
+        .map((leaf) => leaf.text)
+        .join(""),
+    ).toBe(written);
+    expect(response.leaves.at(-2)?.entry).toMatchObject({
+      author: "assistant",
+      parts: [{ kind: "text", text: written }],
+    });
+    // The mock's own evidence: picked by the message, the file's path its id.
+    expect(requestsAnswered().at(-1)?.picked).toBe("profile/java-earlier-work");
+  });
+
+  it("keeps the answer written and ends on the error frame when the model fails mid-stream", async () => {
+    const person = await asked("action-agent-fails@example.com");
+    const before = await conversationOf(person.cookie);
+    forgetRequests();
+    const question = about(person.profile, "Kubernetes");
+    const failingRoutes = new Hono().route(
+      "/api/conversations",
+      conversationsOf(agentOn({ model: failingMidStream(chatModelThroughTheApp(), "#1") }), [
+        { ...profileAssistant },
+      ]),
+    );
+
+    const response = await act(
+      person.cookie,
+      "skip_question",
+      { questionId: question.id },
+      "profile",
+      failingRoutes,
+    );
+
+    expect(response.status).toBe(200);
+    expect(response.leaves[0]?.entry).toMatchObject({ author: "person" });
+    expect(response.leaves.at(-1)).toEqual({
+      kind: "error",
+      message: "The assistant could not answer this time. Your message is kept.",
+    });
+    expect(response.leaves.some((leaf) => leaf.kind === "done")).toBe(false);
+    const after = await conversationOf(person.cookie);
+    expect(after.entries.slice(before.entries.length).map((entry) => entry.author)).toEqual([
+      "person",
+    ]);
+    expect(about(await profileOf(person.cookie), "Kubernetes").state).toBe("skipped");
+  });
+
+  it("answers a refused action as JSON, with no stream, and runs no agent", async () => {
+    const person = await asked("action-refused-no-agent@example.com");
+    const before = await conversationOf(person.cookie);
+    forgetRequests();
+    const question = about(person.profile, "Kubernetes");
+
+    const unknown = await skip(person.cookie, "a-question-nobody-asked");
+    const empty = await answer(person.cookie, question.id, { words: "   " });
+    const early = await skip(
+      (await signedIn("action-refused-before-reading@example.com")).cookie,
+      "a-question-of-nobody",
+    );
+
+    expect([unknown.status, empty.status, early.status]).toEqual([404, 400, 409]);
+    for (const refused of [unknown, empty, early]) {
+      expect(refused.type).toContain("application/json");
+      expect(refused.json).toEqual({ error: expect.any(String) });
+      expect(refused.leaves).toEqual([]);
+    }
+    expect(requestsSent()).toEqual([]);
+    expect(await conversationOf(person.cookie)).toEqual(before);
   });
 });

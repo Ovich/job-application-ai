@@ -1,6 +1,6 @@
 import { Hono } from "hono";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { AssistantDefinition } from "../../src/lib/agent";
+import type { Assistant } from "../../src/lib/assistant";
 import { subjectAt } from "../support/providers";
 import { localStorageIn } from "../support/storage";
 
@@ -17,7 +17,7 @@ import { localStorageIn } from "../support/storage";
  * back through the route.
  */
 
-const objects = vi.hoisted(() => ({ storage: undefined as unknown, failing: false }));
+const objects = vi.hoisted(() => ({ storage: undefined as unknown }));
 
 vi.mock("../../src/lib/db", async () => ({
   db: (await import("../support/database")).testDb,
@@ -32,41 +32,26 @@ vi.mock("../../src/lib/storage", async (importOriginal) => ({
 
 vi.mock("../../src/lib/ai", async (importOriginal) => {
   const real = await importOriginal<typeof import("../../src/lib/ai")>();
-  const { aiThroughTheApp } = await import("../support/ai");
-  const ai = aiThroughTheApp();
-  // A call that fails mid-stream, when a case says so: one piece, then the throw. Since
-  // `SL4` a message is answered through the agent loop, which asks with tools.
-  const askWithTools: typeof ai.askWithTools = (...asked) => {
-    if (!objects.failing) return ai.askWithTools(...asked);
-    const gone = new Error("the model went away mid-stream");
-    const calls = Promise.reject(gone);
-    calls.catch(() => {});
-    return {
-      pieces: (async function* () {
-        yield "No pre";
-        throw gone;
-      })(),
-      calls,
-    };
-  };
+  const { askForThroughTheApp, chatModelThroughTheApp } = await import("../support/ai");
   return {
     ...real,
-    ask: ai.ask,
-    askStreaming: ai.askStreaming,
-    askFor: ai.askFor,
-    askWithTools,
+    askFor: askForThroughTheApp(),
+    // The agent's model (D25). A case that wants a call failing mid-stream builds its own
+    // agent on such a model (`ID298`); the application's agent is built on this one.
+    chatModel: () => chatModelThroughTheApp(),
   };
 });
 
 const { app } = await import("../../src/app");
 const { conversationsOf } = await import("../../src/routes/conversations");
+const { agentOn } = await import("../support/agent");
 const { cookiesSetBy, signInThrough, signedInAs } = await import("../support/sign-in");
 const { documentsFor, theSet } = await import("../support/documents");
-const { forgetRequests, requestsSent } = await import("../support/ai");
+const { chatModelThroughTheApp, failingMidStream, forgetRequests, requestsSent } =
+  await import("../support/ai");
 
 beforeEach(() => {
   objects.storage = localStorageIn();
-  objects.failing = false;
   forgetRequests();
 });
 
@@ -89,7 +74,7 @@ type Answer = {
 };
 
 /** A definition of the test's own: its opening says whose it is, so a leak would show. */
-const aTestAssistant: AssistantDefinition = {
+const aTestAssistant: Assistant = {
   name: "profile",
   prompt: "",
   tools: [],
@@ -101,7 +86,9 @@ const aTestAssistant: AssistantDefinition = {
   describe: () => null,
 };
 
-const routes = new Hono().route("/api/conversations", conversationsOf([aTestAssistant]));
+// The agent as the composition root builds it (`AGENTS.md` rule 7), on this suite's
+// database and model; the route is handed it, as `app.ts` hands it the real one.
+const routes = new Hono().route("/api/conversations", conversationsOf(agentOn(), [aTestAssistant]));
 
 const get = async (path: string, cookie?: string) => {
   const response = await routes.request(path, cookie === undefined ? {} : { headers: { cookie } });
@@ -349,12 +336,18 @@ describe("a free message (US2, SL3)", () => {
 
   it("keeps the person's entry, writes no half reply, and ends on an error frame when the call fails mid-stream", async () => {
     const person = await signedIn("message-fails@example.com");
-    objects.failing = true;
+    const failingRoutes = new Hono().route(
+      "/api/conversations",
+      conversationsOf(agentOn({ model: failingMidStream(chatModelThroughTheApp(), "#1") }), [
+        { ...aTestAssistant },
+      ]),
+    );
 
     const { status, leaves } = await post(
       "/api/conversations/profile/messages",
       "Something.",
       person.cookie,
+      failingRoutes,
     );
 
     expect(status).toBe(200);

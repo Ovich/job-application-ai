@@ -157,6 +157,11 @@ test("a pick, then a free message and its streamed reply, stay in order after th
   await page.locator("[data-part=send]").click();
   const count = assistant.locator("[data-part=count]");
   await expect(count).toHaveText(/^1 of \d+ answered$/);
+  // The answer is a message to the agent (D31, `ID291`): its reply is the newest entry.
+  const entries = column.locator("[data-entry]");
+  await expect(entries.last()).toHaveAttribute("data-msg", "assistant", { timeout: 30_000 });
+  // The preset's first pick has a written answer (`ID292`); the free message below has none.
+  await expect(entries.last()).toContainText("Java on the CIIP platform");
   await expect(page.locator("[data-part=waiting]")).toBeVisible({ timeout: 15_000 });
   const answeredCount = (await count.textContent())?.trim() ?? "";
 
@@ -168,7 +173,9 @@ test("a pick, then a free message and its streamed reply, stay in order after th
 
   const said = column.locator("[data-entry]");
   await expect(said.filter({ hasText: message })).toHaveCount(1);
-  await expect(said.filter({ hasText: "No pre generated text" }).last()).toBeVisible({
+  // The message's reply is the one placeholder (the pick's is written): waiting for it keeps
+  // the reload below from racing the run that stores it.
+  await expect(said.filter({ hasText: "No pre generated text" })).toHaveCount(1, {
     timeout: 30_000,
   });
   await expect(count).toHaveText(answeredCount);

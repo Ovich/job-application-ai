@@ -1,11 +1,30 @@
 import { Hono } from "hono";
 import { profileAssistant } from "./assistants/profile";
-import { answeredInProcessBy } from "./lib/ai";
+import { ConversationAgent } from "./lib/agent";
+import { answeredInProcessBy, chatModel } from "./lib/ai";
 import { auth } from "./lib/auth";
+import { append, entries, type Transaction } from "./lib/conversation";
+import { db } from "./lib/db";
 import { conversationsOf } from "./routes/conversations";
 import { health } from "./routes/health";
 import { intake } from "./routes/intake";
 import { mock } from "./routes/mock";
+
+/**
+ * The conversation agent, built here and nowhere else (`AGENTS.md` rule 7, `ID298`).
+ *
+ * `lib/agent` knows no application: this is the one file that decides which model it asks,
+ * which store it reads and writes a conversation through, which transaction a step commits
+ * in, and what the header naming a step's case is called on this product's wire. The
+ * header is the mock's own (`X-Jobapp-Case`), so what travels is what travelled before
+ * (D19); the module's own default names no product.
+ */
+const agent = new ConversationAgent({
+  model: chatModel(),
+  store: { entries, append },
+  transaction: <T>(run: (tx: Transaction) => Promise<T>) => db.transaction(run),
+  caseHeader: "X-Jobapp-Case",
+});
 
 /** The product's own API, everything under `/api`. */
 const api = new Hono()
@@ -14,7 +33,7 @@ const api = new Hono()
   .route("/intake", intake)
   // A person's conversations with the assistants, one registry of definitions held here
   // and nowhere else (ID186): an assistant added later is a value in this list.
-  .route("/conversations", conversationsOf([profileAssistant]))
+  .route("/conversations", conversationsOf(agent, [profileAssistant]))
   // The authentication library's routes, every method, the raw request handed over
   // and its response returned as is. This is the one mount and there is no route of
   // ours beside it: sign-in, callback, session and sign-out are the library's own

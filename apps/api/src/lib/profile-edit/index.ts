@@ -11,6 +11,7 @@ import {
 import { and, asc, eq, inArray } from "drizzle-orm";
 import { z } from "zod";
 import type { AgentTool } from "../agent";
+import type { Transaction } from "../conversation";
 
 /**
  * The shared profile-edit capability (`ID168`, `ID187`, the spec's *The shared
@@ -26,11 +27,12 @@ import type { AgentTool } from "../agent";
  * with its reason, never a throw. A database error still throws.
  *
  * **It knows no assistant and no use case.** It is offered to the agent as
- * `profileEditTool`, and the one thing it takes from `lib/agent` is that tool's type.
+ * `profileEditTool`, and the one thing it takes from `lib/agent` is that tool's type; the
+ * transaction that type is parameterised by is the project's, from `lib/conversation`.
  */
 
-/** The transaction a tool runs in, as `lib/agent` hands it over. */
-type Tx = Parameters<AgentTool["run"]>[0];
+/** The transaction a tool runs in: the project's own, threaded through `AgentTool` (OD2). */
+type Tx = Transaction;
 
 export const operation = z.discriminatedUnion("op", [
   z
@@ -393,7 +395,7 @@ const operationPhrase = (said: Operation): string => {
 };
 
 /** The capability as the agent is offered it (`ID187`): one tool any definition lists. */
-export const profileEditTool: AgentTool<Edit, Applied> = {
+export const profileEditTool: AgentTool<Tx, Edit, Applied> = {
   name: "edit_profile",
   description:
     "Change one item of the person's profile: set a field, replace, add or remove a line, or remove an item under it. The operations apply all together or not at all; the answer is the item before and after, or why the edit was refused.",

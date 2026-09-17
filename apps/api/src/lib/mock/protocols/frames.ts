@@ -2,7 +2,7 @@
  * One frame of a server-sent event stream, as either protocol puts it on the wire: an
  * event name where the protocol names its events, and the `data:` line.
  *
- * It is a plain shape rather than each serialiser's own, so the router paces and writes
+ * It is a plain shape rather than each serialiser's own, so the class paces and writes
  * frames without knowing which envelope produced them: the timing is one piece of code
  * and the two protocols differ only in what they hand it.
  */

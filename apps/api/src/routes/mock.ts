@@ -1,15 +1,24 @@
 import { Hono } from "hono";
-import { answerChatCompletions, answerMessages } from "../lib/mock";
+import { env } from "../env";
+import { ModelMock } from "../lib/mock";
+import { mockAnswers } from "../mock-answers";
 
 /**
- * The double's routes: paths and handlers, nothing else — the shape `routes/intake.ts`
- * and `routes/health.ts` already have (`ID146`, `S7.1` criterion 4; the person's own
- * comment: *"We dont need the mock to expose the routes, just expose them as our typical
- * handlers"*).
+ * The binding: the one file that knows a mock exists (`AGENTS.md` rule 5, `ID295`).
  *
- * The two paths are the two wire protocols this product may be spoken to in, and where
- * the whole thing is mounted is `app.ts`'s decision, not this module's.
+ * The instance is exported for the suite's own support, which adds a test's answers to it
+ * and reads what it was asked (`tests/support/ai.ts`); the application mounts `mock` alone.
+ */
+export const model = new ModelMock(mockAnswers, {
+  caseHeader: "X-Jobapp-Case",
+  paceHeader: "X-Jobapp-Mock-Pace",
+  pace: env.AI_MOCK_PACE,
+});
+
+/**
+ * The two paths are the two wire protocols this product may be spoken to in, as every
+ * route file holds its own (`ID146`); where the whole is mounted is `app.ts`'s decision.
  */
 export const mock = new Hono()
-  .post("/chat/completions", ...answerChatCompletions)
-  .post("/messages", ...answerMessages);
+  .post("/chat/completions", (c) => model.chatCompletions(c.req.raw))
+  .post("/messages", (c) => model.messages(c.req.raw));

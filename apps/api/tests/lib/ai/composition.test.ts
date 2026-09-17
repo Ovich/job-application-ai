@@ -1,4 +1,6 @@
+import { HumanMessage } from "@langchain/core/messages";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { z } from "zod";
 
 /**
  * That the application actually hands `lib/ai` the thing it needs, and not only that it
@@ -44,31 +46,32 @@ describe("the composition root", () => {
   it("hands lib/ai the application, so its own address is answered with no port open", async () => {
     const ai = await bootedWith(`${ours}/mock/v1`);
 
-    const answer = await ai.ask([{ role: "user", content: "read this" }], {
-      feature: "intake",
-      step: "read",
-      input: "2026-08-30_cv_FR",
-    });
+    const read = await ai.askFor(
+      [new HumanMessage("read this")],
+      { feature: "intake", step: "read", input: "2026-08-30_cv_FR" },
+      z.looseObject({ items: z.array(z.unknown()) }),
+    );
 
     // The answer this application ships for that case, asked for by name and read from
     // the tree beside it. Asserted on its shape rather than its wording: what is under
     // test is that the call arrived and was answered here, not what the answer says.
-    const read = JSON.parse(answer) as { items?: unknown[] };
     expect(Array.isArray(read.items)).toBe(true);
-    expect(answer).toContain(cvFr.slice(cvFr.indexOf(":") + 1));
+    expect(JSON.stringify(read)).toContain(cvFr.slice(cvFr.indexOf(":") + 1));
   });
 
   it("leaves an address that is not the application's to the wire", async () => {
     // Nothing listens there, and nothing may be dialled in this suite, so the call
-    // failing to connect is the assertion: it was not answered in process.
+    // failing to connect is the assertion: it was not answered in process. The model
+    // retries a refused connection twice with `@langchain/core`'s backoff (D27), which
+    // takes longer than the default five seconds, hence the case's own timeout.
     const ai = await bootedWith("http://127.0.0.1:9/v1");
 
     await expect(
-      ai.ask([{ role: "user", content: "read this" }], {
-        feature: "intake",
-        step: "read",
-        input: "2026-08-30_cv_FR",
-      }),
+      ai.askFor(
+        [new HumanMessage("read this")],
+        { feature: "intake", step: "read", input: "2026-08-30_cv_FR" },
+        z.unknown(),
+      ),
     ).rejects.toThrow();
-  });
+  }, 30_000);
 });

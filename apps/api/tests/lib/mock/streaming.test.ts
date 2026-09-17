@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { app } from "../../../src/app";
-import { withCases } from "../../support/ai";
 import { anthropicEvent, framesOf, openAiChunk } from "../../support/envelopes";
+import { request, withCases } from "./model";
 
 /**
  * Streaming, which is the protocol's own `stream: true` and not an endpoint of ours.
@@ -35,12 +34,12 @@ const recorded = {
 
 /** A streamed request, with an optional pace asked for the way a provider would ignore. */
 const stream = (path: string, pace?: string) =>
-  app.request(`/mock/v1${path}`, {
+  request(path, {
     method: "POST",
     headers: {
       "content-type": "application/json",
-      "X-Jobapp-Case": cvFr,
-      ...(pace === undefined ? {} : { "X-Jobapp-Mock-Pace": pace }),
+      "x-mock-case": cvFr,
+      ...(pace === undefined ? {} : { "x-mock-pace": pace }),
     },
     body: JSON.stringify({ model: "m", messages: [], stream: true }),
   });
@@ -63,6 +62,54 @@ describe("the OpenAI stream", () => {
       );
       expect(chunks.map((chunk) => chunk.choices[0]?.delta.content ?? "").join("")).toBe(content);
       expect(chunks.length).toBeGreaterThan(3);
+    } finally {
+      cases.dispose();
+    }
+  });
+});
+
+describe("the OpenAI stream's usage (D29)", () => {
+  const asking = (body: object) =>
+    request("/chat/completions", {
+      method: "POST",
+      headers: { "content-type": "application/json", "x-mock-case": cvFr },
+      body: JSON.stringify({ model: "m", messages: [], stream: true, ...body }),
+    });
+
+  /** A stream's frames with what changes per request, the id and the clock, blanked. */
+  const comparable = (frames: { data: string }[]) =>
+    frames.map((frame) =>
+      frame.data === "[DONE]" ? frame : { ...JSON.parse(frame.data), id: "", created: 0 },
+    );
+
+  it("writes one usage chunk before [DONE] when the body asks, from the case's counts; a body not asking gets today's frames", async () => {
+    const cases = withCases(recorded);
+    try {
+      const asked = framesOf(
+        await (await asking({ stream_options: { include_usage: true } })).text(),
+      );
+      const notAsking = [
+        framesOf(await (await asking({})).text()),
+        framesOf(await (await asking({ stream_options: { include_usage: false } })).text()),
+      ];
+
+      expect(asked.at(-1)).toEqual({ data: "[DONE]" });
+      const usage = JSON.parse(asked.at(-2)?.data ?? "null");
+      expect(usage).toEqual({
+        id: expect.any(String),
+        object: "chat.completion.chunk",
+        created: expect.any(Number),
+        model: "m",
+        choices: [],
+        usage: { prompt_tokens: 1180, completion_tokens: 62, total_tokens: 1242 },
+      });
+      const others = asked.filter((_, index) => index !== asked.length - 2);
+      expect(new Set(asked.slice(0, -1).map((frame) => JSON.parse(frame.data).id)).size).toBe(1);
+
+      for (const frames of notAsking) {
+        expect(frames.some((frame) => frame.data.includes('"usage"'))).toBe(false);
+        expect(comparable(frames)).toEqual(comparable(others));
+      }
     } finally {
       cases.dispose();
     }

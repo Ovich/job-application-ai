@@ -92,6 +92,20 @@ const waitingLineInView = async (page: Page): Promise<void> => {
  * foot of its newest line, the waiting line while a tool is active and the last message
  * otherwise, lies inside the visible area of the column that scrolls it.
  */
+/**
+ * The agent's reply to a decision (D31, `ID291`): a tool used is a message to the agent, so
+ * after `n` decisions the conversation holds `n` replies, the newest the last stored entry.
+ * No case is written for this conversation, so the mock answers its default words.
+ */
+const agentRepliedTo = async (page: Page, n: number): Promise<void> => {
+  const entries = page.locator("profile-assistant [data-entry]");
+  await expect(
+    entries.filter({ has: page.getByText("No pre generated text", { exact: true }) }),
+  ).toHaveCount(n, { timeout: 30_000 });
+  await expect(entries.last()).toHaveAttribute("data-msg", "assistant");
+  await expect(entries.last()).toContainText("No pre generated text");
+};
+
 const newestLineInView = async (page: Page): Promise<void> => {
   await expect(page.locator("profile-assistant [data-msg]").first()).toBeVisible({
     timeout: 15_000,
@@ -201,7 +215,8 @@ test("the assistant asks, the answers become profile concerns, and a reload stil
   await expect(firstRow).toHaveAttribute("aria-pressed", "true");
   await page.locator("[data-part=send]").click();
   await expect(count).toHaveText(/^1 of \d+ answered$/);
-  // The assistant acknowledges, names the next question and activates its tool, with the
+  await agentRepliedTo(page, 1);
+  // The agent's reply is the one reply (`ID293`): the assistant activates the next tool, with the
   // line saying it waits for the person (`S8.3`, `ID218`).
   await waitingLineInView(page);
   await expect(page.locator("[data-action=alt]").first()).toBeVisible();
@@ -215,10 +230,12 @@ test("the assistant asks, the answers become profile concerns, and a reload stil
   await page.locator("[data-part=composer]").fill(ownWords);
   await page.locator("[data-part=send]").click();
   await expect(count).toHaveText(/^2 of \d+ answered$/);
+  await agentRepliedTo(page, 2);
 
   // One skipped, which the count says is for the builder and the next one opens.
   await page.locator("[data-action=skip]").click();
   await expect(count).toHaveText(/^2 of \d+ answered, 1 for the builder$/);
+  await agentRepliedTo(page, 3);
   await expect(page.locator("scope-tool")).toBeVisible();
   await waitingLineInView(page);
 
@@ -236,6 +253,7 @@ test("the assistant asks, the answers become profile concerns, and a reload stil
   ).toHaveCount(1);
   await expect(page.locator("[data-part=concern]").filter({ hasText: ownWords })).toHaveCount(1);
   await expect(count).toHaveText(/^2 of \d+ answered, 1 for the builder$/);
+  await agentRepliedTo(page, 3);
 
   // A conversation with history opens on its latest exchange (agent-consolidation `S8.9`,
   // `ID237`). Below 1024 px the column is drawn hidden behind the sheet, and it is on its end

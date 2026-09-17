@@ -1,7 +1,4 @@
 import { describe, expect, it, vi } from "vitest";
-import { app } from "../../../src/app";
-import { casesHeld } from "../../../src/lib/mock";
-import { withCases } from "../../support/ai";
 import {
   anthropicEvent,
   anthropicWhole,
@@ -9,11 +6,11 @@ import {
   openAiChunk,
   openAiWhole,
 } from "../../support/envelopes";
+import { request, withCases } from "./model";
 
 /**
- * Seam B: the mock's router, reached the way HTTP reaches it, through the application's
- * own handler. Behind it are the fixture files and nothing else; the fixtures' contents
- * are not tested here, because they are data.
+ * Seam B: the mock, reached the way a client reaches it, through `ModelMock.fetch` and
+ * no application (`ID295`). Behind it are the answers a test gives it and nothing else.
  *
  * One case answers on both paths, and the two answers carry the same text in different
  * wrappers. That is the whole of decision D11: the difference between the protocols is
@@ -22,7 +19,7 @@ import {
  */
 
 // A run over one of the person's own documents. The step is `read` and there is no
-// other, because a run is one call now (`ID157`); what the content says is the router's
+// other, because a run is one call now (`ID157`); what the content says is the mock's
 // business only in that it comes back byte for byte in either envelope.
 const cvFr = "intake.read:2026-08-30_cv_FR" as const;
 const content = '{"items":[],"candidates":[]}';
@@ -37,9 +34,9 @@ const recorded = {
 
 /** A request as a client of either protocol sends it: the case in the header, JSON in. */
 const askFor = (path: string, body: unknown, headers: Record<string, string> = {}) =>
-  app.request(`/mock/v1${path}`, {
+  request(path, {
     method: "POST",
-    headers: { "content-type": "application/json", "X-Jobapp-Case": cvFr, ...headers },
+    headers: { "content-type": "application/json", "x-mock-case": cvFr, ...headers },
     body: JSON.stringify(body),
   });
 
@@ -91,7 +88,7 @@ describe("a recorded case, whole", () => {
  */
 describe("a case nobody recorded (ID166)", () => {
   const placeholder = "No pre generated text";
-  const missed = { "X-Jobapp-Case": "intake.read:no-such-document" };
+  const missed = { "x-mock-case": "intake.read:no-such-document" };
 
   it("answers the placeholder in the OpenAI envelope, and logs the case asked for", async () => {
     const cases = withCases(recorded);
@@ -114,7 +111,7 @@ describe("a case nobody recorded (ID166)", () => {
     const cases = withCases(recorded);
     const logged = vi.spyOn(console, "warn").mockImplementation(() => {});
     try {
-      const answer = await app.request("/mock/v1/chat/completions", {
+      const answer = await request("/chat/completions", {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ model: "m", messages: [] }),
@@ -151,7 +148,7 @@ describe("a case nobody recorded (ID166)", () => {
     const cases = withCases(recorded);
     const logged = vi.spyOn(console, "warn").mockImplementation(() => {});
     try {
-      const streamed = { "X-Jobapp-Mock-Pace": "tps=1000;chunk=1", ...missed };
+      const streamed = { "x-mock-pace": "tps=1000;chunk=1", ...missed };
       const openAi = await askFor(
         "/chat/completions",
         { model: "m", messages: [], stream: true },
@@ -184,41 +181,5 @@ describe("a case nobody recorded (ID166)", () => {
       logged.mockRestore();
       cases.dispose();
     }
-  });
-});
-
-/**
- * The cases the product ships with. Each stands for real documents of the person's own
- * set and is named from those files, which is what makes the reading provable against
- * something that exists (`D20`).
- *
- * **One case per run, not per document** (`ID157`, `ID158`). The reading joins a run's
- * documents into one composed document and answers with the whole profile and the
- * questions it leaves open, in a single call, so what is shipped is one answer per
- * combination a run actually makes — named by every document of that run, by slug, in
- * the run's order. The `classify`, `extract`, `merge` and `questions` cases went with
- * the steps that asked for them: a recorded answer for a call nobody makes any more is
- * a fixture nothing proves.
- *
- * There is no LinkedIn export case and no photograph case, and that is not an omission:
- * the person's set holds neither document, and a canned answer standing for no real file
- * is exactly what `D20` forbids.
- */
-describe("the fixtures this slice ships", () => {
-  it("holds one case per run of the person's real documents, named from those files", () => {
-    expect(casesHeld()).toEqual([
-      // One document alone, and then the combinations the suite drives a run over.
-      "intake.read:2026-08-30_cv_EN",
-      "intake.read:2026-08-30_cv_EN+2026-08-30_cv_FR",
-      "intake.read:2026-08-30_cv_FR",
-      "intake.read:2026-08-30_cv_FR+2026-08-30_cv_EN",
-      "intake.read:2026-08-30_cv_FR+2026-08-30_cv_EN+BS-HEIGVD-IL-Diplome",
-      "intake.read:2026-08-30_cv_FR+leCVWeb+CV-2025",
-      "intake.read:leCVWeb+CV-2025",
-    ]);
-  });
-
-  it("holds no LinkedIn export case, because there is no such document to stand for", () => {
-    expect(casesHeld().filter((name) => /linkedin|export|photo/i.test(name))).toEqual([]);
   });
 });

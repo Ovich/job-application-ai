@@ -1,4 +1,4 @@
-import type { RecordedCase } from "./answers";
+import type { Held } from "../answers";
 import type { Frame } from "./frames";
 
 /**
@@ -17,7 +17,7 @@ import type { Frame } from "./frames";
 
 const identifier = () => `msg_${crypto.randomUUID().replaceAll("-", "")}`;
 
-type Call = RecordedCase["tool_calls"][number];
+type Call = Held["tool_calls"][number];
 
 /** The input as JSON text, which is what a stream's fragments carry. */
 const inputText = (call: Call): string =>
@@ -32,11 +32,11 @@ const inputOf = (call: Call): unknown => {
   }
 };
 
-const stopOf = (recorded: RecordedCase): string =>
+const stopOf = (recorded: Held): string =>
   recorded.tool_calls.length === 0 ? "end_turn" : "tool_use";
 
 /** The whole answer. */
-export const anthropicWhole = (recorded: RecordedCase, model: string) => ({
+export const anthropicWhole = (recorded: Held, model: string) => ({
   id: identifier(),
   type: "message",
   role: "assistant",
@@ -70,11 +70,7 @@ export const anthropicWhole = (recorded: RecordedCase, model: string) => ({
  * `message_start` carries the message with empty content and an output count of 1, and
  * the count in `message_delta.usage` is cumulative, as the reference has them.
  */
-export const anthropicFrames = (
-  model: string,
-  chunks: string[],
-  recorded: RecordedCase,
-): Frame[] => {
+export const anthropicFrames = (model: string, chunks: string[], recorded: Held): Frame[] => {
   const id = identifier();
   const frame = (event: string, data: object, paced = false): Frame => ({
     event,

@@ -1,34 +1,28 @@
-import type { Part } from "@app/db";
-import { type ZodType, z } from "zod";
-import type { Ai, Message, Tool, ToolCall } from "../ai";
-import {
-  append,
-  asMessages,
-  type Conversation,
-  type Entry,
-  entries,
-  type Transaction,
-} from "../conversation";
-import { db } from "../db";
+import type { BaseChatModel } from "@langchain/core/language_models/chat_models";
+import type { ZodType } from "zod";
 
 /**
- * The agent loop, and what a concrete assistant contributes to it (`ID179`, `ID186`,
- * `ID187`, `ID188`).
+ * The agent's only entry (`ID298`): the `ConversationAgent` class and the types a
+ * definition is written against, as signatures. The bodies are in `agent.ts`, `step.ts`,
+ * `calls.ts` and `messages.ts`, and nothing outside this folder reaches them.
  *
- * **The core is extended by contribution, never by inheritance.** A concrete assistant
- * is a value of `AssistantDefinition`, handed to the conversations route at the
- * composition root as a registry; nothing here names one. The prompt and the tools come
- * from the definition.
+ * **The core is extended by contribution, never by inheritance.** A concrete assistant is
+ * a value of `AssistantDefinition`, handed to `run`; nothing here names one. The prompt
+ * and the tools come from the definition.
  *
- * What `run` hides: the step count and each step's case name, the JSON schema derived
- * from each tool's input, the transaction per step, and the entry that says the loop
- * stopped at its limit. It accepts `ai` as a value and reads no environment.
+ * **It knows no application.** The model, the conversation's store and the transaction
+ * are options a binding passes (`AGENTS.md` rules 7 and 8); nothing under this folder
+ * imports from an application, reads the environment or names a product. What it hides:
+ * the graph (`createAgent`, one per definition, no checkpointer, D20); the step
+ * middleware, which holds the step count and each step's case name, the transaction per
+ * step and the entry that says the agent stopped at its limit (D21, D22); the entries
+ * read back as messages; and the mapping of the graph's stream onto what `run` yields.
  *
- * **No transaction is open while the model is asked** (`ID179`): `lib/db` holds one
- * connection, and a transaction held across a model call would block every other query
- * of the request. The conversation and the profile are read before a step asks, each in
- * its own short read; a step's calls, its assistant entry and its tool entry are one
- * transaction once its answer is whole. An entry is yielded only after it committed.
+ * **No transaction is open while the model is asked** (`ID179`): the caller's connection
+ * may be one, and a transaction held across a model call would block every other query of
+ * the request. The conversation and the definition's context are read before a step asks,
+ * each in its own short read; a step's calls, its assistant entry and its tool entry are
+ * one transaction once its answer is whole. An entry is yielded only after it committed.
  */
 
 /** What a tool did: the thing it changed, before and after, or why it refused. */
@@ -36,216 +30,83 @@ export type ToolOutcome =
   { before: Record<string, unknown>; after: Record<string, unknown> } | { refused: string };
 
 /**
- * One thing the agent may do, its input validated by zod (`ID187`). `run` is written as
- * a method so a tool typed by its own input still takes its place in a definition's
- * list of tools.
+ * One thing the agent may do, its input validated by zod (`ID187`). `Tx` is the caller's
+ * transaction. `run` is written as a method so a tool typed by its own input still takes
+ * its place in a definition's list of tools.
  */
-export type AgentTool<I = unknown, R extends ToolOutcome = ToolOutcome> = {
+export type AgentTool<Tx, I = unknown, R extends ToolOutcome = ToolOutcome> = {
   name: string;
   description: string;
   input: ZodType<I>;
-  run(tx: Transaction, person: string, input: I): Promise<R>;
+  run(tx: Tx, person: string, input: I): Promise<R>;
   /** A few words saying what this call is doing, shown while it runs (`ID210`). */
   summarise(input: I): string;
 };
 
 /**
- * What an opening throws when its conversation cannot exist yet (`ID202`): the profile's
- * before a reading. Thrown inside the transaction that would create the conversation, so
- * nothing is written; the route answers 409 with the message.
+ * One concrete assistant: what the loop takes from it, and nothing of the project (D10 to
+ * D12). Its `name` is the `:assistant` of a route and the first half of a step's case; its
+ * `context` is read fresh before each step, one string per system message; `stepPhrase` is
+ * what a step shows before its first words.
  */
-export class NotYet extends Error {}
-
-/**
- * What a person does with a concrete assistant's own tool (D9): answering a question it
- * asked, putting it off. Never offered to the model. `run` writes in the transaction that
- * also opens the conversation and appends the person's entry, and returns that entry's parts.
- */
-export type AgentAction<I = unknown> = {
-  name: string;
-  input: ZodType<I>;
-  run(tx: Transaction, person: string, input: I): Promise<Part[]>;
-};
-
-/**
- * What an action throws when it will not do what it was asked (D9, `ID246`): 404 for a
- * thing that is not the person's, 400 for an input that says nothing it can keep. The
- * transaction rolls back and the route answers the status with the message.
- */
-export class Refused extends Error {
-  constructor(
-    message: string,
-    readonly status: 400 | 404,
-  ) {
-    super(message);
-  }
-}
-
-/**
- * One concrete assistant: its name, which is the `:assistant` of the route; its system
- * prompt and its tools, which every step of the loop is given; and its opening, written
- * as entry 1 when a conversation is created and never again (`ID189`), or `NotYet`
- * thrown when there is nothing to open on.
- *
- * What the loop takes from it and knows nothing of itself (D10 to D12): the `context` the
- * model reads after the prompt, one string per system message, read fresh before each
- * step; the `stepPhrase` a step shows before its first words; how a part beyond text and
- * tools reads to the model, or `null` to leave it out; and, when the assistant takes
- * words about something, the part saying where they sit, or `null` when it is not the
- * person's.
- */
-export type AssistantDefinition = {
+export type AssistantDefinition<Tx> = {
   name: string;
   prompt: string;
-  tools: AgentTool[];
-  actions: AgentAction[];
-  opening: (tx: Transaction, person: string) => Promise<Part[]>;
-  context: (tx: Transaction, person: string) => Promise<string[]>;
+  tools: AgentTool<Tx>[];
+  context: (tx: Tx, person: string) => Promise<string[]>;
   stepPhrase: (n: number) => string;
-  describe: (part: Part) => string | null;
-  about?: (tx: Transaction, person: string, input: About) => Promise<Part | null>;
+  /** A person's part beyond plain text, in the words the model reads; null for one it does not. */
+  describe: (part: Record<string, unknown>) => string | null;
 };
 
-/** What a person's words are about, as the browser names it: an item, and a line of it or none. */
-export type About = { itemId: string; lineId?: string | undefined };
-
-/**
- * What the loop says as it runs: what it is doing now, in a short phrase (`ID210`), never
- * stored; a piece of a step's text; or an entry it committed.
- */
-export type Ran =
-  | { kind: "activity"; text: string }
+/** The parts the module itself writes and reads back (OD3); the project's catalogue may hold more. */
+export type AgentPart =
   | { kind: "text"; text: string }
-  | { kind: "entry"; entry: Entry };
-
-/** The called tool's own summary of a call, or nothing for a call it would refuse. */
-const summaryOf = (definition: AssistantDefinition, call: ToolCall): string | null => {
-  const tool = definition.tools.find((each) => each.name === call.name);
-  const input = tool?.input.safeParse(call.arguments);
-  return tool === undefined || input === undefined || !input.success
-    ? null
-    : tool.summarise(input.data);
-};
-
-/** How many steps one message may take (`ID180`). */
-export const stepLimit = 5;
-
-/** The last entry when the limit is reached. What the steps committed stays. */
-const stopped = `I stopped here: one message may take ${stepLimit} steps and I reached that limit. What I changed so far is kept.`;
-
-/** The tools as a call offers them: the JSON schema derived from each input, never written. */
-const offered = (definition: AssistantDefinition): Tool[] =>
-  definition.tools.map((tool) => ({
-    name: tool.name,
-    description: tool.description,
-    parameters: z.toJSONSchema(tool.input),
-  }));
-
-/**
- * The definition's context as the model reads it (D10): system messages after the prompt,
- * read fresh before each step in its own short read, so a step sees what the step before
- * it changed.
- */
-const contextOf = async (definition: AssistantDefinition, person: string): Promise<Message[]> => {
-  const said = await db.transaction((tx) => definition.context(tx, person));
-  return said.map((content) => ({ role: "system", content }));
-};
-
-/** What one call did, as the `tool_result` part that records it. A refusal is a value. */
-const resultOf = async (
-  tx: Transaction,
-  definition: AssistantDefinition,
-  person: string,
-  call: ToolCall,
-): Promise<Part> => {
-  const said = { kind: "tool_result", id: call.id, name: call.name };
-  const tool = definition.tools.find((each) => each.name === call.name);
-  if (tool === undefined) return { ...said, refused: `There is no tool named ${call.name}.` };
-  const input = tool.input.safeParse(call.arguments);
-  if (!input.success) {
-    return {
-      ...said,
-      refused: `The input does not fit ${call.name}: ${z.prettifyError(input.error)}`,
+  | {
+      kind: "tool_use";
+      id: string;
+      name: string;
+      input?: unknown;
+      arguments?: string;
+    }
+  | {
+      kind: "tool_result";
+      id: string;
+      name: string;
+      before?: unknown;
+      after?: unknown;
+      refused?: string;
     };
-  }
-  const outcome = await tool.run(tx, person, input.data);
-  return "refused" in outcome
-    ? { ...said, refused: outcome.refused }
-    : { ...said, before: outcome.before, after: outcome.after };
+
+/** The least the module reads of a conversation and of a stored entry; the project's own types extend them. */
+export type ConversationRef = { id: string };
+export type StoredEntry = {
+  author: "person" | "assistant" | "tool";
+  parts: readonly Record<string, unknown>[];
 };
 
-/**
- * The loop (`ID187`): ask, stream the step's text on, apply the step's calls and write
- * its entries in one transaction, give the results back, until a step with no call, which
- * is written as the last assistant entry — or until the step limit, which says so.
- *
- * A failed call, or a step whose transaction fails, throws after yielding what earlier
- * steps committed; nothing of the failed step is written.
- */
-export async function* run(
-  definition: AssistantDefinition,
-  conversation: Conversation,
-  person: string,
-  ai: Ai,
-): AsyncIterable<Ran> {
-  const tools = offered(definition);
+/** What the loop says as it runs. `E` is the project's entry, yielded as the store returned it. */
+export type Ran<E extends StoredEntry = StoredEntry> =
+  { kind: "activity"; text: string } | { kind: "text"; text: string } | { kind: "entry"; entry: E };
 
-  for (let n = 1; n <= stepLimit; n += 1) {
-    yield { kind: "activity", text: definition.stepPhrase(n) };
-    const messages: Message[] = [
-      ...(definition.prompt === ""
-        ? []
-        : [{ role: "system" as const, content: definition.prompt }]),
-      ...(await contextOf(definition, person)),
-      ...asMessages(await entries(conversation), definition.describe),
-    ];
-    const step = ai.askWithTools(
-      messages,
-      { feature: definition.name, step: "message", input: `${conversation.id}#${n}` },
-      tools,
-    );
+/** What the module needs of a conversation's store: read, and write inside the caller's transaction. */
+export type ConversationStore<Tx, C extends ConversationRef, E extends StoredEntry> = {
+  entries: (of: C) => Promise<E[]>;
+  append: (tx: Tx, of: C, author: "assistant" | "tool", parts: AgentPart[]) => Promise<E>;
+};
 
-    let text = "";
-    for await (const piece of step.pieces) {
-      text += piece;
-      yield { kind: "text", text: piece };
-    }
-    const calls = await step.calls;
+export type ConversationAgentOptions<Tx, C extends ConversationRef, E extends StoredEntry> = {
+  model: BaseChatModel;
+  store: ConversationStore<Tx, C, E>;
+  transaction: <T>(run: (tx: Tx) => Promise<T>) => Promise<T>;
+  /** The header each step names its case in. Default `x-agent-case`. */
+  caseHeader?: string;
+  /** How a step's case reads. Default `<assistant>.message:<conversation>#<n>`. */
+  caseOf?: (assistant: string, conversation: string, step: number) => string;
+  /** How many steps one message may take. Default 5. */
+  steps?: number;
+  /** The last entry when the limit is reached. Default names the limit in English. */
+  stopped?: (steps: number) => string;
+};
 
-    if (calls.length === 0) {
-      const reply = await db.transaction((tx) =>
-        append(tx, conversation, "assistant", [{ kind: "text", text }]),
-      );
-      yield { kind: "entry", entry: reply };
-      return;
-    }
-
-    for (const call of calls) {
-      const summary = summaryOf(definition, call);
-      if (summary !== null) yield { kind: "activity", text: summary };
-    }
-
-    const written = await db.transaction(async (tx) => {
-      const results: Part[] = [];
-      for (const call of calls) results.push(await resultOf(tx, definition, person, call));
-      const asked = await append(tx, conversation, "assistant", [
-        ...(text === "" ? [] : [{ kind: "text", text }]),
-        ...calls.map((call) => ({
-          kind: "tool_use",
-          id: call.id,
-          name: call.name,
-          input: call.arguments,
-          arguments: call.argumentsText,
-        })),
-      ]);
-      const answered = await append(tx, conversation, "tool", results);
-      return [asked, answered];
-    });
-    for (const entry of written) yield { kind: "entry", entry };
-  }
-
-  const last = await db.transaction((tx) =>
-    append(tx, conversation, "assistant", [{ kind: "text", text: stopped }]),
-  );
-  yield { kind: "entry", entry: last };
-}
+export { ConversationAgent } from "./agent";

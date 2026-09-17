@@ -27,14 +27,18 @@ const everySourceFile = async (): Promise<string[]> => {
 };
 
 describe("the one client", () => {
+  // D30: one client, `@langchain/openai`'s, in lib/ai; nothing imports `openai` itself.
   it("is constructed in lib/ai and nowhere else", async () => {
-    const importers = (await everySourceFile()).filter((file) =>
-      /from\s+"openai(\/[^"]*)?"/.test(sourceOf(file)),
-    );
+    const importersOf = async (pattern: RegExp) =>
+      (await everySourceFile())
+        .filter((file) => pattern.test(sourceOf(file)))
+        .map((file) => file.slice(api.length + 1).replaceAll("\\", "/"));
 
-    expect(importers.map((file) => file.slice(api.length + 1).replaceAll("\\", "/"))).toEqual([
-      "src/lib/ai/client.ts",
-    ]);
+    expect(await importersOf(/from\s+"openai(\/[^"]*)?"/)).toEqual([]);
+
+    const langChainOpenAi = await importersOf(/from\s+"@langchain\/openai(\/[^"]*)?"/);
+    expect(langChainOpenAi.length).toBeGreaterThan(0);
+    expect(langChainOpenAi.filter((file) => !file.startsWith("src/lib/ai/"))).toEqual([]);
   });
 
   it("leaves env.ts the one reader of the process environment", async () => {
