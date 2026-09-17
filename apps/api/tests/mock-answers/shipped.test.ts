@@ -44,9 +44,15 @@ describe("the answers this project ships", () => {
       "intake/read__2026-08-30_cv_FR+leCVWeb+CV-2025.json",
       "intake/read__2026-08-30_cv_FR.json",
       "intake/read__leCVWeb+CV-2025.json",
+      "profile/charrette-a-personal-project.json",
       "profile/charrette-built-for-this-job-search.json",
+      "profile/charrette-work-that-became-open-source.json",
       "profile/java-earlier-work.json",
+      "profile/java-studies.json",
+      "profile/java-the-ciip-platform.json",
+      "profile/roster-a-personal-project.json",
       "profile/roster-both-over-time.json",
+      "profile/roster-work-at-heig-vd.json",
     ]);
     expect(
       files
@@ -131,8 +137,18 @@ describe("the profile's replies to the preset CV's decisions (ID292)", () => {
   });
 
   it.each([
+    ["Java", "The CIIP platform", "profile/java-the-ciip-platform.json"],
     ["Java", "Earlier work", "profile/java-earlier-work.json"],
+    ["Java", "Studies", "profile/java-studies.json"],
+    ["Roster", "Work at HEIG-VD", "profile/roster-work-at-heig-vd.json"],
+    ["Roster", "A personal project", "profile/roster-a-personal-project.json"],
     ["Roster", "Both, over time", "profile/roster-both-over-time.json"],
+    ["Charrette", "A personal project", "profile/charrette-a-personal-project.json"],
+    [
+      "Charrette",
+      "Work that became open source",
+      "profile/charrette-work-that-became-open-source.json",
+    ],
     ["Charrette", "Built for this job search", "profile/charrette-built-for-this-job-search.json"],
   ])(
     "%s answered with `%s` is what %s answers, in words and with no tool call",
