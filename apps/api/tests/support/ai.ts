@@ -5,7 +5,7 @@ import { join } from "node:path";
 // route that calls `lib/ai` stands that index in through `vi.mock`, whose factory
 // reaches this file; importing the index here would put this module inside the graph of
 // the module it is standing in for, and the two would wait on each other for ever.
-import { createAi } from "../../src/lib/ai/client";
+import { type AiConfig, createAi, createChatModel } from "../../src/lib/ai/client";
 import { type RecordedCaseFile, withAnswersFrom } from "../../src/lib/mock";
 
 /**
@@ -60,13 +60,20 @@ export const recordingFetch = async (input: string | URL | Request, init?: Reque
  * `lib/ai`, configured the way a laptop configures it but answered in this process. The
  * host is never resolved, because `recordingFetch` never reaches the network.
  */
-export const aiThroughTheApp = () =>
-  createAi({
-    baseUrl: "http://api.test/mock/v1",
-    apiKey: "the-mock-ignores-this",
-    model: "mock-model",
-    fetch: recordingFetch,
-  });
+const throughTheApp: AiConfig = {
+  baseUrl: "http://api.test/mock/v1",
+  apiKey: "the-mock-ignores-this",
+  model: "mock-model",
+  fetch: recordingFetch,
+};
+
+export const aiThroughTheApp = () => createAi(throughTheApp);
+
+/**
+ * The agent's chat model (ID274): `createChatModel` on the same configuration and the
+ * same recording fetch as `aiThroughTheApp`.
+ */
+export const chatModelThroughTheApp = () => createChatModel(throughTheApp);
 
 /** What `withCases` hands back: the cases are in place until it is disposed of. */
 export type CasesInPlace = { dispose: () => void };
