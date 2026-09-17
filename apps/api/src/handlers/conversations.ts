@@ -78,6 +78,56 @@ const conversationFor = async (
 const onTheWire = (entry: Entry) => ({ ...entry, createdAt: entry.createdAt.toISOString() });
 
 /**
+ * The stream a message and an action both answer (`ID163`, `ID169`, D31): the person's entry
+ * already committed, then what the agent's run yields, then done, or the error sentence with
+ * the person's entry kept.
+ *
+ * The raw stream helper and the headers the server-sent-event one would set, as the reading
+ * run sets them: the envelope writes its own `id:` and `data:` lines. **No transaction is
+ * open while it runs.** A tab closed mid-reply closes the envelope and the run finishes
+ * unheard, which is the same failure, and intended.
+ */
+const agentReplying = (
+  c: Context,
+  mine: Entry,
+  definition: AssistantDefinition,
+  conversation: Conversation,
+  person: Asking,
+) => {
+  c.header("content-type", "text/event-stream");
+  c.header("cache-control", "no-cache");
+  c.header("x-accel-buffering", "no");
+
+  return stream(c, async (response) => {
+    const envelope = createEnvelope(async (chunk) => {
+      await response.write(chunk);
+    });
+    response.onAbort(() => {
+      envelope.close();
+    });
+
+    try {
+      await envelope.send({ kind: "entry", entry: onTheWire(mine) });
+      for await (const ran of run(definition, conversation, person.id)) {
+        // What the agent is doing travels as a status leaf and is never stored (`ID210`).
+        await envelope.send(
+          ran.kind === "entry"
+            ? { kind: "entry", entry: onTheWire(ran.entry) }
+            : ran.kind === "activity"
+              ? { kind: "status", text: ran.text }
+              : ran,
+        );
+      }
+      await envelope.send({ kind: "done" });
+    } catch {
+      await envelope.send({ kind: "error", message: couldNotAnswer });
+    } finally {
+      envelope.close();
+    }
+  });
+};
+
+/**
  * `GET /:assistant?subject=` → `{ id, entries }`: the person's conversation with that
  * assistant, opened with the assistant's opening if it did not exist yet.
  */
@@ -99,10 +149,12 @@ export const openConversation = (definitions: AssistantDefinition[]) =>
   );
 
 /**
- * `POST /:assistant/actions/:action` with the action's input → `{ entries }` (D9): what the
+ * `POST /:assistant/actions/:action` with the action's input → a stream (D9, D31): what the
  * person did with the assistant's own tool. **One transaction** opens the conversation when
  * it does not exist yet, runs the action, and appends the person's entry with the parts the
- * action returns, so a failed entry leaves nothing of the action written.
+ * action returns, so a failed entry leaves nothing of the action written. Once it commits,
+ * the answer is the stream a message answers: the person's entry, the agent's reply, done or
+ * error. The action itself calls no model; the agent does, after it.
  *
  * 400 for an input the action's schema refuses, or one the action refuses as saying
  * nothing; 404 for an unknown assistant or action, or a thing that is not the person's;
@@ -123,8 +175,9 @@ export const runAction = (definitions: AssistantDefinition[]) =>
       const input = action.input.safeParse(c.req.valid("json"));
       if (!input.success) return c.json({ error: `the input does not fit ${action.name}` }, 400);
 
+      let kept: { conversation: Conversation; mine: Entry };
       try {
-        const mine = await db.transaction(async (tx) => {
+        kept = await db.transaction(async (tx) => {
           const conversation = await open(
             person,
             definition.name,
@@ -133,14 +186,17 @@ export const runAction = (definitions: AssistantDefinition[]) =>
             tx,
           );
           const said = await action.run(tx, person.id, input.data);
-          return append(tx, conversation, "person", said);
+          return { conversation, mine: await append(tx, conversation, "person", said) };
         });
-        return c.json({ entries: [onTheWire(mine)] }, 200);
       } catch (thrown) {
         if (thrown instanceof NotYet) return c.json({ error: thrown.message }, 409);
         if (thrown instanceof Refused) return c.json({ error: thrown.message }, thrown.status);
         throw thrown;
       }
+
+      // A tool used is a message to the agent (D31): once the action has committed, the
+      // same agent a message reaches runs over the conversation and its reply streams.
+      return agentReplying(c, kept.mine, definition, kept.conversation, person);
     },
   );
 
@@ -194,38 +250,6 @@ export const postMessage = (definitions: AssistantDefinition[]) =>
         ]),
       );
 
-      // The raw stream helper and the headers the server-sent-event one would set, as the
-      // reading run sets them: the envelope writes its own `id:` and `data:` lines.
-      c.header("content-type", "text/event-stream");
-      c.header("cache-control", "no-cache");
-      c.header("x-accel-buffering", "no");
-
-      return stream(c, async (response) => {
-        const envelope = createEnvelope(async (chunk) => {
-          await response.write(chunk);
-        });
-        response.onAbort(() => {
-          envelope.close();
-        });
-
-        try {
-          await envelope.send({ kind: "entry", entry: onTheWire(mine) });
-          for await (const ran of run(definition, conversation, person.id)) {
-            // What the agent is doing travels as a status leaf and is never stored (`ID210`).
-            await envelope.send(
-              ran.kind === "entry"
-                ? { kind: "entry", entry: onTheWire(ran.entry) }
-                : ran.kind === "activity"
-                  ? { kind: "status", text: ran.text }
-                  : ran,
-            );
-          }
-          await envelope.send({ kind: "done" });
-        } catch {
-          await envelope.send({ kind: "error", message: couldNotAnswer });
-        } finally {
-          envelope.close();
-        }
-      });
+      return agentReplying(c, mine, definition, conversation, person);
     },
   );

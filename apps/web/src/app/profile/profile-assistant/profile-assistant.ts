@@ -605,8 +605,9 @@ export class ProfileAssistant {
   }
 
   /**
-   * A decision leaves through `core.act` (D5, D9): the column thinks until it is kept and
-   * the viewer has read the profile back (`ID217`). Not kept, the conversation is read
+   * A decision leaves through `core.act` (D5, D9): the column thinks until it is kept, the
+   * agent's reply to it has streamed (D31), and the viewer has read the profile back
+   * (`ID217`); the lines it then says read after that reply. Not kept, the conversation is read
    * again as it always was after a decision, and the column says so with the tool still on
    * the pick and the words.
    */
@@ -622,6 +623,9 @@ export class ProfileAssistant {
     const kept = await this.core.act(action, input);
     if (this.gone) return;
     if (kept) {
+      // The agent's reply has ended (D31) and cleared what it was doing; the column still
+      // thinks until the viewer's read-back has arrived (`ID217`).
+      this.core.showActivity("Thinking");
       saving.questions = this.questions();
       this.decided.emit({ kept: true });
       return;
