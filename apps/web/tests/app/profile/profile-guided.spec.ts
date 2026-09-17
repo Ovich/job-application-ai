@@ -305,7 +305,8 @@ describe("a brand-new conversation, performed (S8.1, S8.2)", () => {
     await eventually(() => expect(active()).toEqual(everythingActive));
     expect(at("profile-assistant")?.hasAttribute("data-guide")).toBe(false);
     expect(textOf(at("[data-part=opening]"))).toBe(sentence);
-    expect(textOf(at("[data-part=opener]"))).toBe("First, Kubernetes.");
+    // A resumed column says no opener (`ID297`): what is stored, and the tool.
+    expect(at("[data-part=opener]")).toBeNull();
     expect(textOf(at("[data-part=waiting]"))).toContain("Kubernetes");
   });
 

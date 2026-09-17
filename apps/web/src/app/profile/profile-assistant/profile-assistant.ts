@@ -474,13 +474,15 @@ export class ProfileAssistant {
      * question already answered or put off — is a conversation being resumed, and
      * typing its first line out again would be the interface pretending to think about
      * something it has already said. Everything lands at once instead, and the tool is
-     * still activated.
+     * still activated. **No opener is said** (`ID297`): a resumed column holds what is
+     * stored and the next question's tool, one answer to one question.
      */
     if (!this.brandNew()) {
       this.told.set(Number.POSITIVE_INFINITY);
       this.card.set(true);
       this.toldTail.set(Number.POSITIVE_INFINITY);
-      this.atOnce(this.turnSteps(atOnce, true));
+      // A column with no conversation yet has nothing stored to resume: it opens as new.
+      this.atOnce(this.turnSteps(atOnce, this.core.entries().length === 0));
       return;
     }
     const pace = this.currentPace();
@@ -538,9 +540,9 @@ export class ProfileAssistant {
    * the next question's opener and the activation of its tool — or, with no question
    * left, that it has all it needs, and nothing activated.
    *
-   * **The opener is the opening turn's alone** (`ID293`): after a kept decision the
-   * agent's reply is the one reply, so the column says nothing of its own and only
-   * activates the next question's tool, which is how a reload reads.
+   * **The opener is a brand new chat's alone** (`ID293`, `ID297`): after a kept decision the
+   * agent's reply is the one reply, and a resumed visit holds what is stored, so in both
+   * the column says nothing of its own and only activates the next question's tool.
    */
   private turnSteps(pace: GuidePace, opening: boolean): Step[] {
     const next = this.waiting()[0];
@@ -553,11 +555,7 @@ export class ProfileAssistant {
     }
     const activate = doThis("activate", () => this.activateOn(next.itemId), pace);
     if (!opening) return [activate];
-    const moved = this.answeredCount() + this.deferred() > 0;
-    return [
-      this.line("opener", `${moved ? "Next" : "First"}, ${next.itemTitle}.`, "foreground", pace),
-      activate,
-    ];
+    return [this.line("opener", `First, ${next.itemTitle}.`, "foreground", pace), activate];
   }
 
   /** One performed line, added to the turn as it begins to land and timed then. */

@@ -107,15 +107,23 @@ describe("the reading and the first question (criterion 4)", () => {
     expect(textOf(at("[data-part=what]"))).toBe("Adjusting scope");
   });
 
-  it("opens the first one still waiting when a person comes back", async () => {
-    const { at } = await rendered([
+  it("opens the first one still waiting when a person comes back, and says no opener (ID297)", async () => {
+    // A conversation with more than its opening is one resumed.
+    conversationIs([
+      entryOf(1, [{ kind: "text", text: "I read your 5 documents.", scripted: true }]),
+      entryOf(2, [{ kind: "text", text: "I ran the services, not the cluster." }], "person"),
+    ]);
+    const { fixture, at } = await rendered([
       { ...(three[0] as Question), state: "answered" },
       three[1] as Question,
       three[2] as Question,
     ]);
 
-    expect(textOf(at("[data-part=lead]"))).toBe("Did you set it up, run it, or read it?");
-    expect(textOf(at("[data-part=opener]"))).toBe("Next, Observability.");
+    await vi.waitFor(() => {
+      fixture.detectChanges();
+      expect(textOf(at("[data-part=lead]"))).toBe("Did you set it up, run it, or read it?");
+    });
+    expect(at("[data-part=opener]")).toBeNull();
   });
 
   it("shows the documents read and what is left to say, and no figure it cannot count", async () => {
