@@ -35,14 +35,23 @@ import { chunksOf, intervalMs, type Pace, paceOf } from "./pace";
  */
 type Envelope = {
   whole: (recorded: RecordedCase, model: string) => object;
-  frames: (model: string, chunks: string[], recorded: RecordedCase) => Frame[];
+  frames: (
+    model: string,
+    chunks: string[],
+    recorded: RecordedCase,
+    asked: { includeUsage: boolean },
+  ) => Frame[];
 };
 
 const openAi: Envelope = { whole: openAiWhole, frames: openAiFrames };
 const anthropic: Envelope = { whole: anthropicWhole, frames: anthropicFrames };
 
 /** What a request may say. The rest of a real provider's body is accepted and ignored. */
-type Asked = { model?: unknown; stream?: unknown };
+type Asked = {
+  model?: unknown;
+  stream?: unknown;
+  stream_options?: { include_usage?: unknown } | null;
+};
 
 const wait = (ms: number) =>
   ms <= 0 ? Promise.resolve() : new Promise((done) => setTimeout(done, ms));
@@ -80,7 +89,9 @@ const answer = async (c: Context, envelope: Envelope, configured: Pace) => {
 
   if (asked.stream !== true) return c.json(envelope.whole(recorded, model));
 
-  const frames = envelope.frames(model, chunksOf(recorded.content, pace), recorded);
+  const frames = envelope.frames(model, chunksOf(recorded.content, pace), recorded, {
+    includeUsage: asked.stream_options?.include_usage === true,
+  });
 
   return streamSSE(c, async (out) => {
     await wait(pace.timeToFirstTokenMs);

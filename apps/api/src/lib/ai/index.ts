@@ -1,5 +1,5 @@
 import { env } from "../../env";
-import { createAi } from "./client";
+import { createAi, createChatModel } from "./client";
 import { answeringOwnAddress } from "./own-address";
 
 /**
@@ -30,7 +30,7 @@ export const answeredInProcessBy = (answer: (request: Request) => Promise<Respon
   answersItself = answer;
 };
 
-const ai = createAi({
+const configured = {
   baseUrl: env.AI_BASE_URL,
   apiKey: env.AI_API_KEY,
   model: env.AI_MODEL,
@@ -47,7 +47,12 @@ const ai = createAi({
     },
     otherwise: (input, init) => fetch(input, init),
   }),
-});
+};
+
+const ai = createAi(configured);
+
+/** The agent's client (D24): the same configuration and the same fetch as the reading's. */
+const agentModel = createChatModel(configured);
 
 /** A whole answer, as text. */
 export const ask = ai.ask;
@@ -61,11 +66,18 @@ export const askFor = ai.askFor;
 /** A step that may call the tools offered: its text in pieces, then its calls. */
 export const askWithTools = ai.askWithTools;
 
+/**
+ * The agent's model, a LangChain chat model on the chat-completions path (D24). A
+ * function rather than the instance, so a test stands it in as it stands `ask` in.
+ */
+export const chatModel = () => agentModel;
+
 export {
   type About,
   type Ai,
   type AiConfig,
   createAi,
+  createChatModel,
   type Message,
   type Step,
   type Tool,

@@ -69,6 +69,54 @@ describe("the OpenAI stream", () => {
   });
 });
 
+describe("the OpenAI stream's usage (D29)", () => {
+  const asking = (body: object) =>
+    app.request("/mock/v1/chat/completions", {
+      method: "POST",
+      headers: { "content-type": "application/json", "X-Jobapp-Case": cvFr },
+      body: JSON.stringify({ model: "m", messages: [], stream: true, ...body }),
+    });
+
+  /** A stream's frames with what changes per request, the id and the clock, blanked. */
+  const comparable = (frames: { data: string }[]) =>
+    frames.map((frame) =>
+      frame.data === "[DONE]" ? frame : { ...JSON.parse(frame.data), id: "", created: 0 },
+    );
+
+  it("writes one usage chunk before [DONE] when the body asks, from the case's counts; a body not asking gets today's frames", async () => {
+    const cases = withCases(recorded);
+    try {
+      const asked = framesOf(
+        await (await asking({ stream_options: { include_usage: true } })).text(),
+      );
+      const notAsking = [
+        framesOf(await (await asking({})).text()),
+        framesOf(await (await asking({ stream_options: { include_usage: false } })).text()),
+      ];
+
+      expect(asked.at(-1)).toEqual({ data: "[DONE]" });
+      const usage = JSON.parse(asked.at(-2)?.data ?? "null");
+      expect(usage).toEqual({
+        id: expect.any(String),
+        object: "chat.completion.chunk",
+        created: expect.any(Number),
+        model: "m",
+        choices: [],
+        usage: { prompt_tokens: 1180, completion_tokens: 62, total_tokens: 1242 },
+      });
+      const others = asked.filter((_, index) => index !== asked.length - 2);
+      expect(new Set(asked.slice(0, -1).map((frame) => JSON.parse(frame.data).id)).size).toBe(1);
+
+      for (const frames of notAsking) {
+        expect(frames.some((frame) => frame.data.includes('"usage"'))).toBe(false);
+        expect(comparable(frames)).toEqual(comparable(others));
+      }
+    } finally {
+      cases.dispose();
+    }
+  });
+});
+
 describe("the Anthropic stream", () => {
   it("is named events from message_start to message_stop, with no sentinel at all", async () => {
     const cases = withCases(recorded);

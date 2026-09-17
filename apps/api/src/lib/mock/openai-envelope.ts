@@ -21,6 +21,13 @@ import type { Frame } from "./frames";
 const identifier = () => `chatcmpl-${crypto.randomUUID().replaceAll("-", "")}`;
 const now = () => Math.floor(Date.now() / 1000);
 
+/** The case's counts in this protocol's names, whole or streamed. */
+const usageOf = (recorded: RecordedCase) => ({
+  prompt_tokens: recorded.usage.input_tokens,
+  completion_tokens: recorded.usage.output_tokens,
+  total_tokens: recorded.usage.input_tokens + recorded.usage.output_tokens,
+});
+
 type Call = RecordedCase["tool_calls"][number];
 
 /** The arguments as this protocol carries them: the string itself, or the object as JSON. */
@@ -58,11 +65,7 @@ export const openAiWhole = (recorded: RecordedCase, model: string) => ({
       logprobs: null,
     },
   ],
-  usage: {
-    prompt_tokens: recorded.usage.input_tokens,
-    completion_tokens: recorded.usage.output_tokens,
-    total_tokens: recorded.usage.input_tokens + recorded.usage.output_tokens,
-  },
+  usage: usageOf(recorded),
 });
 
 /**
@@ -78,9 +81,16 @@ export const openAiWhole = (recorded: RecordedCase, model: string) => ({
  * the one thing that makes this protocol end differently from the other.
  *
  * This protocol carries no `usage` in a stream unless the request asked for it with
- * `stream_options`, and no request of ours does: of the case, only the calls are read.
+ * `stream_options.include_usage` (D29). When asked, one more chunk comes after the
+ * finish and before the sentinel: an empty `choices` list and the case's counts, named
+ * as the whole answer names them. A request not asking gets no such chunk.
  */
-export const openAiFrames = (model: string, chunks: string[], recorded: RecordedCase): Frame[] => {
+export const openAiFrames = (
+  model: string,
+  chunks: string[],
+  recorded: RecordedCase,
+  asked: { includeUsage: boolean },
+): Frame[] => {
   const id = identifier();
   const created = now();
   const chunk = (delta: object, finish: string | null, paced = false): Frame => ({
@@ -109,6 +119,20 @@ export const openAiFrames = (model: string, chunks: string[], recorded: Recorded
       chunk({ tool_calls: [{ index, function: { arguments: argumentsOf(call) } }] }, null, true),
     ]),
     chunk({}, finishOf(recorded)),
+    ...(asked.includeUsage
+      ? [
+          {
+            data: JSON.stringify({
+              id,
+              object: "chat.completion.chunk",
+              created,
+              model,
+              choices: [],
+              usage: usageOf(recorded),
+            }),
+          },
+        ]
+      : []),
     { data: "[DONE]" },
   ];
 };
