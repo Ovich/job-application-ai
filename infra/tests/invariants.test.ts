@@ -457,6 +457,24 @@ describe("what the function signs people in with (ID60, ID71)", () => {
     expect(at("App-dev", "Api", "Properties.Environment.Variables.AI_MODEL.Ref")).toBe("AiModel");
   });
 
+  /**
+   * The model's context window (D35, `ID304`): the mock's model has no profile that says
+   * it, and the function's schema defaults the two only while the model is left unset,
+   * which the template never does. So the template hands both, from two parameters.
+   */
+  it("hands the function the model's context window from two parameters, 128000 and 16384 unless they say otherwise", () => {
+    const { AiMaxInputTokens, AiMaxOutputTokens } =
+      readYamlTemplate(infra("App-dev.yaml")).Parameters ?? {};
+    expect(AiMaxInputTokens).toMatchObject({ Type: "Number", Default: 128000, MinValue: 1 });
+    expect(AiMaxOutputTokens).toMatchObject({ Type: "Number", Default: 16384, MinValue: 1 });
+    expect(
+      at("App-dev", "Api", "Properties.Environment.Variables.AI_OPT_MAX_INPUT_TOKENS.Ref"),
+    ).toBe("AiMaxInputTokens");
+    expect(
+      at("App-dev", "Api", "Properties.Environment.Variables.AI_OPT_MAX_OUTPUT_TOKENS.Ref"),
+    ).toBe("AiMaxOutputTokens");
+  });
+
   it("lets the deploy role read the two secrets it is named for, and no others", () => {
     const policy = leaves(resource("Deploy", "DeployRolePolicy") as unknown as Json);
     const allowed = [...policy]

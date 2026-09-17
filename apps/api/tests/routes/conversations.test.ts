@@ -376,6 +376,30 @@ describe("a free message (US2, SL3)", () => {
     expect(body.entries.map((entry) => entry.author)).toEqual(["assistant", "person"]);
   });
 
+  it("answers a message too large for the model's budget with the error frame, and keeps it (SL9, D36)", async () => {
+    const person = await signedIn("message-too-large@example.com");
+    const smallRoutes = new Hono().route(
+      "/api/conversations",
+      conversationsOf(agentOn({ context: { maxInputTokens: 100 } }), [{ ...aTestAssistant }]),
+    );
+
+    const { status, leaves } = await post(
+      "/api/conversations/profile/messages",
+      "word ".repeat(200),
+      person.cookie,
+      smallRoutes,
+    );
+
+    expect(status).toBe(200);
+    expect(shapeOf(leaves)).toEqual(["entry", "status", "error"]);
+    expect(leaves.at(-1)?.message).toBe(
+      "The assistant could not answer this time. Your message is kept.",
+    );
+    expect(requestsSent()).toEqual([]);
+    const { body } = await get("/api/conversations/profile", person.cookie);
+    expect(body.entries.map((entry) => entry.author)).toEqual(["assistant", "person"]);
+  });
+
   /** What the agent is doing, streamed and never stored (`S7.5`, `ID210`, spec `H27`). */
   it("streams the step's phrase as a status leaf before the reply's words, and stores none of it", async () => {
     const person = await signedIn("message-status@example.com");
