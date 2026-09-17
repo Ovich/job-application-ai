@@ -244,8 +244,14 @@ export const readDocuments = (agent: ConversationsAgent, profile: Assistant) =>
         }
 
         if (profileWritten) {
-          const conversation = await existing(person, profile.name, null);
-          if (conversation !== undefined) await agent.notify(conversation, profileUpdatedNotice);
+          // The profile is written whatever happens here: a notice that cannot be written
+          // is logged, and the reading still ends as done.
+          try {
+            const conversation = await existing(person, profile.name, null);
+            if (conversation !== undefined) await agent.notify(conversation, profileUpdatedNotice);
+          } catch (thrown) {
+            console.error("the profile conversation could not be told of the reading", thrown);
+          }
         }
 
         await envelope.send({ kind: "run", status: "done" });

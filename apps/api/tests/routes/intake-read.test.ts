@@ -380,6 +380,36 @@ describe("the profile conversation, told of a reading (D34)", () => {
     expect(await conversationOf(person.cookie)).toEqual(opened);
   });
 
+  it("still ends the reading as done when the notice cannot be written", async () => {
+    const { person, opened } = await readThenOpened("notice-fails@example.com");
+    const { Hono } = await import("hono");
+    const { intakeOf } = await import("../../src/routes/intake");
+    const { profileAssistant } = await import("../../src/assistants/profile");
+    const { agentOn, conversationStore } = await import("../support/agent");
+    const failing = agentOn({
+      store: {
+        ...conversationStore,
+        append: () => Promise.reject(new Error("the store refused the notice")),
+      },
+    });
+    const routes = new Hono().route("/api/intake", intakeOf(failing, profileAssistant));
+    const logged = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    try {
+      const response = await routes.request("/api/intake/read", {
+        method: "POST",
+        headers: { cookie: person.cookie },
+      });
+      const leaves = leavesOf(await response.text());
+
+      expect(leaves.at(-1)).toEqual(expect.objectContaining({ kind: "run", status: "done" }));
+      expect(await statusesOf(person.id)).toEqual([["2026-08-30_cv_EN.pdf", "read"]]);
+      expect(await conversationOf(person.cookie)).toEqual(opened);
+      expect(logged).toHaveBeenCalledOnce();
+    } finally {
+      logged.mockRestore();
+    }
+  });
+
   it("notifies nothing on a run with nothing new to read", async () => {
     const person = await signedIn("not-notified-on-nothing-new@example.com");
     await documentsFor(person.id, [theSet.cvEnglish.filename], storage);
