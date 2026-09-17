@@ -8,6 +8,7 @@ import {
   toolResultPart,
   toolUsePart,
 } from "@app/db";
+import { AIMessage, type BaseMessage, HumanMessage, ToolMessage } from "@langchain/core/messages";
 import { and, asc, type ExtractTablesWithRelations, eq, isNull, max } from "drizzle-orm";
 import type { PgQueryResultHKT, PgTransaction } from "drizzle-orm/pg-core";
 import type { Message } from "../ai";
@@ -216,6 +217,60 @@ export const asMessages = (said: Entry[], describe: (part: Part) => string | nul
     });
     if (calls.length === 0) return text === "" ? [] : [{ role: "assistant", content: text }];
     return [{ role: "assistant", content: text === "" ? null : text, tool_calls: calls }];
+  });
+
+/** A tool call's arguments as the model reads them back: an object, as `tool_calls` wants. */
+type Args = Record<string, unknown>;
+
+/**
+ * The conversation as the LangChain agent reads it (spec 3.3, `ID272`): the same entries
+ * as `asMessages`, as `@langchain/core` messages. Nothing calls it yet; `lib/agent` moves
+ * to it, and it takes `asMessages`'s name when the old one goes.
+ *
+ * A call's `args` are the model's own arguments string, parsed: the key order is kept and
+ * only whitespace is dropped, since the converter serialises `args` again (D23). The
+ * message is built with `tool_calls` and nothing in `additional_kwargs`, so it neither
+ * parses them itself nor warns.
+ */
+export const asLangChainMessages = (
+  said: Entry[],
+  describe: (part: Part) => string | null,
+): BaseMessage[] =>
+  said.flatMap((entry): BaseMessage[] => {
+    if (entry.author === "tool") {
+      return entry.parts.flatMap((part): BaseMessage[] => {
+        const read = toolResultPart.safeParse(part);
+        if (!read.success) return [];
+        const { id, name, before, after, refused } = read.data;
+        return [
+          new ToolMessage({
+            tool_call_id: id,
+            name,
+            content: JSON.stringify(refused === undefined ? { before, after } : { refused }),
+          }),
+        ];
+      });
+    }
+
+    if (entry.author === "person") {
+      const says = entry.parts.flatMap(personSays(describe)).join("\n\n");
+      return says === "" ? [] : [new HumanMessage(says)];
+    }
+
+    const text = entry.parts
+      .flatMap((part) =>
+        part.kind === "text" && typeof part["text"] === "string" ? [part["text"]] : [],
+      )
+      .join("\n\n");
+    const calls = entry.parts.flatMap((part) => {
+      const read = toolUsePart.safeParse(part);
+      if (!read.success) return [];
+      const { id, name, input, arguments: written } = read.data;
+      const args = (written === undefined ? (input ?? {}) : JSON.parse(written)) as Args;
+      return [{ id, name, args, type: "tool_call" as const }];
+    });
+    if (calls.length === 0) return text === "" ? [] : [new AIMessage(text)];
+    return [new AIMessage({ content: text, tool_calls: calls })];
   });
 
 /** One entry written after the last, in the caller's transaction. */
