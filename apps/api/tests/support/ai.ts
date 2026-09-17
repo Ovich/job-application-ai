@@ -1,25 +1,24 @@
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
 import { ChatOpenAICompletions } from "@langchain/openai";
 // The client from the module that defines it, never from `lib/ai`'s index. A test of a
 // route that calls `lib/ai` stands that index in through `vi.mock`, whose factory
 // reaches this file; importing the index here would put this module inside the graph of
 // the module it is standing in for, and the two would wait on each other for ever.
 import { type AiConfig, createAskFor, createChatModel } from "../../src/lib/ai/client";
-import { type RecordedCaseFile, withAnswersFrom } from "../../src/lib/mock";
+import type { Answer } from "../../src/lib/mock";
+// The binding's instance, and not the application: `routes/mock` reaches no `lib/ai`, so
+// importing it here puts nothing of the module a test stands in inside this file's graph.
+import { model } from "../../src/routes/mock";
 
 /**
  * The suite's own AI support (ID129).
  *
  * It hides three things: pointing the client at the application's own fetch handler, so
  * the serialisers are exercised the way HTTP would exercise them and no port is opened;
- * a temporary tree of answer documents, so a test can record a case of its own without
- * adding a file to the product's own tree; and the recording of what was actually sent, which is
- * how the request's shape is asserted (criterion 3).
+ * a test's own answers, given to the application's mock for the length of the test, so a
+ * test records a case without adding a file to the project's answers; and the recording of
+ * what was actually sent, which is how the request's shape is asserted (criterion 3).
  *
- * It leaves nothing behind: `withCases` removes its directory and puts the double's own
- * tree back.
+ * It leaves nothing behind: `withCases`'s `dispose` puts the mock back on its own answers.
  */
 
 /** One request as it left `lib/ai`, before anything on the other side read it. */
@@ -122,32 +121,29 @@ export const failingMidStream = (
 export type CasesInPlace = { dispose: () => void };
 
 /**
- * Writes the given cases into a temporary tree and points the double's loader at it, for the length of one test. The key is the case name; the value is the recorded
- * case as an answer document holds it, minus the name, which the key already carries.
+ * One case as a test writes it: an answer minus its name, which the key carries, and what
+ * it stands for, which is the author's own note and nothing the mock reads.
+ */
+export type CaseWritten = Omit<Answer, "case"> & { stands_for?: string };
+
+/**
+ * Gives the application's mock the given cases for the length of one test (`ID295`): they
+ * are tried before the project's own answers, and `dispose` resets the mock to those. The
+ * key is the case name.
  *
  * A `Disposable` would be the natural shape, and is not available: this repository's
  * TypeScript library is `ES2023`, which has no `Symbol.dispose`. `dispose()` in a
  * `finally` or an `afterEach` is the same discipline written by hand.
  */
-export const withCases = (cases: Record<string, Omit<RecordedCaseFile, "case">>): CasesInPlace => {
-  const root = mkdtempSync(join(tmpdir(), "jobapp-cases-"));
-  for (const [name, recorded] of Object.entries(cases)) {
-    const directory = join(root, name.slice(0, name.indexOf(".")));
-    mkdirSync(directory, { recursive: true });
-    // The file's name mirrors the product's tree, `<feature>/<step>__<input>.json`: a
-    // case name carries a colon, which is not a character a file name may hold.
-    const file = `${name.slice(name.indexOf(".") + 1).replace(":", "__")}.json`;
-    writeFileSync(
-      join(directory, file),
-      `${JSON.stringify({ case: name, ...recorded }, null, 2)}\n`,
-      "utf8",
-    );
-  }
-  const undo = withAnswersFrom(root);
-  return {
-    dispose: () => {
-      undo();
-      rmSync(root, { recursive: true, force: true });
-    },
-  };
+export const withCases = (cases: Record<string, CaseWritten>): CasesInPlace => {
+  model.use(
+    ...Object.entries(cases).map(([name, { stands_for: _note, ...answer }]) => ({
+      case: name,
+      ...answer,
+    })),
+  );
+  return { dispose: () => model.reset() };
 };
+
+/** Every request the application's mock answered since the last reset, and what it picked. */
+export const requestsAnswered = () => model.requests;

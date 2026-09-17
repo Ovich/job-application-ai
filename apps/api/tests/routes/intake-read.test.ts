@@ -263,13 +263,16 @@ describe("the reading run (criterion 10, D8)", () => {
     const two = [theSet.cvFrench.filename, theSet.cvEnglish.filename];
     await documentsFor(person.id, two, storage);
 
-    // A fixture root with nothing in it: the run's case misses, which is what a reading
-    // that cannot be had looks like from here (`ID113` — a miss is never a guess).
-    const nothingRecorded = withCases({});
+    // The run's case answered with the words a miss answers with (`ID166`): a test's answer
+    // is tried before the project's own and cannot take one away (`ID295`), so the reading
+    // that cannot be had is written in its place. It is not JSON, and the reading fails.
+    const nothingUsable = withCases({
+      "intake.read:2026-08-30_cv_FR+2026-08-30_cv_EN": { content: "No pre generated text" },
+    });
     try {
       await (await read(person.cookie)).text();
     } finally {
-      nothingRecorded.dispose();
+      nothingUsable.dispose();
     }
 
     const failed = await rowsOf(person.id);

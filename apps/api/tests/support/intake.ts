@@ -1,4 +1,4 @@
-import type { RecordedCaseFile } from "../../src/lib/mock";
+import type { CaseWritten } from "./ai";
 
 /**
  * The suite's own intake support for the questions and the rules (ID129, on SL1's,
@@ -122,7 +122,7 @@ const slugOf = (filename: string): string => {
   return dot <= 0 ? filename : filename.slice(0, dot);
 };
 
-const recorded = (stands_for: string, content: string): Omit<RecordedCaseFile, "case"> => ({
+const recorded = (stands_for: string, content: string): CaseWritten => ({
   stands_for,
   content,
 });
@@ -139,7 +139,7 @@ export const caseNameFor = (documents: readonly string[]): string =>
  * (`D20`). What this function invents is nothing — it joins the two halves a test wrote
  * apart into the single answer the one call gives.
  */
-export const casesForRun = (run: RunCases): Record<string, Omit<RecordedCaseFile, "case">> => {
+export const casesForRun = (run: RunCases): Record<string, CaseWritten> => {
   const name = caseNameFor(run.documents);
   if (run.raw !== undefined) {
     return {

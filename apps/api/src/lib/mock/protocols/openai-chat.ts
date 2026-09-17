@@ -1,4 +1,4 @@
-import type { RecordedCase } from "./answers";
+import type { Held } from "../answers";
 import type { Frame } from "./frames";
 
 /**
@@ -22,24 +22,24 @@ const identifier = () => `chatcmpl-${crypto.randomUUID().replaceAll("-", "")}`;
 const now = () => Math.floor(Date.now() / 1000);
 
 /** The case's counts in this protocol's names, whole or streamed. */
-const usageOf = (recorded: RecordedCase) => ({
+const usageOf = (recorded: Held) => ({
   prompt_tokens: recorded.usage.input_tokens,
   completion_tokens: recorded.usage.output_tokens,
   total_tokens: recorded.usage.input_tokens + recorded.usage.output_tokens,
 });
 
-type Call = RecordedCase["tool_calls"][number];
+type Call = Held["tool_calls"][number];
 
 /** The arguments as this protocol carries them: the string itself, or the object as JSON. */
 const argumentsOf = (call: Call): string =>
   typeof call.arguments === "string" ? call.arguments : JSON.stringify(call.arguments ?? {});
 
 /** Why the answer stopped: on its calls when it has any. */
-const finishOf = (recorded: RecordedCase): string =>
+const finishOf = (recorded: Held): string =>
   recorded.tool_calls.length === 0 ? "stop" : "tool_calls";
 
 /** The whole answer. `object` is exactly `chat.completion`. */
-export const openAiWhole = (recorded: RecordedCase, model: string) => ({
+export const openAiWhole = (recorded: Held, model: string) => ({
   id: identifier(),
   object: "chat.completion",
   created: now(),
@@ -88,7 +88,7 @@ export const openAiWhole = (recorded: RecordedCase, model: string) => ({
 export const openAiFrames = (
   model: string,
   chunks: string[],
-  recorded: RecordedCase,
+  recorded: Held,
   asked: { includeUsage: boolean },
 ): Frame[] => {
   const id = identifier();

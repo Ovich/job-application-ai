@@ -31,13 +31,6 @@ export const defaultPace: Pace = {
   jitter: 0.15,
 };
 
-/**
- * The per-request override. A real provider ignores a header it does not know, so a
- * request carrying it is still signature-identical to one that does not, which is the
- * same reasoning the case header rests on (ID111).
- */
-export const paceHeader = "X-Jobapp-Mock-Pace";
-
 /** The four names, as the header and the configuration value both spell them. */
 const settings = {
   tps: "tokensPerSecond",
@@ -65,9 +58,28 @@ export const paceFrom = (spec: string | null | undefined, fallback: Pace): Pace 
   return pace;
 };
 
-/** The pace this request asks for, or the configured one. */
-export const paceOf = (headers: Headers, fallback: Pace): Pace =>
-  paceFrom(headers.get(paceHeader), fallback);
+/**
+ * The per-request override, read from the header the binding names. A real provider
+ * ignores a header it does not know, so a request carrying it is still signature-identical
+ * to one that does not, which is the same reasoning the case header rests on (ID111).
+ */
+export const paceOf = (headers: Headers, header: string, fallback: Pace): Pace =>
+  paceFrom(headers.get(header), fallback);
+
+/** No wait and one piece: what a suite asks for. */
+const instant: Pace = { tokensPerSecond: 0, timeToFirstTokenMs: 0, tokensPerChunk: 0, jitter: 0 };
+
+/**
+ * The pace an option states: the four settings or some of them, the word `instant`, or the
+ * spec string configuration and the header spell. What is left unsaid is the default.
+ */
+export const paceConfigured = (option: Partial<Pace> | string | undefined): Pace => {
+  if (option === undefined) return defaultPace;
+  if (option === "instant") return instant;
+  if (typeof option === "string") return paceFrom(option, defaultPace);
+  const stated = Object.entries(option).filter(([, value]) => value !== undefined);
+  return { ...defaultPace, ...Object.fromEntries(stated) };
+};
 
 /**
  * The recorded answer, split into the pieces it will arrive in.

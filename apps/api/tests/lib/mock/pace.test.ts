@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { chunksOf, defaultPace, paceFrom, paceOf } from "../../../src/lib/mock";
+// The library's own suite reads the pace below its entry: the spec string and the chunking
+// are what both envelopes rest on, and the entry exports the class and its types alone.
+import { chunksOf, defaultPace, paceFrom, paceOf } from "../../../src/lib/mock/pace";
 
 /**
  * The four named settings, read from a value that configuration and the per-request
@@ -39,11 +41,13 @@ describe("a pace read from its four names", () => {
   });
 
   it("falls back whole when nothing is asked for", () => {
-    expect(paceOf(new Headers(), defaultPace)).toEqual(defaultPace);
+    expect(paceOf(new Headers(), "X-Jobapp-Mock-Pace", defaultPace)).toEqual(defaultPace);
   });
 
   it("reads the request's own header when it carries one", () => {
-    expect(paceOf(new Headers({ "X-Jobapp-Mock-Pace": "tps=0" }), defaultPace)).toEqual({
+    expect(
+      paceOf(new Headers({ "X-Jobapp-Mock-Pace": "tps=0" }), "X-Jobapp-Mock-Pace", defaultPace),
+    ).toEqual({
       ...defaultPace,
       tokensPerSecond: 0,
     });

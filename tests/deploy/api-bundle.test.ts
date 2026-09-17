@@ -96,7 +96,7 @@ beforeAll(async () => {
     logLevel: "silent",
   });
   warnings = result.warnings.map((each) => `${each.text} (${each.id})`);
-  cpSync(join(root, "apps/api/src/lib/mock/documents"), join(built, "documents"), {
+  cpSync(join(root, "apps/api/src/mock-answers/documents"), join(built, "documents"), {
     recursive: true,
   });
 }, 180_000);
@@ -165,8 +165,8 @@ describe("the API bundle the deploy ships", () => {
     // The deployed function's `AI_BASE_URL` is its own mock by default, which it answers
     // in process, reading these at run time. The zip holds what the step put in `dist/lambda/`, and nothing
     // else puts them there.
-    expect(existsSync(join(root, "apps/api/src/lib/mock/documents"))).toBe(true);
-    expect(bundleStep()).toContain("apps/api/src/lib/mock/documents");
+    expect(existsSync(join(root, "apps/api/src/mock-answers/documents"))).toBe(true);
+    expect(bundleStep()).toContain("apps/api/src/mock-answers/documents");
   });
 
   it("carries the profile assistant's prompt inside the bundle, since nothing ships it beside", () => {
