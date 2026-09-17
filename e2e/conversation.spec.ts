@@ -164,6 +164,11 @@ test("a pick, then a free message and its streamed reply, stay in order after th
   await expect(entries.last()).toHaveAttribute("data-msg", "assistant", { timeout: 30_000 });
   // The preset's first pick has a written answer (`ID292`); the free message below has none.
   await expect(entries.last()).toContainText("Java on the CIIP platform");
+  // The answer is a chain (D33, D37): the whole profile read first, drawn as one quiet line
+  // before the reply, never its JSON.
+  const readLine = column.locator("[data-part=read]");
+  await expect(readLine).toHaveText(["Read your profile"]);
+  await expect(column).not.toContainText('"items"');
   await expect(page.locator("[data-part=waiting]")).toBeVisible({ timeout: 15_000 });
   const answeredCount = (await count.textContent())?.trim() ?? "";
 
@@ -194,6 +199,8 @@ test("a pick, then a free message and its streamed reply, stay in order after th
   await expect(typed).toHaveCount(1);
   const reply = said.filter({ hasText: "No pre generated text" }).last();
   await expect(reply).toBeVisible();
+  // The read is stored, and drawn again as the same one line.
+  await expect(readLine).toHaveText(["Read your profile"]);
 
   const inOrder = await page.evaluate(
     (drawn) =>
@@ -206,6 +213,8 @@ test("a pick, then a free message and its streamed reply, stay in order after th
     [
       await opening.elementHandle(),
       await answered.elementHandle(),
+      await readLine.elementHandle(),
+      await entries.filter({ hasText: "Java on the CIIP platform" }).elementHandle(),
       await typed.elementHandle(),
       await reply.elementHandle(),
     ],

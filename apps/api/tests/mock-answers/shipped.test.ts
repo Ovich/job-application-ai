@@ -193,3 +193,35 @@ describe("the profile's replies to the preset CV's decisions (ID292)", () => {
     },
   );
 });
+
+/**
+ * Every call the shipped answers write is one the agent would run (D37): the tool is the
+ * profile assistant's, and the arguments fit that tool's own input schema, at every link.
+ */
+describe("the calls the shipped answers write (D37)", () => {
+  type Link = { tool_calls?: { name: string; arguments: unknown }[]; next?: Link };
+
+  const callsOf = (link: Link | undefined): { name: string; arguments: unknown }[] =>
+    link === undefined ? [] : [...(link.tool_calls ?? []), ...callsOf(link.next)];
+
+  const written = files.flatMap((file) =>
+    callsOf(JSON.parse(readFileSync(join(mockAnswers, file), "utf8")) as Link).map(
+      (call) => [file, call.name, call.arguments] as const,
+    ),
+  );
+
+  it("has calls to hold, so the case below cannot pass on nothing", () => {
+    expect(written.map(([file, name]) => `${file}: ${name}`)).toEqual([
+      "profile/java-earlier-work.json: read_profile",
+      "profile/java-studies.json: read_profile",
+      "profile/java-the-ciip-platform.json: read_profile",
+    ]);
+  });
+
+  it.each(written)("%s calls %s with arguments its input schema parses", (_file, name, args) => {
+    const tool = profileAssistant.tools.find((each) => each.name === name);
+
+    expect(tool).toBeDefined();
+    expect(tool?.input.safeParse(args).success).toBe(true);
+  });
+});

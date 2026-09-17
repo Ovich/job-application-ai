@@ -176,6 +176,38 @@ describe("each part, as the LangChain agent reads it (spec 3.3)", () => {
     ).toEqual([answer("call_2", { refused: "The line line-9 no longer exists on this item." })]);
   });
 
+  it("renders a read tool_result as a ToolMessage whose whole content is the read (ID301)", () => {
+    const read = { itemId: "item-nexplore", items: [before] };
+    const messages = asMessages([
+      entry("tool", [{ kind: "tool_result", id: "call_3", name: "read_profile", read }]),
+    ]);
+
+    expect(messages[0]).toBeInstanceOf(ToolMessage);
+    expect(seen(messages[0] as BaseMessage)).toEqual({
+      type: "tool",
+      // Every object's keys in one order (D33).
+      content:
+        '{"itemId":"item-nexplore","items":[{"id":"item-nexplore","lines":[{"id":"line-2","text":"Designed and shipped the platform."}],"title":"Platform engineer"}]}',
+      tool_call_id: "call_3",
+      name: "read_profile",
+    });
+  });
+
+  it("renders a read the same bytes whatever order the store kept its keys in (D33)", () => {
+    const written = { items: [{ title: "Platform engineer", id: "item-nexplore" }], kind: "x" };
+    const reordered = { kind: "x", items: [{ id: "item-nexplore", title: "Platform engineer" }] };
+
+    const [one, other] = asMessages([
+      entry("tool", [
+        { kind: "tool_result", id: "call_1", name: "read_profile", read: written },
+        { kind: "tool_result", id: "call_2", name: "read_profile", read: reordered },
+      ]),
+    ]);
+
+    expect(one?.content).toBe(other?.content);
+    expect(JSON.parse(String(one?.content))).toEqual(written);
+  });
+
   it("renders a tool entry of two results as two ToolMessages, in order", () => {
     expect(
       seenAll(
@@ -392,5 +424,35 @@ describe("a step, written and rendered again for the LangChain agent (spec 3.3)"
       seen(answered),
       answer("call_7", { before, after }),
     ]);
+  });
+});
+
+/**
+ * The stored `tool_result` part, as the catalogue holds it (`ID301`): before and after, a
+ * refusal, or a read; never two, never none.
+ */
+describe("a tool_result in the catalogue (ID301)", () => {
+  const result = (outcome: Record<string, unknown>) => [
+    { kind: "tool_result", id: "call_1", name: "read_profile", ...outcome },
+  ];
+
+  it("accepts a read, as it accepts before and after, or a refusal", () => {
+    expect(parts.safeParse(result({ read: { items: [] } })).success).toBe(true);
+    expect(parts.safeParse(result({ before, after })).success).toBe(true);
+    expect(parts.safeParse(result({ refused: "No." })).success).toBe(true);
+  });
+
+  it.each([
+    ["a read and a refusal", { read: { items: [] }, refused: "No." }],
+    ["a read and before and after", { read: { items: [] }, before, after }],
+    ["before and after and a refusal", { before, after, refused: "No." }],
+    ["a before alone", { before }],
+    ["a read with a half edit", { read: { items: [] }, after }],
+    ["nothing", {}],
+  ])("refuses %s", (_said, outcome) => {
+    const parsed = parts.safeParse(result(outcome));
+
+    expect(parsed.success).toBe(false);
+    expect(String(parsed.error)).toContain("before and after, or a refusal, or a read");
   });
 });

@@ -19,6 +19,7 @@ import {
   chatModelThroughTheApp,
   failingMidStream,
   forgetRequests,
+  requestsAnswered,
   requestsSent,
   withCases,
 } from "../../support/ai";
@@ -957,5 +958,148 @@ describe("two agents share no built graph (OD1)", () => {
     expect(requestsSent()[0]?.headers["x-jobapp-case"]).toBe(stepOf(conversation, 1));
     expect(requestsSent()[1]?.headers["x-jobapp-case"]).toBeUndefined();
     expect(requestsSent()[1]?.headers["x-other-case"]).toBe(stepOf(conversation, 1));
+  });
+});
+
+/**
+ * The profile read through the tool (D33, `ID301`), on a chain the mock plays (D37): the
+ * shipped kind of answer, found by the person's message, whose call is `read_profile` and
+ * whose `next` is the reply. The read runs for real; only the model's side is written.
+ */
+describe("a read, then words (D33, D37)", () => {
+  const theMessage = "Shorten the second line of my Nexplore post.";
+  const theReply = "Your Nexplore post has three lines; which words should go?";
+
+  /** A chain answering the conversation's message: the whole profile read, then words. */
+  const chain = (conversation: Conversation) =>
+    withCases({
+      [`chain:${conversation.id}`]: {
+        stands_for: "the agent reads the whole profile, then asks",
+        answers: theMessage,
+        tool_calls: [{ id: "call_read", name: "read_profile", arguments: {} }],
+        next: { content: theReply },
+      },
+    });
+
+  /** The run, and the answers the mock picked, read before the cases are disposed of. */
+  const run = async (conversation: Conversation, person: string) => {
+    const cases = chain(conversation);
+    try {
+      const ran = await ranThrough(agent.run(profileAssistant, conversation, person));
+      return {
+        ...ran,
+        picked: requestsAnswered()
+          .map((each) => each.picked)
+          .slice(-2),
+      };
+    } finally {
+      cases.dispose();
+    }
+  };
+
+  it("stores the call, the read and one spoken reply, and streams the read's own phrase", async () => {
+    const at = await planted();
+    const conversation = await conversationOf(at.person);
+    const post = await standing(at.person, at.post);
+
+    const ran = await run(conversation, at.person);
+
+    expect(ran.thrown).toBeUndefined();
+    const stored = await entries(conversation);
+    expect(stored.map((entry) => entry.author)).toEqual([
+      "assistant",
+      "person",
+      "assistant",
+      "tool",
+      "assistant",
+    ]);
+    expect(stored[2]?.parts).toEqual([
+      { kind: "tool_use", id: "call_read", name: "read_profile", input: {}, arguments: "{}" },
+    ]);
+    expect(stored[3]?.parts).toEqual([
+      {
+        kind: "tool_result",
+        id: "call_read",
+        name: "read_profile",
+        read: { items: [{ ...post, concerns: [] }] },
+      },
+    ]);
+    expect(stored[4]?.parts).toEqual([{ kind: "text", text: theReply }]);
+    // One spoken reply: the words are the reply's alone.
+    expect(textOf(ran.said)).toBe(theReply);
+    expect(entriesOf(ran.said)).toEqual(stored.slice(2));
+    expect(ran.said.flatMap((each) => (each.kind === "activity" ? [each.text] : []))).toEqual([
+      "Thinking about your message",
+      "Reading your profile",
+      "Thinking it through",
+    ]);
+  });
+
+  it("asks with the prompt, then the history alone, and hands the read back as the tool message", async () => {
+    const at = await planted();
+    const conversation = await conversationOf(at.person);
+    const post = await standing(at.person, at.post);
+
+    const { picked } = await run(conversation, at.person);
+
+    expect(requestsSent()).toHaveLength(2);
+    for (const index of requestsSent().keys()) {
+      const roles = bodyOf(index).messages.map((message) => message.role);
+      expect(roles.lastIndexOf("system")).toBe(0);
+      expect(JSON.stringify(bodyOf(index).messages.slice(1, 3))).not.toContain(at.lines[0]);
+    }
+    expect(bodyOf(1).messages.map((message) => message.role)).toEqual([
+      "system",
+      "assistant",
+      "user",
+      "assistant",
+      "tool",
+    ]);
+    const read = bodyOf(1).messages[4];
+    expect(read?.tool_call_id).toBe("call_read");
+    expect(JSON.parse(String(read?.content))).toEqual({ items: [{ ...post, concerns: [] }] });
+    // The mock's own evidence: the file, then its link.
+    expect(picked).toEqual([`chain:${conversation.id}`, `chain:${conversation.id}#next`]);
+  });
+
+  it("sends the read back the same bytes on the next message, read from the store", async () => {
+    const at = await planted();
+    const conversation = await conversationOf(at.person);
+    await run(conversation, at.person);
+    const inStep = bodyOf(1).messages[4]?.content;
+    await testDb.transaction((tx) =>
+      append(tx, conversation, "person", [{ kind: "text", text: "Thanks." }]),
+    );
+    forgetRequests();
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+
+    await ranThrough(agent.run(profileAssistant, conversation, at.person));
+
+    const reloaded = bodyOf(0).messages.find((message) => message.role === "tool");
+    expect(reloaded?.content).toBe(inStep);
+  });
+
+  it("writes nothing of a step whose read cannot be stored, and throws (D21)", async () => {
+    const at = await planted();
+    await testDb
+      .insert(itemLine)
+      .values({ id: randomUUID(), itemId: at.post, text: "INJECTED-FAILURE-READ", position: 3 });
+    const conversation = await conversationOf(at.person);
+    const failure = await failingOn(testDb, "INJECTED-FAILURE-READ");
+
+    let ran: { said: Ran[]; thrown: unknown };
+    try {
+      ran = await run(conversation, at.person);
+    } finally {
+      await failure.dispose();
+    }
+
+    expect(String(ran.thrown)).toMatch(/INJECTED-FAILURE-READ/);
+    expect(entriesOf(ran.said)).toEqual([]);
+    expect(requestsSent()).toHaveLength(1);
+    expect((await entries(conversation)).map((entry) => entry.author)).toEqual([
+      "assistant",
+      "person",
+    ]);
   });
 });
