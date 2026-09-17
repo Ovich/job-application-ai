@@ -6,6 +6,7 @@ import {
   conversationIs,
   conversationRefused,
   entryOf,
+  holdingTheActionReply,
   intakeRequests,
   messagesPosted,
   profileIs,
@@ -49,7 +50,7 @@ describe("acting through the assistant's tool (D9)", () => {
   const opening = entryOf(1, [{ kind: "text", text: "I read your 2 documents." }]);
   const asked = questionOf({ id: "q1", itemId: "k8s", lead: "Which was it?" });
 
-  it("appends the entries the action answered, and resolves true", async () => {
+  it("appends the person's entry and the agent's reply the action's stream carried, and resolves true (D31)", async () => {
     profileIs({ documents: 2, questions: [asked] });
     conversationIs([opening]);
     const core = coreOf("profile");
@@ -64,7 +65,14 @@ describe("acting through the assistant's tool (D9)", () => {
         author: "person",
         parts: [expect.objectContaining({ kind: "question_skipped", lead: "Which was it?" })],
       }),
+      expect.objectContaining({
+        author: "assistant",
+        parts: [{ kind: "text", text: "No pre generated text" }],
+      }),
     ]);
+    expect(core.replying()).toBeNull();
+    expect(core.activity()).toBeNull();
+    expect(core.failure()).toBeNull();
     expect(intakeRequests()).toContainEqual({
       method: "POST",
       address: "/api/conversations/profile/actions/skip_question",
@@ -82,6 +90,86 @@ describe("acting through the assistant's tool (D9)", () => {
     expect(kept).toBe(false);
     expect(core.entries()).toEqual([opening]);
     expect(core.failure()).toBeNull();
+  });
+
+  const theirs = entryOf(3, [{ kind: "text", text: "Understood." }]);
+
+  it("reads the reply as post does: status sets the activity, text grows the reply, the entry joins (D31)", async () => {
+    profileIs({ documents: 2, questions: [asked] });
+    conversationIs([opening]);
+    const core = coreOf("profile");
+    await core.open();
+    holdingTheActionReply();
+
+    const acting = core.act("skip_question", { questionId: "q1" });
+    await vi.waitFor(() =>
+      expect(core.entries().map((entry) => entry.author)).toEqual(["assistant", "person"]),
+    );
+    theReply.says({ kind: "status", text: "Reading your profile" });
+    await vi.waitFor(() => expect(core.activity()).toBe("Reading your profile"));
+    theReply.says({ kind: "text", text: "Under" });
+    await vi.waitFor(() => expect(core.replying()).toBe("Under"));
+    theReply.says({ kind: "text", text: "stood." });
+    await vi.waitFor(() => expect(core.replying()).toBe("Understood."));
+    expect(core.activity()).toBeNull();
+    theReply.says({ kind: "entry", entry: theirs });
+    theReply.says({ kind: "done" });
+    theReply.ends();
+
+    expect(await acting).toBe(true);
+    expect(core.entries().map((entry) => entry.author)).toEqual([
+      "assistant",
+      "person",
+      "assistant",
+    ]);
+    expect(core.entries().at(-1)).toEqual(theirs);
+    expect(core.replying()).toBeNull();
+    expect(core.failure()).toBeNull();
+  });
+
+  it("resolves true and sets the failure when the reply fails after the person's entry was kept (D31)", async () => {
+    profileIs({ documents: 2, questions: [asked] });
+    conversationIs([opening]);
+    const core = coreOf("profile");
+    await core.open();
+    holdingTheActionReply();
+
+    const acting = core.act("skip_question", { questionId: "q1" });
+    theReply.says({ kind: "text", text: "Under" });
+    theReply.says({ kind: "error", message: "The assistant could not answer this time." });
+    theReply.ends();
+
+    expect(await acting).toBe(true);
+    expect(core.failure()).toBe("The assistant could not answer this time.");
+    expect(core.replying()).toBeNull();
+    expect(core.entries().map((entry) => entry.author)).toEqual(["assistant", "person"]);
+  });
+
+  it("sends nothing for a second act or a post while an act's reply streams (D31)", async () => {
+    profileIs({
+      documents: 2,
+      questions: [asked, questionOf({ id: "q2", itemId: "docker", lead: "Which?" })],
+    });
+    conversationIs([opening]);
+    const core = coreOf("profile");
+    await core.open();
+    holdingTheActionReply();
+
+    const acting = core.act("skip_question", { questionId: "q1" });
+    theReply.says({ kind: "text", text: "Under" });
+    await vi.waitFor(() => expect(core.replying()).toBe("Under"));
+
+    expect(await core.act("skip_question", { questionId: "q2" })).toBe(false);
+    await core.post("And a second thing.");
+
+    expect(messagesPosted()).toEqual([]);
+    expect(
+      intakeRequests().filter((request) => request.address.includes("/actions/")),
+    ).toHaveLength(1);
+    expect(core.failure()).toBeNull();
+    theReply.says({ kind: "done" });
+    theReply.ends();
+    expect(await acting).toBe(true);
   });
 });
 

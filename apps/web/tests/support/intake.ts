@@ -468,6 +468,12 @@ const flush = (): void => {
   }
 };
 
+/** A leaf as the envelope puts it on the wire, numbered in the reply's sequence. */
+const frameOf = (leaf: ReplyLeaf): string => {
+  replySeq += 1;
+  return `id: ${replySeq}\ndata: ${JSON.stringify({ seq: replySeq, version: 1, leaf })}\n\n`;
+};
+
 /** Every message posted to the conversations route, in order. */
 export const messagesPosted = (): { address: string; text: string; about?: About }[] => posted;
 
@@ -482,10 +488,7 @@ export const theReply = {
       const body = conversation.body as { id: string; entries: Entry[] };
       conversation = { ...conversation, body: { ...body, entries: [...body.entries, leaf.entry] } };
     }
-    replySeq += 1;
-    pending.push(
-      `id: ${replySeq}\ndata: ${JSON.stringify({ seq: replySeq, version: 1, leaf })}\n\n`,
-    );
+    pending.push(frameOf(leaf));
     flush();
   },
   ends: (): void => {
@@ -494,7 +497,20 @@ export const theReply = {
   },
 };
 
+/** Whether the next action's reply is the case's to write (D31). */
+let actionReplyHeld = false;
+
+/**
+ * The reply to the next action is written by the case through `theReply`, after the
+ * person's entry the route sends first. Without it, a kept action's reply is the mock's
+ * answer where no case is written, sent at once.
+ */
+export const holdingTheActionReply = (): void => {
+  actionReplyHeld = true;
+};
+
 export const resetReplies = (): void => {
+  actionReplyHeld = false;
   posted = [];
   pending = [];
   reply = null;
@@ -563,10 +579,39 @@ alsoAnswering((address, init) => {
     };
     const body = conversation.body as { id: string; entries: Entry[] };
     const next = entryOf(body.entries.length + 1, [part], "person");
+    const theirs = entryOf(next.position + 1, [{ kind: "text", text: "No pre generated text" }]);
+    const held = actionReplyHeld;
+    actionReplyHeld = false;
+    const stored = held ? [next] : [next, theirs];
     if (conversation.status === 200) {
-      conversation = { ...conversation, body: { ...body, entries: [...body.entries, next] } };
+      conversation = { ...conversation, body: { ...body, entries: [...body.entries, ...stored] } };
     }
-    return json({ entries: [next] });
+    // Kept, the route answers the stream a message answers (D31): the person's entry, then
+    // the agent's reply (the mock's answer where no case is written), then done. Held, the
+    // reply after the person's entry is the case's to write through `theReply`.
+    const leaves: ReplyLeaf[] = held
+      ? [{ kind: "entry", entry: next }]
+      : [
+          { kind: "entry", entry: next },
+          { kind: "text", text: "No pre generated text" },
+          { kind: "entry", entry: theirs },
+          { kind: "done" },
+        ];
+    return new Response(
+      new ReadableStream<Uint8Array>({
+        start(controller) {
+          reply = controller;
+          pending = [...leaves.map(frameOf), ...pending];
+          // A held reply the case has already ended closes with what is pending, as a
+          // message's does; once closed, the next reply starts open.
+          const ending = replyEnded || !held;
+          replyEnded = ending;
+          flush();
+          if (ending) replyEnded = false;
+        },
+      }),
+      { status: 200, headers: { "content-type": "text/event-stream" } },
+    );
   };
   if (action === "skip_question") {
     questionBecomes(question.id, "skipped");

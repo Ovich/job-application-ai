@@ -402,6 +402,40 @@ describe("the column keeps its thread for the visit (S8.4b, ID227)", () => {
   });
 });
 
+describe("a decision, then the agent's reply (D31, ID291)", () => {
+  /** What the column reads: each performed line's words, the person's decision, the agent's words. */
+  const column = (all: (selector: string) => Element[]): string[] =>
+    all(
+      "profile-assistant :is([data-part=opener], [data-part=ack], [data-part=answered], [data-part=skipped], [data-entry][data-msg=assistant])",
+    ).map((each) =>
+      each.hasAttribute("data-entry")
+        ? `agent: ${textOf(each.querySelector("p"))}`
+        : each.getAttribute("data-part") === "opener" || each.getAttribute("data-part") === "ack"
+          ? textOf(each)
+          : (each.getAttribute("data-part") ?? ""),
+    );
+
+  it("reads the agent's reply after the person's decision, and the performed lines as before, in order", async () => {
+    profileIs(aProfile([kubernetes, docker]));
+    const { at, all, active, pick, eventually } = await opened();
+    await eventually(() => expect(active()).toEqual(everythingActive));
+
+    await pick(0);
+    await eventually(() => expect(textOf(at("scope-tool [data-part=lead]"))).toBe(docker.lead));
+
+    expect(column(all)).toEqual([
+      "First, Kubernetes.",
+      "answered",
+      "agent: No pre generated text",
+      "Noted.",
+      "Next, Docker.",
+    ]);
+    expect(intakeRequests().filter((request) => request.address.includes("/actions/"))).toEqual([
+      { method: "POST", address: "/api/conversations/profile/actions/answer_question" },
+    ]);
+  });
+});
+
 describe("between tools (S8.3, ID217, ID219)", () => {
   it("thinks while the answer is saved, then says Noted., names the next question and activates it", async () => {
     profileIs(aProfile([kubernetes, docker]));
