@@ -8,7 +8,7 @@
   <!--
   The core assistant draws the column, the dock, the prefix and the bar (S7.4). What is
   written below is the intake's and nothing in `app/assistant/` knows a word of it: the
-  greeting, the reading, the openers, the acknowledgements, the waiting line, and the
+  greeting, the reading, the openers, its last words, the waiting line, and the
   interview tool that goes into the dock.
 -->
   <assistant
@@ -161,9 +161,8 @@
     }
 
     <!--
-    What the assistant says and does not store (ID201): the opener, the acknowledgement of
-    a decision just kept, or that it has all it needs. Each is timed when it was said
-    (ID220).
+    What the assistant says and does not store (ID201): the opener, a decision that did not
+    save, or that it has all it needs. Each is timed when it was said (ID220).
   -->
     <ng-template #performed let-line>
       @if (shown(line); as landed) {

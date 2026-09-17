@@ -38,7 +38,7 @@ import { profileAssistantHistory } from "./history/history";
  * words: *"Profile assistant is a concrete implementation of core assistant and
  * stays"*). `app/assistant/` draws the column, the dock, the prefix and the bar and
  * holds no word of any use case; everything the intake says is here — the opening, the
- * welcome, the reading card's sentences, the openers, the acknowledgements, the waiting
+ * welcome, the reading card's sentences, the openers, its last words, the waiting
  * line, and `Scope`, which is the word this use case names the thing in the prefix with.
  *
  * **It performs and it triggers; it never opens a tool itself** (agent-consolidation
@@ -101,11 +101,7 @@ const whatScopeMeans =
 /** What the bar says while nothing is typed (D7). */
 const saySomething = "Say it in your own words, or click anything in your profile";
 
-/** What the assistant says once a decision is kept (`ID219`). Performed, never stored. */
-const noted = "Noted.";
-
-const putAside = "Put aside for later.";
-
+/** What the assistant says once no question is left. Performed, never stored. */
 const allNeeded = "That is all I needed.";
 
 const profileReady =
@@ -115,11 +111,11 @@ const profileReady =
 const notKept = "That did not save. Your choice is still here, so try again.";
 
 /**
- * One line the assistant performs and does not store (`ID201`): an opener, an
- * acknowledgement, its last word. It is timed when it was said (`ID220`).
+ * One line the assistant performs and does not store (`ID201`): an opener, its last
+ * words, a decision not kept. It is timed when it was said (`ID220`).
  */
 type Line = {
-  part: "opener" | "ack" | "done" | "ready" | "save-failure";
+  part: "opener" | "done" | "ready" | "save-failure";
   text: string;
   tone: "foreground" | "ok" | "muted";
   landed: WritableSignal<number>;
@@ -139,10 +135,7 @@ type Phase = "performing" | "waiting" | "saving" | "finished";
  * questions the column held at that moment, which is how it tells the viewer's read-back
  * apart from what came before.
  */
-type Saving = {
-  acknowledgement: string;
-  questions: Question[] | null;
-};
+type Saving = { questions: Question[] | null };
 
 @Component({
   selector: "profile-assistant",
@@ -449,7 +442,7 @@ export class ProfileAssistant {
       const questions = this.questions();
       const saving = this.saving;
       if (saving === null || saving.questions === null || questions === saving.questions) return;
-      untracked(() => this.readBack(saving));
+      untracked(() => this.readBack());
     });
 
     /**
@@ -487,7 +480,7 @@ export class ProfileAssistant {
       this.told.set(Number.POSITIVE_INFINITY);
       this.card.set(true);
       this.toldTail.set(Number.POSITIVE_INFINITY);
-      this.atOnce(this.turnSteps(atOnce, null));
+      this.atOnce(this.turnSteps(atOnce, true));
       return;
     }
     const pace = this.currentPace();
@@ -495,7 +488,7 @@ export class ProfileAssistant {
       say("opening", this.opening(), this.told, pace),
       show("card", this.card, pace),
       say("tail", this.tail(), this.toldTail, pace),
-      ...this.turnSteps(pace, null),
+      ...this.turnSteps(pace, true),
     ]);
   }
 
@@ -542,26 +535,28 @@ export class ProfileAssistant {
 
   /**
    * What the assistant says on a turn, and what it does last (`G3`, amended 2026-09-14):
-   * the acknowledgement of the decision just kept, if any, then the next question's
-   * opener and the activation of its tool — or, with no question left, that it has all
-   * it needs, and nothing activated.
+   * the next question's opener and the activation of its tool — or, with no question
+   * left, that it has all it needs, and nothing activated.
+   *
+   * **The opener is the opening turn's alone** (`ID293`): after a kept decision the
+   * agent's reply is the one reply, so the column says nothing of its own and only
+   * activates the next question's tool, which is how a reload reads.
    */
-  private turnSteps(pace: GuidePace, acknowledgement: string | null): Step[] {
-    const said = acknowledgement === null ? [] : [this.line("ack", acknowledgement, "ok", pace)];
+  private turnSteps(pace: GuidePace, opening: boolean): Step[] {
     const next = this.waiting()[0];
     if (next === undefined) {
       return [
-        ...said,
         this.line("done", allNeeded, "ok", pace),
         this.line("ready", profileReady, "foreground", pace),
         doThis("finished", () => this.phase.set("finished"), atOnce),
       ];
     }
+    const activate = doThis("activate", () => this.activateOn(next.itemId), pace);
+    if (!opening) return [activate];
     const moved = this.answeredCount() + this.deferred() > 0;
     return [
-      ...said,
       this.line("opener", `${moved ? "Next" : "First"}, ${next.itemTitle}.`, "foreground", pace),
-      doThis("activate", () => this.activateOn(next.itemId), pace),
+      activate,
     ];
   }
 
@@ -607,16 +602,15 @@ export class ProfileAssistant {
   /**
    * A decision leaves through `core.act` (D5, D9): the column thinks until it is kept, the
    * agent's reply to it has streamed (D31), and the viewer has read the profile back
-   * (`ID217`); the lines it then says read after that reply. Not kept, the conversation is read
+   * (`ID217`); its last words, if no question is left, read after that reply. Not kept, the conversation is read
    * again as it always was after a decision, and the column says so with the tool still on
    * the pick and the words.
    */
   private async decide(
-    acknowledgement: string,
     action: "answer_question" | "skip_question",
     input: { questionId: string; optionId?: string; words?: string },
   ): Promise<void> {
-    const saving: Saving = { acknowledgement, questions: null };
+    const saving: Saving = { questions: null };
     this.saving = saving;
     this.phase.set("saving");
     this.core.showActivity("Thinking");
@@ -650,14 +644,14 @@ export class ProfileAssistant {
   }
 
   /** A kept decision, once the viewer's read-back has arrived: the column moves on. */
-  private readBack(saving: Saving): void {
+  private readBack(): void {
     this.saving = null;
     this.core.showActivity(null);
     this.forget();
     // The lines said before stay for the visit (`ID227`); only a failure the decision has
     // since overcome goes.
     this.turn.update((lines) => lines.filter((line) => line.part !== "save-failure"));
-    this.perform(this.turnSteps(this.currentPace(), saving.acknowledgement));
+    this.perform(this.turnSteps(this.currentPace(), false));
   }
 
   protected pick(chosen: { optionId: string }): void {
@@ -695,7 +689,7 @@ export class ProfileAssistant {
       return;
     }
     if (this.phase() === "saving") return;
-    void this.decide(noted, "answer_question", {
+    void this.decide("answer_question", {
       questionId: question.id,
       optionId,
       ...(words === "" ? {} : { words }),
@@ -715,7 +709,7 @@ export class ProfileAssistant {
     }
     const question = this.open();
     if (question === null || this.phase() === "saving") return;
-    void this.decide(putAside, "skip_question", { questionId: question.id });
+    void this.decide("skip_question", { questionId: question.id });
   }
 
   private forget(): void {
