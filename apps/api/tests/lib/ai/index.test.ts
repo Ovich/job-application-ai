@@ -1,4 +1,4 @@
-import { type AIMessageChunk, HumanMessage } from "@langchain/core/messages";
+import { type AIMessageChunk, HumanMessage, SystemMessage } from "@langchain/core/messages";
 import { afterEach, describe, expect, it } from "vitest";
 import { z } from "zod";
 import { createChatModel } from "../../../src/lib/ai/client";
@@ -224,47 +224,67 @@ describe("chatModel", () => {
 });
 
 /**
- * `askFor` exists because every later step wants a shape, not prose. It validates and
- * throws, which is what keeps a half-valid object out of the database: a caller either
- * gets the shape it asked for or an error, never something in between.
+ * `askFor` exists because every later step wants a shape, not prose (D30). It is one
+ * unstreamed call on the chat model, and it validates and throws, which is what keeps a
+ * half-valid object out of the database: a caller either gets the shape it asked for or
+ * an error naming the call, never something in between.
  */
 describe("askFor", () => {
   const shape = z.object({ kind: z.string(), language: z.string() });
+  const failed = /^The AI call about intake\.read:2026-08-30_cv_FR failed: /;
 
-  it("parses the answer into the shape asked for", async () => {
-    const cases = withCases({ [cvFr]: { stands_for: "a CV", content, tool_calls: [] } });
+  const answering = async <T>(answer: string, call: () => Promise<T>): Promise<T> => {
+    const cases = withCases({ [cvFr]: { stands_for: "a CV", content: answer, tool_calls: [] } });
     try {
-      const read = await askForThroughTheApp()([new HumanMessage("?")], aboutCvFr, shape);
-
-      expect(read).toEqual({ kind: "cv", language: "fr" });
+      return await call();
     } finally {
       cases.dispose();
     }
+  };
+
+  const reading = () =>
+    askForThroughTheApp()(
+      [new SystemMessage("Read the document."), new HumanMessage("read this")],
+      aboutCvFr,
+      shape,
+    );
+
+  it("carries the case header, set by the module and not by the caller", async () => {
+    await answering(content, reading);
+
+    expect(requestsSent()).toHaveLength(1);
+    expect(requestsSent()[0]?.headers["x-jobapp-case"]).toBe(cvFr);
   });
 
-  it("throws rather than return half of a shape the answer does not have", async () => {
-    const cases = withCases({
-      [cvFr]: { stands_for: "a CV", content: '{"kind":"cv"}', tool_calls: [] },
+  // The wire, named field by field (D19): the model, the messages as the protocol's own
+  // roles, and `stream: false`, which the class writes on an unstreamed call
+  // (`chat_models/completions.js`). No `response_format`, no sampling field, no tools.
+  it("sends model, messages and stream: false, and nothing else", async () => {
+    await answering(content, reading);
+
+    const [sent] = requestsSent();
+    expect(Object.keys(sent?.body as object).sort()).toEqual(["messages", "model", "stream"]);
+    expect(sent?.body).toEqual({
+      model: "mock-model",
+      messages: [
+        { role: "system", content: "Read the document." },
+        { role: "user", content: "read this" },
+      ],
+      stream: false,
     });
-    try {
-      await expect(
-        askForThroughTheApp()([new HumanMessage("?")], aboutCvFr, shape),
-      ).rejects.toThrow();
-    } finally {
-      cases.dispose();
-    }
   });
 
-  it("throws when the answer is not JSON at all", async () => {
-    const cases = withCases({
-      [cvFr]: { stands_for: "a CV", content: "not json", tool_calls: [] },
-    });
-    try {
-      await expect(
-        askForThroughTheApp()([new HumanMessage("?")], aboutCvFr, shape),
-      ).rejects.toThrow();
-    } finally {
-      cases.dispose();
-    }
+  it("parses a recorded answer into the shape asked for", async () => {
+    const read = await answering(content, reading);
+
+    expect(read).toEqual({ kind: "cv", language: "fr" });
+  });
+
+  it("rejects an answer that is not JSON, naming the call", async () => {
+    await expect(answering("not json", reading)).rejects.toThrow(failed);
+  });
+
+  it("rejects an answer missing half the shape, naming the call", async () => {
+    await expect(answering('{"kind":"cv"}', reading)).rejects.toThrow(failed);
   });
 });

@@ -1,5 +1,5 @@
 import { existsSync, readdirSync, readFileSync } from "node:fs";
-import { join, relative } from "node:path";
+import { dirname, join, relative } from "node:path";
 import { describe, expect, it } from "vitest";
 
 /**
@@ -204,6 +204,59 @@ describe("the LangChain packages' import boundary (langgraph-agent SL4, SL5, spe
         "OwnAddress",
       ].sort(),
     );
+  });
+});
+
+describe("lib/ai's importers, each taking only its own name (SL5b, D30, the person's rule)", () => {
+  /** Every API file importing lib/ai, with the names it takes, `type` imports included. */
+  const namesFromAi = (): Record<string, string[]> =>
+    Object.fromEntries(
+      sources(api)
+        .filter((file) => !file.startsWith(join(api, "lib/ai")))
+        .map((file) => {
+          const names = [
+            ...codeOf(file).matchAll(/import\s+(?:type\s+)?\{([^}]*)\}\s+from\s+"([^"]+)"/g),
+          ]
+            .filter(([, , specifier]) =>
+              specifier?.startsWith(".")
+                ? join(dirname(file), specifier) === join(api, "lib/ai")
+                : false,
+            )
+            .flatMap(([, list]) =>
+              (list ?? "")
+                .split(",")
+                .map((it) => it.replace(/^\s*type\s+/, "").trim())
+                .filter((it) => it !== ""),
+            );
+          return [name(file), names] as const;
+        })
+        .filter(([, names]) => names.length > 0),
+    );
+
+  it("has no assistant and not handlers/conversations import lib/ai", () => {
+    const importing = Object.keys(namesFromAi());
+    expect(importing.length).toBeGreaterThan(0);
+    expect(
+      importing.filter(
+        (file) =>
+          file.startsWith("apps/api/src/assistants/") ||
+          file === "apps/api/src/handlers/conversations.ts",
+      ),
+    ).toEqual([]);
+  });
+
+  it("has askFor imported by handlers/reading alone", () => {
+    const taking = Object.entries(namesFromAi()).filter(([, names]) => names.includes("askFor"));
+    expect(taking.map(([file]) => file)).toEqual(["apps/api/src/handlers/reading.ts"]);
+  });
+
+  it("has chatModel imported by lib/agent alone", () => {
+    const taking = Object.entries(namesFromAi()).filter(([, names]) => names.includes("chatModel"));
+    expect(taking.map(([file]) => file)).toEqual(["apps/api/src/lib/agent/index.ts"]);
+  });
+
+  it("has app.ts import answeredInProcessBy and nothing else from lib/ai", () => {
+    expect(namesFromAi()["apps/api/src/app.ts"]).toEqual(["answeredInProcessBy"]);
   });
 });
 
