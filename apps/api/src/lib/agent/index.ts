@@ -6,7 +6,7 @@ import { type ZodType, z } from "zod";
 import { chatModel } from "../ai";
 import {
   append,
-  asLangChainMessages,
+  asMessages,
   type Conversation,
   type Entry,
   entries,
@@ -435,7 +435,7 @@ export async function* run(
   conversation: Conversation,
   person: string,
 ): AsyncIterable<Ran> {
-  const messages = asLangChainMessages(await entries(conversation), definition.describe);
+  const messages = asMessages(await entries(conversation), definition.describe);
   const stream = await agentOf(definition).stream(
     { messages },
     {

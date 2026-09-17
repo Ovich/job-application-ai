@@ -63,9 +63,6 @@ export const askStreaming = ai.askStreaming;
 /** The answer parsed into the shape the step asked for, or an error. Never half of one. */
 export const askFor = ai.askFor;
 
-/** A step that may call the tools offered: its text in pieces, then its calls. */
-export const askWithTools = ai.askWithTools;
-
 /**
  * The agent's model, a LangChain chat model on the chat-completions path (D24). A
  * function rather than the instance, so a test stands it in as it stands `ask` in.
@@ -79,8 +76,5 @@ export {
   createAi,
   createChatModel,
   type Message,
-  type Step,
-  type Tool,
-  type ToolCall,
 } from "./client";
 export { answeringOwnAddress, type Fetch, type OwnAddress } from "./own-address";

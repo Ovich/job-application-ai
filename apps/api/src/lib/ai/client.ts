@@ -1,6 +1,5 @@
 import { ChatOpenAICompletions } from "@langchain/openai";
 import OpenAI from "openai";
-import type { ChatCompletionMessageParam } from "openai/resources/chat/completions";
 import type { ZodType } from "zod";
 
 /**
@@ -49,7 +48,7 @@ export type AiConfig = {
  * package this module already depends on, and the first field the library added and we
  * did not would be found at a call site rather than here.
  */
-export type Message = ChatCompletionMessageParam;
+export type Message = OpenAI.Chat.ChatCompletionCreateParams["messages"][number];
 
 /**
  * What a call is about: which feature, which step of it, and which input it is working
@@ -64,32 +63,11 @@ export type Message = ChatCompletionMessageParam;
  */
 export type About = { feature: string; step: string; input: string };
 
-/**
- * One tool a call may offer the model: its name, what it does, and the JSON schema of its
- * input (`ID167`). The schema is passed in, already derived, so this module holds no
- * tool of the product and no schema library's opinion of one.
- */
-export type Tool = { name: string; description: string; parameters: object };
-
-/**
- * One call the model made: its arguments parsed from the protocol's string, and that
- * string exactly as it arrived (`ID206`), so a later call can hand the model back what it
- * wrote, byte for byte.
- */
-export type ToolCall = { id: string; name: string; arguments: unknown; argumentsText: string };
-
-/**
- * One step of an answer that may call tools: its text as it arrives, and its calls.
- * `calls` settles once `pieces` is drained, and not before: the calls end the stream.
- */
-export type Step = { pieces: AsyncIterable<string>; calls: Promise<ToolCall[]> };
-
-/** The four ways a caller asks. Nothing else is exposed. */
+/** The three ways a caller asks. Nothing else is exposed. */
 export type Ai = {
   ask: (messages: Message[], about: About) => Promise<string>;
   askStreaming: (messages: Message[], about: About) => AsyncIterable<string>;
   askFor: <T>(messages: Message[], about: About, shape: ZodType<T>) => Promise<T>;
-  askWithTools: (messages: Message[], about: About, tools: Tool[]) => Step;
 };
 
 /**
@@ -170,81 +148,7 @@ export const createAi = (config: AiConfig): Ai => {
     return named(about, async () => shape.parse(JSON.parse(answer)));
   };
 
-  /**
-   * A step that may call tools (`ID167`): the protocol's own `tools` and `stream: true`,
-   * the text yielded as it arrives, and each call's pieces gathered by the index the
-   * protocol gives them.
-   *
-   * A transport failure throws out of `pieces` and rejects `calls`, both naming the case.
-   * Arguments that do not parse fail only `calls`: the text already arrived whole, and
-   * the caller decides what a botched call means.
-   */
-  const askWithTools = (messages: Message[], about: About, tools: Tool[]): Step => {
-    let settle: (calls: ToolCall[]) => void = () => {};
-    let refuse: (reason: Error) => void = () => {};
-    const calls = new Promise<ToolCall[]>((resolve, reject) => {
-      settle = resolve;
-      refuse = reject;
-    });
-    // A caller that stopped at a failure of `pieces` has already heard of it.
-    calls.catch(() => {});
-
-    async function* pieces(): AsyncIterable<string> {
-      const gathered = new Map<number, { id: string; name: string; arguments: string }>();
-      try {
-        const stream = await client.chat.completions.create(
-          {
-            model: config.model,
-            messages,
-            stream: true,
-            tools: tools.map((tool) => ({
-              type: "function" as const,
-              function: {
-                name: tool.name,
-                description: tool.description,
-                parameters: tool.parameters as Record<string, unknown>,
-              },
-            })),
-          },
-          options(about),
-        );
-        for await (const piece of stream) {
-          const delta = piece.choices[0]?.delta;
-          if (typeof delta?.content === "string" && delta.content !== "") yield delta.content;
-          for (const call of delta?.tool_calls ?? []) {
-            const held = gathered.get(call.index) ?? { id: "", name: "", arguments: "" };
-            gathered.set(call.index, {
-              id: call.id ?? held.id,
-              name: call.function?.name ?? held.name,
-              arguments: held.arguments + (call.function?.arguments ?? ""),
-            });
-          }
-        }
-      } catch (cause) {
-        const said = failure(about, cause);
-        refuse(said);
-        throw said;
-      }
-      try {
-        settle(
-          [...gathered.entries()]
-            .sort(([one], [other]) => one - other)
-            .map(([, call]) => ({
-              id: call.id,
-              name: call.name,
-              arguments: JSON.parse(call.arguments === "" ? "{}" : call.arguments) as unknown,
-              argumentsText: call.arguments === "" ? "{}" : call.arguments,
-            })),
-        );
-      } catch (cause) {
-        refuse(failure(about, cause));
-      }
-    }
-
-    return { pieces: pieces(), calls };
-  };
-
-  return { ask, askStreaming, askFor, askWithTools };
+  return { ask, askStreaming, askFor };
 };
 
 /**
