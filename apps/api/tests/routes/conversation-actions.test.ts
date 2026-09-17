@@ -18,7 +18,7 @@ import { localStorageIn } from "../support/storage";
  * Not past it: what the builder later does with a profile concern.
  */
 
-const objects = vi.hoisted(() => ({ storage: undefined as unknown, failing: false }));
+const objects = vi.hoisted(() => ({ storage: undefined as unknown }));
 
 vi.mock("../../src/lib/db", async () => ({
   db: (await import("../support/database")).testDb,
@@ -33,16 +33,13 @@ vi.mock("../../src/lib/storage", async (importOriginal) => ({
 
 vi.mock("../../src/lib/ai", async (importOriginal) => {
   const real = await importOriginal<typeof import("../../src/lib/ai")>();
-  const { askForThroughTheApp, chatModelThroughTheApp, failingMidStream } =
-    await import("../support/ai");
+  const { askForThroughTheApp, chatModelThroughTheApp } = await import("../support/ai");
   return {
     ...real,
     askFor: askForThroughTheApp(),
-    // The agent's model (D25, D31): a call that fails mid-stream when a case says so. A
-    // definition's graph keeps the model it was built with (`ID284`), so such a case acts
-    // through a definition built while `objects.failing` is set.
-    chatModel: () =>
-      objects.failing ? failingMidStream(chatModelThroughTheApp(), "#1") : chatModelThroughTheApp(),
+    // The agent's model (D25, D31). A case that wants a call failing mid-stream builds its
+    // own agent on such a model (`ID298`); the application's agent is built on this one.
+    chatModel: () => chatModelThroughTheApp(),
   };
 });
 
@@ -50,8 +47,16 @@ const { testDb } = await import("../support/database");
 const { app } = await import("../../src/app");
 const { cookiesSetBy, signInThrough, signedInAs } = await import("../support/sign-in");
 const { documentsFor, theSet } = await import("../support/documents");
-const { forgetRequests, requestsAnswered, requestsSent, withCases } = await import("../support/ai");
+const {
+  chatModelThroughTheApp,
+  failingMidStream,
+  forgetRequests,
+  requestsAnswered,
+  requestsSent,
+  withCases,
+} = await import("../support/ai");
 const { conversationsOf } = await import("../../src/routes/conversations");
+const { agentOn } = await import("../support/agent");
 const { profileAssistant } = await import("../../src/assistants/profile");
 const { itemNamed } = await import("../support/intake");
 
@@ -60,7 +65,6 @@ let storage: ReturnType<typeof localStorageIn>;
 beforeEach(() => {
   storage = localStorageIn();
   objects.storage = storage;
-  objects.failing = false;
   forgetRequests();
 });
 
@@ -571,10 +575,11 @@ describe("a tool used is a message to the agent (D31, ID291)", () => {
     const before = await conversationOf(person.cookie);
     forgetRequests();
     const question = about(person.profile, "Kubernetes");
-    objects.failing = true;
     const failingRoutes = new Hono().route(
       "/api/conversations",
-      conversationsOf([{ ...profileAssistant }]),
+      conversationsOf(agentOn({ model: failingMidStream(chatModelThroughTheApp(), "#1") }), [
+        { ...profileAssistant },
+      ]),
     );
 
     const response = await act(

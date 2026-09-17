@@ -3,50 +3,40 @@ import { readFileSync } from "node:fs";
 import { itemExperience, itemLine, profileItem, user } from "@app/db";
 import { toJsonSchema } from "@langchain/core/utils/json_schema";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { profileAssistant } from "../../../src/assistants/profile";
 import type { Conversation, Entry } from "../../../src/lib/conversation";
+import { apply, profileEditTool } from "../../../src/lib/profile-edit";
+import { agentOn, append, entries, open } from "../../support/agent";
+import {
+  chatModelThroughTheApp,
+  failingMidStream,
+  forgetRequests,
+  requestsSent,
+  withCases,
+} from "../../support/ai";
+import { testDb } from "../../support/database";
+import { failingOn } from "../../support/failing-entry";
 
 /**
- * Seam C: `lib/agent`, `run` (`S4.4`, `S4.5`, `ID179`, `ID180`, `ID182`, `ID187`,
- * `ID193`, `US2`, `US6`, the spec's *Failure modes*).
+ * Seam C: `lib/agent`, `ConversationAgent.run` (`S4.4`, `S4.5`, `ID179`, `ID180`, `ID182`,
+ * `ID187`, `ID193`, `ID298`, `US2`, `US6`, the spec's *Failure modes*).
  *
- * Behind it: PGlite with the real migrations, and `lib/ai` through the application's own
- * mock, answered in process, with recorded cases per step (`ID182`). The definition is
+ * Behind it: PGlite with the real migrations, and the application's own mock, answered in
+ * process, with recorded cases per step (`ID182`). The module imports neither since the
+ * rework, so nothing is stood in: the agent is built from options, as the composition root
+ * builds it, and `tests/support/agent.ts` is that binding for the suite. The definition is
  * the profile assistant as the composition root hands it over.
  *
- * What is read: what `run` yields, the conversation through `entries`, the item through
- * `lib/profile-edit`'s `apply` with no operation, and the requests `lib/ai` sent. No
+ * What is read: what `run` yields, the conversation through the store, the item through
+ * `lib/profile-edit`'s `apply` with no operation, and the requests the model sent. No
  * table is read. Whether a transaction is open while the model is asked is held by the
  * code's shape and the review, not asserted here.
  */
-const objects = vi.hoisted(() => ({ failing: false }));
 
-vi.mock("../../../src/lib/db", async () => ({
-  db: (await import("../../support/database")).testDb,
-}));
-
-// The agent's model on the application's own mock (D25). A definition's graph is built
-// once and keeps the model it was built with, so a failing model is taken by a definition
-// built while `objects.failing` is set.
-vi.mock("../../../src/lib/ai", async (importOriginal) => {
-  const real = await importOriginal<typeof import("../../../src/lib/ai")>();
-  const { chatModelThroughTheApp, failingMidStream } = await import("../../support/ai");
-  return {
-    ...real,
-    chatModel: () =>
-      objects.failing ? failingMidStream(chatModelThroughTheApp(), "#2") : chatModelThroughTheApp(),
-  };
-});
-
-const { testDb } = await import("../../support/database");
-const { append, entries, open } = await import("../../../src/lib/conversation");
-const { run, stepLimit } = await import("../../../src/lib/agent");
-const { apply, profileEditTool } = await import("../../../src/lib/profile-edit");
-const { profileAssistant } = await import("../../../src/assistants/profile");
-const { forgetRequests, requestsSent, withCases } = await import("../../support/ai");
-const { failingOn } = await import("../../support/failing-entry");
+/** The agent as `app.ts` builds it, on this suite's database and model. */
+const agent = agentOn();
 
 afterEach(() => {
-  objects.failing = false;
   forgetRequests();
   vi.restoreAllMocks();
 });
@@ -137,7 +127,7 @@ describe("on the mock, every step misses (US2, dev)", () => {
     const before = await standing(at.person, at.post);
     vi.spyOn(console, "warn").mockImplementation(() => {});
 
-    const { said, thrown } = await ranThrough(run(profileAssistant, conversation, at.person));
+    const { said, thrown } = await ranThrough(agent.run(profileAssistant, conversation, at.person));
 
     expect(thrown).toBeUndefined();
     expect(textOf(said)).toBe("No pre generated text");
@@ -180,7 +170,7 @@ describe("recorded answers of two steps (S4.5)", () => {
 
     let ran: { said: Ran[]; thrown: unknown };
     try {
-      ran = await ranThrough(run(profileAssistant, conversation, at.person));
+      ran = await ranThrough(agent.run(profileAssistant, conversation, at.person));
     } finally {
       cases.dispose();
     }
@@ -268,7 +258,7 @@ describe("what the agent says it is doing (S7.5, ID210)", () => {
     const conversation = await conversationOf(at.person);
     vi.spyOn(console, "warn").mockImplementation(() => {});
 
-    const { said } = await ranThrough(run(profileAssistant, conversation, at.person));
+    const { said } = await ranThrough(agent.run(profileAssistant, conversation, at.person));
 
     expect(said[0]).toEqual({ kind: "activity", text: "Reading your profile" });
     expect(said.findIndex((ran) => ran.kind === "activity")).toBeLessThan(
@@ -300,7 +290,7 @@ describe("what the agent says it is doing (S7.5, ID210)", () => {
 
     let ran: { said: Ran[]; thrown: unknown };
     try {
-      ran = await ranThrough(run(profileAssistant, conversation, at.person));
+      ran = await ranThrough(agent.run(profileAssistant, conversation, at.person));
     } finally {
       cases.dispose();
     }
@@ -343,7 +333,7 @@ describe("an edit that does not validate (the spec's Failure modes)", () => {
     });
     let ran: { said: Ran[]; thrown: unknown };
     try {
-      ran = await ranThrough(run(profileAssistant, conversation, at.person));
+      ran = await ranThrough(agent.run(profileAssistant, conversation, at.person));
     } finally {
       cases.dispose();
     }
@@ -464,12 +454,12 @@ describe("the step limit (ID180)", () => {
 
     let ran: { said: Ran[]; thrown: unknown };
     try {
-      ran = await ranThrough(run(profileAssistant, conversation, at.person));
+      ran = await ranThrough(agent.run(profileAssistant, conversation, at.person));
     } finally {
       cases.dispose();
     }
 
-    expect(stepLimit).toBe(5);
+    expect(agent.steps).toBe(5);
     expect(ran.thrown).toBeUndefined();
     expect(requestsSent()).toHaveLength(5);
     const stored = await entries(conversation);
@@ -513,7 +503,7 @@ describe("failures (US6, the spec's Failure modes)", () => {
 
     let ran: { said: Ran[]; thrown: unknown };
     try {
-      ran = await ranThrough(run(profileAssistant, conversation, at.person));
+      ran = await ranThrough(agent.run(profileAssistant, conversation, at.person));
     } finally {
       cases.dispose();
       await failure.dispose();
@@ -532,9 +522,8 @@ describe("failures (US6, the spec's Failure modes)", () => {
   it("keeps step 1, writes nothing of step 2, and throws when step 2's call fails mid-stream", async () => {
     const at = await planted();
     const conversation = await conversationOf(at.person);
-    // Step 2's request fails mid-stream, on a definition whose graph is built now.
-    objects.failing = true;
-    const failingSecond = { ...profileAssistant };
+    // Step 2's request fails mid-stream, on an agent built on that model (D25, `ID274`).
+    const failing = agentOn({ model: failingMidStream(chatModelThroughTheApp(), "#2") });
     const cases = withCases({
       [stepOf(conversation, 1)]: {
         stands_for: "an edit",
@@ -560,7 +549,7 @@ describe("failures (US6, the spec's Failure modes)", () => {
 
     let ran: { said: Ran[]; thrown: unknown };
     try {
-      ran = await ranThrough(run(failingSecond, conversation, at.person));
+      ran = await ranThrough(failing.run(profileAssistant, conversation, at.person));
     } finally {
       cases.dispose();
     }
@@ -603,7 +592,7 @@ describe("failures (US6, the spec's Failure modes)", () => {
 
       let ran: { said: Ran[]; thrown: unknown };
       try {
-        ran = await ranThrough(run(profileAssistant, conversation, at.person));
+        ran = await ranThrough(agent.run(profileAssistant, conversation, at.person));
       } finally {
         cases.dispose();
       }
@@ -647,7 +636,7 @@ describe("the case header (D22, D26)", () => {
       [stepOf(conversation, 2)]: { stands_for: "the reply", content: "Done." },
     });
     try {
-      await ranThrough(run(profileAssistant, conversation, at.person));
+      await ranThrough(agent.run(profileAssistant, conversation, at.person));
     } finally {
       cases.dispose();
     }
@@ -698,7 +687,7 @@ describe("a definition's context and step phrases (D10)", () => {
 
     let ran: { said: Ran[]; thrown: unknown };
     try {
-      ran = await ranThrough(run(standIn, conversation, at.person));
+      ran = await ranThrough(agent.run(standIn, conversation, at.person));
     } finally {
       cases.dispose();
     }
@@ -750,7 +739,7 @@ describe("every request (S4.4, ID181, ID193)", () => {
       [stepOf(conversation, 2)]: { stands_for: "the reply", content: "Done." },
     });
     try {
-      await ranThrough(run(profileAssistant, conversation, at.person));
+      await ranThrough(agent.run(profileAssistant, conversation, at.person));
     } finally {
       cases.dispose();
     }
@@ -784,7 +773,7 @@ describe("every request (S4.4, ID181, ID193)", () => {
     const conversation = await conversationOf(at.person);
     vi.spyOn(console, "warn").mockImplementation(() => {});
 
-    await ranThrough(run(profileAssistant, conversation, at.person));
+    await ranThrough(agent.run(profileAssistant, conversation, at.person));
 
     // Vitest's own snapshot file, which the formatter leaves as the suite wrote it.
     const [tool] = bodyOf(0).tools;
@@ -813,7 +802,7 @@ describe("the model's own arguments (S4.5b, ID206, D23)", () => {
 
     let ran: { said: Ran[]; thrown: unknown };
     try {
-      ran = await ranThrough(run(profileAssistant, conversation, at.person));
+      ran = await ranThrough(agent.run(profileAssistant, conversation, at.person));
     } finally {
       cases.dispose();
     }

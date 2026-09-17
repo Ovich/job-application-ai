@@ -4,7 +4,6 @@ import {
   aboutPart,
   document,
   itemLine,
-  type Part,
   type ProfileConcernKind,
   type ProfileConcernSource,
   profileConcern,
@@ -17,7 +16,7 @@ import {
 } from "@app/db";
 import { and, asc, countDistinct, eq, isNull, ne } from "drizzle-orm";
 import { z } from "zod";
-import { type AgentAction, type AssistantDefinition, NotYet, Refused } from "../../lib/agent";
+import { type AgentAction, type Assistant, NotYet, Refused } from "../../lib/assistant";
 import type { Transaction } from "../../lib/conversation";
 import { itemsOf, profileEditTool } from "../../lib/profile-edit";
 import prompt from "./prompt.md" with { type: "text" };
@@ -53,7 +52,7 @@ const scripted = (text: string) => ({ kind: "text" as const, text, scripted: tru
  * D11): what the words after it are about, with the ids a tool call targets (`S8.7`,
  * `ID233`), and their use of the assistant's tool said as they would say it.
  */
-const describe = (part: Part): string | null => {
+const describe = (part: Record<string, unknown>): string | null => {
   const about = aboutPart.safeParse(part);
   if (about.success) {
     const { where, itemId, lineId } = about.data;
@@ -225,7 +224,7 @@ const skipQuestion: AgentAction<{ questionId: string }> = {
   },
 };
 
-export const profileAssistant: AssistantDefinition = {
+export const profileAssistant: Assistant = {
   name: "profile",
   prompt,
   tools: [profileEditTool],

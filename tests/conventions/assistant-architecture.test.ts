@@ -93,13 +93,18 @@ describe("the API core reads no profile (SL4, D10 to D12)", () => {
     expect(reached.filter((it) => /profile-edit|assistants/.test(it))).toEqual([]);
   });
 
-  it("has lib/conversation name no part kind beyond text and the tool parts", () => {
-    const kinds = sources(join(api, "lib/conversation")).flatMap((file) =>
+  // SL5f, OD7: reading the entries back is the agent's, so it is the agent that names a
+  // part kind, and only the three it writes itself; lib/conversation names none at all.
+  // `activity` and `entry` are `Ran`'s, what the loop says as it runs, and not parts.
+  it("has lib/agent name no part kind beyond text and the tool parts", () => {
+    const kinds = sources(join(api, "lib/agent")).flatMap((file) =>
       [...codeOf(file).matchAll(/kind\s*(?:===|!==|:)\s*"(\w+)"/g)].map(([, kind]) => kind),
     );
     expect(kinds.length).toBeGreaterThan(0);
     expect(
-      kinds.filter((kind) => !["text", "tool_use", "tool_result"].includes(kind ?? "")),
+      kinds.filter(
+        (kind) => !["text", "tool_use", "tool_result", "activity", "entry"].includes(kind ?? ""),
+      ),
     ).toEqual([]);
   });
 
@@ -120,61 +125,44 @@ describe("the LangChain packages' import boundary (langgraph-agent SL4, SL5, spe
 
   it("has langchain and @langchain/langgraph imported by lib/agent alone", () => {
     const reaching = importers(/^(langchain|@langchain\/langgraph)(\/|$)/);
-    expect(reaching).toContain("apps/api/src/lib/agent/index.ts");
+    expect(reaching).toContain("apps/api/src/lib/agent/agent.ts");
     expect(outside(reaching, "lib/agent")).toEqual([]);
   });
 
   it("has @langchain/core/tools imported by lib/agent alone", () => {
     const reaching = importers(/^@langchain\/core\/tools$/);
-    expect(reaching).toContain("apps/api/src/lib/agent/index.ts");
+    expect(reaching).toContain("apps/api/src/lib/agent/agent.ts");
     expect(outside(reaching, "lib/agent")).toEqual([]);
   });
 
   // SL5b, D30: the reading builds the LangChain messages `askFor` takes.
   const reading = "apps/api/src/handlers/reading.ts";
 
-  it("has @langchain/core/messages imported by lib/agent, lib/conversation, lib/ai and the reading alone", () => {
+  it("has @langchain/core/messages imported by lib/agent, lib/ai and the reading alone", () => {
     const reaching = importers(/^@langchain\/core\/messages$/);
     expect(reaching).toEqual(
       expect.arrayContaining([
-        "apps/api/src/lib/agent/index.ts",
-        "apps/api/src/lib/conversation/index.ts",
+        "apps/api/src/lib/agent/messages.ts",
         "apps/api/src/lib/ai/client.ts",
         reading,
       ]),
     );
-    expect(
-      outside(reaching, "lib/agent", "lib/conversation", "lib/ai").filter((it) => it !== reading),
-    ).toEqual([]);
+    expect(outside(reaching, "lib/agent", "lib/ai").filter((it) => it !== reading)).toEqual([]);
   });
 
-  it("has no assistant, handler or route import a langchain or @langchain package, the reading's messages aside", () => {
-    const reaching = importers(/^(langchain|@langchain\/)/);
-    expect(
-      reaching.filter((file) => /^apps\/api\/src\/(assistants|handlers|routes)\//.test(file)),
-    ).toEqual([reading]);
-    expect(
-      importsOf(join(root, reading)).filter((it) => /^(langchain|@langchain\/)/.test(it)),
-    ).toEqual(["@langchain/core/messages"]);
-  });
-
-  it("has handlers/conversations import no lib/ai", () => {
-    const reached = importsOf(join(api, "handlers/conversations.ts"));
-    expect(reached.length).toBeGreaterThan(0);
-    expect(reached.filter((it) => /\/lib\/ai(\/|$)/.test(it))).toEqual([]);
-  });
-
-  // SL5: the model is lib/ai's (D24); the agent reaches it through `chatModel()` alone.
-  it("has lib/agent import no openai and no @langchain/openai", () => {
+  // SL5f, ID298: the model is an option the binding passes, so the agent reaches lib/ai
+  // not at all, and no client of a provider either.
+  it("has lib/agent import no lib/ai, no openai and no @langchain/openai", () => {
     const reached = sources(join(api, "lib/agent")).flatMap(importsOf);
-    expect(reached).toContain("../ai");
+    expect(reached.length).toBeGreaterThan(0);
+    expect(reached.filter((it) => /(^|\/)ai(\/|$)/.test(it))).toEqual([]);
     expect(reached.filter((it) => /^(openai|@langchain\/openai)(\/|$)/.test(it))).toEqual([]);
   });
 
-  // SL5, ID272: the history is LangChain messages, so lib/conversation needs no lib/ai type.
+  // SL5, ID272: the history is the agent's to read, so lib/conversation needs no lib/ai type.
   it("has lib/conversation import no lib/ai", () => {
     const reached = sources(join(api, "lib/conversation")).flatMap(importsOf);
-    expect(reached).toContain("@langchain/core/messages");
+    expect(reached.length).toBeGreaterThan(0);
     expect(reached.filter((it) => /(^|\/)ai(\/|$)/.test(it))).toEqual([]);
   });
 
@@ -250,13 +238,17 @@ describe("lib/ai's importers, each taking only its own name (SL5b, D30, the pers
     expect(taking.map(([file]) => file)).toEqual(["apps/api/src/handlers/reading.ts"]);
   });
 
-  it("has chatModel imported by lib/agent alone", () => {
+  // SL5f, `AGENTS.md` rule 7: the composition root is the one place that reaches a model.
+  it("has chatModel imported by the composition root alone", () => {
     const taking = Object.entries(namesFromAi()).filter(([, names]) => names.includes("chatModel"));
-    expect(taking.map(([file]) => file)).toEqual(["apps/api/src/lib/agent/index.ts"]);
+    expect(taking.map(([file]) => file)).toEqual(["apps/api/src/app.ts"]);
   });
 
-  it("has app.ts import answeredInProcessBy and nothing else from lib/ai", () => {
-    expect(namesFromAi()["apps/api/src/app.ts"]).toEqual(["answeredInProcessBy"]);
+  it("has app.ts import answeredInProcessBy and chatModel from lib/ai, and nothing else", () => {
+    expect(namesFromAi()["apps/api/src/app.ts"]?.sort()).toEqual([
+      "answeredInProcessBy",
+      "chatModel",
+    ]);
   });
 });
 

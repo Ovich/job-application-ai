@@ -1,25 +1,20 @@
 import { parts } from "@app/db";
 import { AIMessage, type BaseMessage, HumanMessage, ToolMessage } from "@langchain/core/messages";
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
+import { profileAssistant } from "../../../src/assistants/profile";
+import { asMessages as asMessagesWith } from "../../../src/lib/agent/messages";
 import type { Entry } from "../../../src/lib/conversation";
 
 /**
- * Seam D: `lib/conversation`, `asMessages` (`S4.3`, `ID162`, `ID161`).
+ * Seam D: `lib/agent`, the entries as the model reads them (`S4.3`, `ID162`, `ID161`,
+ * OD7). It moved here with the function, whose knowledge is the agent's; the cases are
+ * the ones `lib/conversation` held, unchanged.
  *
  * Behind it: nothing, it is in process. Every part a case serialises is first parsed by
  * the catalogue, so what is serialised is a part a writer could have stored. What is
  * asserted is the `@langchain/core` message the model is handed, compared as what the
  * model's converter reads of it: its type, its content, and its calls or the call it answers.
- *
- * `lib/db` is stood in for only because `lib/conversation` imports it; nothing here
- * queries.
  */
-vi.mock("../../../src/lib/db", async () => ({
-  db: (await import("../../support/database")).testDb,
-}));
-
-const { asMessages: asMessagesWith } = await import("../../../src/lib/conversation");
-const { profileAssistant } = await import("../../../src/assistants/profile");
 
 // The wording of the non-core parts is the definition's (D11): the cases below read the
 // profile assistant's own words, and the stand-in cases a `describe` of their own.
@@ -331,7 +326,7 @@ describe("a part beyond text and tools, as the definition describes it, for the 
   });
 
   it("reads question_answered, question_skipped and about in the words describe gives", () => {
-    const described = (part: { kind: string }) => `[${part.kind}]`;
+    const described = (part: Record<string, unknown>) => `[${String(part["kind"])}]`;
 
     expect(
       seenAll(

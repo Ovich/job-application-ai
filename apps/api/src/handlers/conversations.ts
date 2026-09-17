@@ -3,7 +3,7 @@ import { createFactory } from "hono/factory";
 import { stream } from "hono/streaming";
 import { validator } from "hono/validator";
 import { z } from "zod";
-import { type AssistantDefinition, NotYet, Refused, run } from "../lib/agent";
+import { type Assistant, type ConversationsAgent, NotYet, Refused } from "../lib/assistant";
 import { append, type Conversation, type Entry, entries, open } from "../lib/conversation";
 import { db } from "../lib/db";
 import { type Asking, asking, refused } from "../lib/session";
@@ -49,12 +49,12 @@ const couldNotAnswer = "The assistant could not answer this time. Your message i
  */
 const conversationFor = async (
   c: Context,
-  definitions: AssistantDefinition[],
+  definitions: Assistant[],
   subject: string | undefined,
 ): Promise<
   | { missing: "person" | "assistant" }
   | { notYet: string }
-  | { person: Asking; definition: AssistantDefinition; conversation: Conversation }
+  | { person: Asking; definition: Assistant; conversation: Conversation }
 > => {
   const person = await asking(c);
   if (person === null) return { missing: "person" };
@@ -89,8 +89,9 @@ const onTheWire = (entry: Entry) => ({ ...entry, createdAt: entry.createdAt.toIS
  */
 const agentReplying = (
   c: Context,
+  agent: ConversationsAgent,
   mine: Entry,
-  definition: AssistantDefinition,
+  definition: Assistant,
   conversation: Conversation,
   person: Asking,
 ) => {
@@ -108,7 +109,7 @@ const agentReplying = (
 
     try {
       await envelope.send({ kind: "entry", entry: onTheWire(mine) });
-      for await (const ran of run(definition, conversation, person.id)) {
+      for await (const ran of agent.run(definition, conversation, person.id)) {
         // What the agent is doing travels as a status leaf and is never stored (`ID210`).
         await envelope.send(
           ran.kind === "entry"
@@ -131,7 +132,7 @@ const agentReplying = (
  * `GET /:assistant?subject=` → `{ id, entries }`: the person's conversation with that
  * assistant, opened with the assistant's opening if it did not exist yet.
  */
-export const openConversation = (definitions: AssistantDefinition[]) =>
+export const openConversation = (definitions: Assistant[]) =>
   factory.createHandlers(
     validator("query", (value, c) => {
       const read = asked.safeParse(value);
@@ -160,7 +161,7 @@ export const openConversation = (definitions: AssistantDefinition[]) =>
  * nothing; 404 for an unknown assistant or action, or a thing that is not the person's;
  * 409 before there is anything to open on (`NotYet`).
  */
-export const runAction = (definitions: AssistantDefinition[]) =>
+export const runAction = (agent: ConversationsAgent, definitions: Assistant[]) =>
   factory.createHandlers(
     validator("json", (value) => value as unknown),
     async (c) => {
@@ -196,7 +197,7 @@ export const runAction = (definitions: AssistantDefinition[]) =>
 
       // A tool used is a message to the agent (D31): once the action has committed, the
       // same agent a message reaches runs over the conversation and its reply streams.
-      return agentReplying(c, kept.mine, definition, kept.conversation, person);
+      return agentReplying(c, agent, kept.mine, definition, kept.conversation, person);
     },
   );
 
@@ -218,7 +219,7 @@ export const runAction = (definitions: AssistantDefinition[]) =>
  * `<assistant>.message:<conversation id>#<n>` (`ID182`); what earlier steps committed
  * stays when a later one fails.
  */
-export const postMessage = (definitions: AssistantDefinition[]) =>
+export const postMessage = (agent: ConversationsAgent, definitions: Assistant[]) =>
   factory.createHandlers(
     validator("json", (value, c) => {
       const read = said.safeParse(value);
@@ -250,6 +251,6 @@ export const postMessage = (definitions: AssistantDefinition[]) =>
         ]),
       );
 
-      return agentReplying(c, mine, definition, conversation, person);
+      return agentReplying(c, agent, mine, definition, conversation, person);
     },
   );
