@@ -21,6 +21,8 @@ import { createFactory } from "hono/factory";
 import { stream } from "hono/streaming";
 import { z } from "zod";
 import { type About, askFor } from "../lib/ai";
+import type { Assistant, ConversationsAgent } from "../lib/assistant";
+import { existing } from "../lib/conversation";
 import { db } from "../lib/db";
 import { slugOf } from "../lib/documents";
 import { asking, refused } from "../lib/session";
@@ -29,6 +31,14 @@ import { createEnvelope } from "../lib/stream";
 import { composed, textOf } from "../lib/text";
 
 const factory = createFactory();
+
+/**
+ * What the person's profile conversation is told once a reading has written the profile
+ * (D34): one sentence, so the agent reads the profile again before relying on what it read
+ * earlier (D33). One constant, beside the reading.
+ */
+export const profileUpdatedNotice =
+  "Your profile was updated from your documents. Read it again before relying on it.";
 
 /**
  * The reading run (ID119, `D8`).
@@ -50,184 +60,200 @@ const factory = createFactory();
  * **A document already read is not read again.** A second run costs nothing and asks
  * nothing, which is what makes pressing the button twice harmless.
  *
+ * **What changed is pushed into the profile conversation** (D34): once the profile is
+ * written and committed, the conversation with the `profile` definition, when the person
+ * has one, is notified through the agent the composition root hands over (rule 7). With no
+ * conversation yet, or a reading that failed, nothing is written there.
+ *
  * It is plain functions inside the streaming route the foundation already built for long
  * work, persisting per unit. Step Functions is not adopted (`D8`).
  */
-export const readDocuments = factory.createHandlers(async (c) => {
-  const person = await asking(c);
-  if (person === null) return refused(c);
-
-  /**
-   * Every document this person handed over, and not only the new ones (`ID157`, the
-   * person 2026-09-12).
-   *
-   * The call is over the documents composed into one, and the answer is the whole
-   * profile — so a run over the new document alone would write a profile made of that
-   * document alone, and the one before it would be gone. What decides whether a run
-   * happens at all is still whether anything is unread; what it reads, once it happens,
-   * is everything.
-   */
-  const everything = await db
-    .select()
-    .from(document)
-    .where(eq(document.userId, person.id))
-    .orderBy(asc(document.createdAt), asc(document.id));
-
-  // Nothing new, nothing to do: a person pressing Read twice over the same documents
-  // makes one call, not two (`SL2`'s criterion 11).
-  const waiting = everything.some((row) => row.status !== "read") ? everything : [];
-
-  // The raw stream helper rather than the server-sent-event one, and the headers that
-  // helper would set, set here: the envelope already writes `id:` and `data:` lines.
-  c.header("content-type", "text/event-stream");
-  c.header("cache-control", "no-cache");
-  c.header("x-accel-buffering", "no");
-
-  return stream(c, async (response) => {
-    const envelope = createEnvelope(async (chunk) => {
-      await response.write(chunk);
-    });
-    response.onAbort(() => {
-      envelope.close();
-    });
+export const readDocuments = (agent: ConversationsAgent, profile: Assistant) =>
+  factory.createHandlers(async (c) => {
+    const person = await asking(c);
+    if (person === null) return refused(c);
 
     /**
-     * Every file of this run, read as text and kept for the one call that follows
-     * (`ID157`, `ID158`).
+     * Every document this person handed over, and not only the new ones (`ID157`, the
+     * person 2026-09-12).
      *
-     * They are held for the length of the run and not written to a table of their own,
-     * because the register has none: a fact becomes a row when the reading places it,
-     * as `profile_item` with its `provenance`. A run with nothing new to read makes no
-     * call at all, which is what keeps a second run free of them (`SL2`'s criterion 11).
+     * The call is over the documents composed into one, and the answer is the whole
+     * profile — so a run over the new document alone would write a profile made of that
+     * document alone, and the one before it would be gone. What decides whether a run
+     * happens at all is still whether anything is unread; what it reads, once it happens,
+     * is everything.
      */
-    const read: { name: string; id: string; text: string }[] = [];
+    const everything = await db
+      .select()
+      .from(document)
+      .where(eq(document.userId, person.id))
+      .orderBy(asc(document.createdAt), asc(document.id));
 
-    try {
-      for (const row of waiting) {
-        await db.update(document).set({ status: "reading" }).where(eq(document.id, row.id));
-        await envelope.send({ kind: "document", id: row.id, status: "reading", reason: null });
+    // Nothing new, nothing to do: a person pressing Read twice over the same documents
+    // makes one call, not two (`SL2`'s criterion 11).
+    const waiting = everything.some((row) => row.status !== "read") ? everything : [];
 
-        // The typed address is the one source with nothing to read: nothing is fetched,
-        // which is what the spec's non-goals say and what the screen's lead promises
-        // (F5). So it is read the moment the run reaches it, with no call and no kind.
-        if (row.source !== "file" || row.storageKey === null) {
-          await db
-            .update(document)
-            .set({ status: "read", readAt: new Date() })
-            .where(eq(document.id, row.id));
-          await envelope.send({ kind: "document", id: row.id, status: "read", reason: null });
-          continue;
+    // The raw stream helper rather than the server-sent-event one, and the headers that
+    // helper would set, set here: the envelope already writes `id:` and `data:` lines.
+    c.header("content-type", "text/event-stream");
+    c.header("cache-control", "no-cache");
+    c.header("x-accel-buffering", "no");
+
+    return stream(c, async (response) => {
+      const envelope = createEnvelope(async (chunk) => {
+        await response.write(chunk);
+      });
+      response.onAbort(() => {
+        envelope.close();
+      });
+
+      /**
+       * Every file of this run, read as text and kept for the one call that follows
+       * (`ID157`, `ID158`).
+       *
+       * They are held for the length of the run and not written to a table of their own,
+       * because the register has none: a fact becomes a row when the reading places it,
+       * as `profile_item` with its `provenance`. A run with nothing new to read makes no
+       * call at all, which is what keeps a second run free of them (`SL2`'s criterion 11).
+       */
+      const read: { name: string; id: string; text: string }[] = [];
+
+      /** Whether this run's reading was written whole and committed, which is what is notified. */
+      let profileWritten = false;
+
+      try {
+        for (const row of waiting) {
+          await db.update(document).set({ status: "reading" }).where(eq(document.id, row.id));
+          await envelope.send({ kind: "document", id: row.id, status: "reading", reason: null });
+
+          // The typed address is the one source with nothing to read: nothing is fetched,
+          // which is what the spec's non-goals say and what the screen's lead promises
+          // (F5). So it is read the moment the run reaches it, with no call and no kind.
+          if (row.source !== "file" || row.storageKey === null) {
+            await db
+              .update(document)
+              .set({ status: "read", readAt: new Date() })
+              .where(eq(document.id, row.id));
+            await envelope.send({ kind: "document", id: row.id, status: "read", reason: null });
+            continue;
+          }
+
+          /**
+           * A document that cannot become text fails alone, and only here.
+           *
+           * This is the one failure that belongs to a single document, because it happens
+           * before the call: a format nothing can read as characters, or bytes that are
+           * not there any more. Everything past this point is one call over all of them,
+           * so it succeeds or fails for all of them (`ID157`).
+           */
+          try {
+            // The key was written by the upload, which is the only writer of it (`ID115`).
+            const object = await storage.get(row.storageKey as ObjectKey);
+            if (object === null) throw new Error(`${row.filename} is not in storage any more`);
+            read.push({
+              name: slugOf(row.filename),
+              id: row.id,
+              text: await textOf({
+                filename: row.filename,
+                mediaType: object.mediaType,
+                bytes: object.bytes,
+              }),
+            });
+          } catch {
+            // Why it failed is not carried out to the person in the reader's words: what
+            // they are told is which of their documents could not be read, and that the
+            // rest were.
+            // A run of one has no others, and a sentence that says it has reads like a
+            // fault in the product rather than in the document (SL8's finding).
+            const reason =
+              waiting.length === 1
+                ? `${row.filename} could not be read.`
+                : `${row.filename} could not be read. The others were.`;
+            await db
+              .update(document)
+              .set({ status: "failed", failureReason: reason })
+              .where(eq(document.id, row.id));
+            await envelope.send({ kind: "document", id: row.id, status: "failed", reason });
+          }
         }
 
         /**
-         * A document that cannot become text fails alone, and only here.
+         * The reading: one composed document, one call (`ID157`, the person 2026-09-12).
          *
-         * This is the one failure that belongs to a single document, because it happens
-         * before the call: a format nothing can read as characters, or bytes that are
-         * not there any more. Everything past this point is one call over all of them,
-         * so it succeeds or fails for all of them (`ID157`).
+         * Every document this run could read is joined into a single document, each part
+         * under the name the profile's sources cite, and one call answers with the whole
+         * profile and the questions it leaves open. There is no classification step and no
+         * merge: nothing branches on what kind a document is (`ID158`), and nothing needs
+         * reconciling when the model saw every document at once.
+         *
+         * What the shape of the pipeline used to guarantee, the answer now has to carry:
+         * a fact cites the part it came from, and `writeProfile` refuses a citation naming
+         * a document this run did not read. A malformed answer is a failed reading and
+         * nothing else — nothing is written, and the rows stay unread so the next run
+         * takes them again.
          */
-        try {
-          // The key was written by the upload, which is the only writer of it (`ID115`).
-          const object = await storage.get(row.storageKey as ObjectKey);
-          if (object === null) throw new Error(`${row.filename} is not in storage any more`);
-          read.push({
-            name: slugOf(row.filename),
-            id: row.id,
-            text: await textOf({
-              filename: row.filename,
-              mediaType: object.mediaType,
-              bytes: object.bytes,
-            }),
-          });
-        } catch {
-          // Why it failed is not carried out to the person in the reader's words: what
-          // they are told is which of their documents could not be read, and that the
-          // rest were.
-          // A run of one has no others, and a sentence that says it has reads like a
-          // fault in the product rather than in the document (SL8's finding).
-          const reason =
-            waiting.length === 1
-              ? `${row.filename} could not be read.`
-              : `${row.filename} could not be read. The others were.`;
-          await db
-            .update(document)
-            .set({ status: "failed", failureReason: reason })
-            .where(eq(document.id, row.id));
-          await envelope.send({ kind: "document", id: row.id, status: "failed", reason });
-        }
-      }
-
-      /**
-       * The reading: one composed document, one call (`ID157`, the person 2026-09-12).
-       *
-       * Every document this run could read is joined into a single document, each part
-       * under the name the profile's sources cite, and one call answers with the whole
-       * profile and the questions it leaves open. There is no classification step and no
-       * merge: nothing branches on what kind a document is (`ID158`), and nothing needs
-       * reconciling when the model saw every document at once.
-       *
-       * What the shape of the pipeline used to guarantee, the answer now has to carry:
-       * a fact cites the part it came from, and `writeProfile` refuses a citation naming
-       * a document this run did not read. A malformed answer is a failed reading and
-       * nothing else — nothing is written, and the rows stay unread so the next run
-       * takes them again.
-       */
-      if (read.length > 0) {
-        const names = read.map((part) => part.name);
-        try {
-          const answered = await retriedOnce(() =>
-            askFor(
-              readingAll(composed(read.map(({ name, text }) => ({ name, text })))),
-              theReadingOf(names),
-              reading,
-            ),
-          );
-          await writeProfile(
-            person.id,
-            { items: answered.items },
-            new Map(read.map((part) => [part.name, part.id])),
-          );
-          await db
-            .update(document)
-            .set({ status: "read", failureReason: null, readAt: new Date() })
-            .where(
-              inArray(
-                document.id,
-                read.map((part) => part.id),
+        if (read.length > 0) {
+          const names = read.map((part) => part.name);
+          try {
+            const answered = await retriedOnce(() =>
+              askFor(
+                readingAll(composed(read.map(({ name, text }) => ({ name, text })))),
+                theReadingOf(names),
+                reading,
               ),
             );
-          for (const part of read) {
-            await envelope.send({ kind: "document", id: part.id, status: "read", reason: null });
-          }
-          await writeQuestions(person.id, { candidates: answered.candidates });
-        } catch {
-          // One call over all of them, so one failure over all of them. The rows stay
-          // where they were — not `read`, so the next run takes them again — and the
-          // person's previous profile is untouched, because `writeProfile` writes the
-          // whole profile or none of it.
-          const reason = "Your documents could not be read this time. Nothing was lost: try again.";
-          await db
-            .update(document)
-            .set({ status: "failed", failureReason: reason })
-            .where(
-              inArray(
-                document.id,
-                read.map((part) => part.id),
-              ),
+            await writeProfile(
+              person.id,
+              { items: answered.items },
+              new Map(read.map((part) => [part.name, part.id])),
             );
-          for (const part of read) {
-            await envelope.send({ kind: "document", id: part.id, status: "failed", reason });
+            await db
+              .update(document)
+              .set({ status: "read", failureReason: null, readAt: new Date() })
+              .where(
+                inArray(
+                  document.id,
+                  read.map((part) => part.id),
+                ),
+              );
+            for (const part of read) {
+              await envelope.send({ kind: "document", id: part.id, status: "read", reason: null });
+            }
+            await writeQuestions(person.id, { candidates: answered.candidates });
+            profileWritten = true;
+          } catch {
+            // One call over all of them, so one failure over all of them. The rows stay
+            // where they were — not `read`, so the next run takes them again — and the
+            // person's previous profile is untouched, because `writeProfile` writes the
+            // whole profile or none of it.
+            const reason =
+              "Your documents could not be read this time. Nothing was lost: try again.";
+            await db
+              .update(document)
+              .set({ status: "failed", failureReason: reason })
+              .where(
+                inArray(
+                  document.id,
+                  read.map((part) => part.id),
+                ),
+              );
+            for (const part of read) {
+              await envelope.send({ kind: "document", id: part.id, status: "failed", reason });
+            }
           }
         }
-      }
 
-      await envelope.send({ kind: "run", status: "done" });
-    } finally {
-      envelope.close();
-    }
+        if (profileWritten) {
+          const conversation = await existing(person, profile.name, null);
+          if (conversation !== undefined) await agent.notify(conversation, profileUpdatedNotice);
+        }
+
+        await envelope.send({ kind: "run", status: "done" });
+      } finally {
+        envelope.close();
+      }
+    });
   });
-});
 
 /** One item the merge produced, and what hangs under it. Recursive, so a project nests. */
 type Quoted = { document: string; said: string };

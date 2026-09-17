@@ -1,4 +1,10 @@
-import { AIMessage, type BaseMessage, HumanMessage, ToolMessage } from "@langchain/core/messages";
+import {
+  AIMessage,
+  type BaseMessage,
+  HumanMessage,
+  SystemMessage,
+  ToolMessage,
+} from "@langchain/core/messages";
 import { z } from "zod";
 import type { AgentPart, AssistantDefinition, StoredEntry } from "./index";
 
@@ -96,8 +102,9 @@ const said = (result: {
  * a part that is not text (D11). An assistant's entry is one `AIMessage`: its text, and
  * its `tool_use` parts as the calls. A `tool` entry is one `ToolMessage` per
  * `tool_result`, answering its call's id with the before and after, the refusal, or the
- * read. An
- * entry with nothing to say is left out rather than sent empty.
+ * read. A `system` entry is one `SystemMessage` of its notices, at its place in the history
+ * (D34), and never the person's words. An entry with nothing to say is left out rather
+ * than sent empty.
  *
  * A call's `args` are the model's own arguments string, parsed: the key order is kept and
  * only whitespace is dropped, since the converter serialises `args` again (D23). The
@@ -113,6 +120,15 @@ export const asMessages = (entries: readonly StoredEntry[], describe: Describe):
         const { id, name } = read.data;
         return [new ToolMessage({ tool_call_id: id, name, content: said(read.data) })];
       });
+    }
+
+    if (entry.author === "system") {
+      const notices = entry.parts
+        .flatMap((part) =>
+          part["kind"] === "notice" && typeof part["text"] === "string" ? [part["text"]] : [],
+        )
+        .join("\n\n");
+      return notices === "" ? [] : [new SystemMessage(notices)];
     }
 
     if (entry.author === "person") {

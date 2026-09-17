@@ -99,6 +99,20 @@ export class ConversationAgent<Tx, C extends ConversationRef, E extends StoredEn
   }
 
   /**
+   * What changed outside the conversation, pushed into its history (D34): one `system`
+   * entry holding one `notice` part, appended through the store in the agent's own
+   * transaction (D21) and resolved once it committed. No model is asked and nothing is
+   * streamed; the model reads the notice at its place the next time it is asked. An empty
+   * text is refused before anything is written.
+   */
+  async notify(conversation: C, text: string): Promise<E> {
+    if (text.trim() === "") throw new Error("a notice says something: its text is empty");
+    return this.wiring.transaction((tx) =>
+      this.wiring.store.append(tx, conversation, "system", [{ kind: "notice", text }]),
+    );
+  }
+
+  /**
    * One message through the agent (spec 3.6): the stored entries as its input (D11, D20),
    * then what the graph streams, mapped onto `Ran` in the order it arrives. The step
    * middleware's `custom` events are already `Ran`s; the model node's text pieces become

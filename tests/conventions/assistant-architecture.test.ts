@@ -119,16 +119,18 @@ describe("the API core reads no profile (SL4, D10 to D12)", () => {
   });
 
   // SL5f, OD7: reading the entries back is the agent's, so it is the agent that names a
-  // part kind, and only the three it writes itself; lib/conversation names none at all.
+  // part kind, and only the four it writes itself (the notice since SL8, D34);
+  // lib/conversation names none at all.
   // `activity` and `entry` are `Ran`'s, what the loop says as it runs, and not parts.
-  it("has lib/agent name no part kind beyond text and the tool parts", () => {
+  it("has lib/agent name no part kind beyond text, the tool parts and the notice", () => {
     const kinds = sources(join(api, "lib/agent")).flatMap((file) =>
       [...codeOf(file).matchAll(/kind\s*(?:===|!==|:)\s*"(\w+)"/g)].map(([, kind]) => kind),
     );
     expect(kinds.length).toBeGreaterThan(0);
     expect(
       kinds.filter(
-        (kind) => !["text", "tool_use", "tool_result", "activity", "entry"].includes(kind ?? ""),
+        (kind) =>
+          !["text", "tool_use", "tool_result", "notice", "activity", "entry"].includes(kind ?? ""),
       ),
     ).toEqual([]);
   });

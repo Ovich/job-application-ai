@@ -7,7 +7,7 @@ import { append, entries, type Transaction } from "./lib/conversation";
 import { db } from "./lib/db";
 import { conversationsOf } from "./routes/conversations";
 import { health } from "./routes/health";
-import { intake } from "./routes/intake";
+import { intakeOf } from "./routes/intake";
 import { mock } from "./routes/mock";
 
 /**
@@ -29,8 +29,9 @@ const agent = new ConversationAgent({
 /** The product's own API, everything under `/api`. */
 const api = new Hono()
   .route("/health", health)
-  // The intake: what a person hands over, and the reading of it (ID118).
-  .route("/intake", intake)
+  // The intake: what a person hands over, and the reading of it (ID118). The reading
+  // notifies the profile conversation through the same agent (D34).
+  .route("/intake", intakeOf(agent, profileAssistant))
   // A person's conversations with the assistants, one registry of definitions held here
   // and nowhere else (ID186): an assistant added later is a value in this list.
   .route("/conversations", conversationsOf(agent, [profileAssistant]))

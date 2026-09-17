@@ -97,6 +97,16 @@ export const aboutPart = z.object({
   where: z.string(),
 });
 
+/**
+ * What changed outside the conversation, pushed into its history (D34): one sentence, under
+ * the `system` author. The model reads it as a system message where it sits; the person
+ * sees a quiet line and cannot answer it.
+ */
+export const noticePart = z.object({
+  kind: z.literal("notice"),
+  text: z.string().min(1),
+});
+
 export const part = z.discriminatedUnion("kind", [
   textPart,
   toolUsePart,
@@ -104,6 +114,7 @@ export const part = z.discriminatedUnion("kind", [
   questionAnsweredPart,
   questionSkippedPart,
   aboutPart,
+  noticePart,
 ]);
 
 /** A part as it is read: one the catalogue knows, or one from a catalogue it does not. */

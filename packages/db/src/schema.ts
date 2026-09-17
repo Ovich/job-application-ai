@@ -358,7 +358,12 @@ export type ProfileConcernSource = (typeof profileConcernSource.enumValues)[numb
  * for an assistant with no subject: without it two `null` subjects are two values, and
  * two opens racing would each write a conversation.
  */
-export const conversationAuthor = pgEnum("conversation_author", ["person", "assistant", "tool"]);
+export const conversationAuthor = pgEnum("conversation_author", [
+  "person",
+  "assistant",
+  "tool",
+  "system",
+]);
 
 export const conversation = pgTable(
   "conversation",

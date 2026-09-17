@@ -4,11 +4,28 @@
 
   Who wrote it is where it sits (S4.7): the person's entries on the right, at most 70% of
   the column and aligned from its right edge, behind their initials; the assistant's, and
-  its tools' records, full width behind its avatar.
+  its tools' records, full width behind its avatar; a system notice, a quiet line alone.
 -->
 @for (entry of entries(); track entry.id; let first = $first) {
   @if (first && opening(); as drawn) {
     <ng-container [ngTemplateOutlet]="drawn" />
+  } @else if (entry.author === "system") {
+    <!--
+      What changed outside the conversation (D34): one quiet line per notice, no avatar and
+      nothing to answer.
+    -->
+    <div data-entry data-msg="system" class="flex w-full flex-col gap-1">
+      @for (part of entry.parts; track $index) {
+        @if (part.kind === "notice") {
+          <p data-part="notice" uiText variant="caption" tone="muted">{{ textOf(part) }}</p>
+        } @else {
+          <ng-container
+            [ngTemplateOutlet]="other"
+            [ngTemplateOutletContext]="{ $implicit: part }"
+          />
+        }
+      }
+    </div>
   } @else if (entry.author === "person") {
     <div data-entry data-msg="person" class="ml-auto flex max-w-[70%] flex-row-reverse gap-3">
       <div

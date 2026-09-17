@@ -36,7 +36,7 @@ export type Transaction = PgTransaction<
   ExtractTablesWithRelations<typeof schema>
 >;
 
-export type Author = "person" | "assistant" | "tool";
+export type Author = "person" | "assistant" | "tool" | "system";
 
 export type Entry = {
   id: string;
@@ -125,6 +125,16 @@ export const open = async (
     return winner;
   }
 };
+
+/**
+ * The person's conversation with that assistant about that subject, when one exists; never
+ * created. What a writer outside the conversation notifies (D34).
+ */
+export const existing = (
+  person: Asking,
+  assistant: string,
+  subject: string | null,
+): Promise<Conversation | undefined> => found(person, assistant, subject);
 
 /** Every entry of the conversation, in order. Parts are read as they were stored. */
 export const entries = async (of: Conversation): Promise<Entry[]> =>

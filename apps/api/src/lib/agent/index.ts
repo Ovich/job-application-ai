@@ -78,12 +78,13 @@ export type AgentPart =
       after?: unknown;
       refused?: string;
       read?: unknown;
-    };
+    }
+  | { kind: "notice"; text: string };
 
 /** The least the module reads of a conversation and of a stored entry; the project's own types extend them. */
 export type ConversationRef = { id: string };
 export type StoredEntry = {
-  author: "person" | "assistant" | "tool";
+  author: "person" | "assistant" | "tool" | "system";
   parts: readonly Record<string, unknown>[];
 };
 
@@ -94,7 +95,12 @@ export type Ran<E extends StoredEntry = StoredEntry> =
 /** What the module needs of a conversation's store: read, and write inside the caller's transaction. */
 export type ConversationStore<Tx, C extends ConversationRef, E extends StoredEntry> = {
   entries: (of: C) => Promise<E[]>;
-  append: (tx: Tx, of: C, author: "assistant" | "tool", parts: AgentPart[]) => Promise<E>;
+  append: (
+    tx: Tx,
+    of: C,
+    author: "assistant" | "tool" | "system",
+    parts: AgentPart[],
+  ) => Promise<E>;
 };
 
 export type ConversationAgentOptions<Tx, C extends ConversationRef, E extends StoredEntry> = {
