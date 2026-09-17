@@ -68,7 +68,6 @@ export type AgentPart =
       name: string;
       input?: unknown;
       arguments?: string;
-      summary: string;
     }
   | {
       kind: "tool_result";

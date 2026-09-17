@@ -150,13 +150,12 @@ export const stepMiddleware = <Tx, C extends ConversationRef, E extends StoredEn
         for (const call of calls) parts.push(await resultOf(tx, definition, context.person, call));
         const asked = await wiring.store.append(tx, context.conversation, "assistant", [
           ...(text === "" ? [] : [{ kind: "text" as const, text }]),
-          ...calls.map((call, at) => ({
+          ...calls.map((call) => ({
             kind: "tool_use" as const,
             id: call.id,
             name: call.name,
             input: call.args,
             arguments: call.written,
-            summary: summaries[at] ?? "",
           })),
         ]);
         const answered = await wiring.store.append(tx, context.conversation, "tool", parts);
