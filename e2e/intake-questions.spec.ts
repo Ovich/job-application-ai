@@ -216,7 +216,7 @@ test("the assistant asks, the answers become profile concerns, and a reload stil
   await page.locator("[data-part=send]").click();
   await expect(count).toHaveText(/^1 of \d+ answered$/);
   await agentRepliedTo(page, 1);
-  // The assistant acknowledges, names the next question and activates its tool, with the
+  // The agent's reply is the one reply (`ID293`): the assistant activates the next tool, with the
   // line saying it waits for the person (`S8.3`, `ID218`).
   await waitingLineInView(page);
   await expect(page.locator("[data-action=alt]").first()).toBeVisible();
