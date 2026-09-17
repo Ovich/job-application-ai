@@ -58,12 +58,12 @@ One JSON file per answer, anywhere under the folder; subfolders are your own org
 | `case`       | an exact name a request may ask for in the case header                                         |
 | `tool_calls` | the calls, `{ name, arguments, id? }`; `arguments` an object, or a string sent verbatim        |
 | `usage`      | `{ input_tokens, output_tokens }`, mapped to each protocol's own names; zero when left out     |
-| `then`       | the answer to the next request, once these calls were made: an answer without `answers`/`case` |
+| `next`       | the answer to the next request, once these calls were made: an answer without `answers`/`case` |
 
 A request is answered by the `case` its header names, else by the answer whose `answers` equals
 its last user message, else by the placeholder `No pre generated text` with one warning line.
 Files are read on every request, so an edited file is the next answer. A file that is not JSON,
-has no `content` and no `tool_calls`, or has a `then` but no `tool_calls` throws naming the file;
+has no `content` and no `tool_calls`, or has a `next` but no `tool_calls` throws naming the file;
 two answers with the same `case` or the same `answers` throw naming both.
 
 An answer's id is its `case`, else its path without the extension (`profile/greeting`); inline,
@@ -71,20 +71,20 @@ its `case` or its index.
 
 ### A chain
 
-An answer with `then` is a chain: the call is answered, the caller runs the tool, and the next
-request, which carries the call and its result after the same user message, gets the `then`.
+An answer with `next` is a chain: the call is answered, the caller runs the tool, and the next
+request, which carries the call and its result after the same user message, gets the `next`.
 
 ```json
 {
   "answers": "What is the capital of Vaud?",
   "tool_calls": [{ "name": "look_up", "arguments": { "canton": "VD" } }],
-  "then": { "content": "Lausanne." }
+  "next": { "content": "Lausanne." }
 }
 ```
 
-The mock walks one `then` per assistant message with calls since the last user message, and
+The mock walks one `next` per assistant message with calls since the last user message, and
 checks each against the calls written at its link, by name and by arguments deep-equal. A call
-that differs, or a chain that has run out, is a miss. An answer without `then` is answered
+that differs, or a chain that has run out, is a miss. An answer without `next` is answered
 whatever came after the user message.
 
 ## The options

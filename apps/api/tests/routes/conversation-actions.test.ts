@@ -584,7 +584,7 @@ describe("a tool used is a message to the agent (D31, ID291)", () => {
       requestsAnswered()
         .slice(-2)
         .map((each) => each.picked),
-    ).toEqual(["profile/java-earlier-work", "profile/java-earlier-work#then"]);
+    ).toEqual(["profile/java-earlier-work", "profile/java-earlier-work#next"]);
   });
 
   it("keeps the answer written and ends on the error frame when the model fails mid-stream", async () => {

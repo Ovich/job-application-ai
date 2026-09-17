@@ -23,7 +23,7 @@ type Written = {
   answers?: string;
   content?: string;
   tool_calls?: { name: string; arguments: unknown }[];
-  then?: { content?: string; tool_calls?: unknown[] };
+  next?: { content?: string; tool_calls?: unknown[] };
 };
 
 const written = (file: string): Written =>
@@ -162,9 +162,9 @@ describe("the profile's replies to the preset CV's decisions (ID292)", () => {
       expect(answer.answers).toContain(`: ${label} (`);
       expect(answer.case).toBeUndefined();
       expect(answer.tool_calls).toEqual([{ name: "read_profile", arguments: {} }]);
-      expect(answer.then?.tool_calls ?? []).toEqual([]);
-      expect(answer.then?.content?.length).toBeGreaterThan(0);
-      expect(answer.then?.content).not.toBe("No pre generated text");
+      expect(answer.next?.tool_calls ?? []).toEqual([]);
+      expect(answer.next?.content?.length).toBeGreaterThan(0);
+      expect(answer.next?.content).not.toBe("No pre generated text");
     },
   );
 

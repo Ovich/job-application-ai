@@ -35,7 +35,7 @@ export type Answer = {
    * What answers the message after this answer's calls were made (`D37`): the next link of
    * a chain, found by walking, never by an `answers` or a `case` of its own.
    */
-  then?: Omit<Answer, "answers" | "case">;
+  next?: Omit<Answer, "answers" | "case">;
 };
 
 /** An answer as the serialisers take it: every optional part filled in. */
@@ -99,17 +99,17 @@ const held = (value: unknown, from: string, fallbackId: string): Held => {
   const name = named("case");
   const id = name ?? fallbackId;
   let next: Held | undefined;
-  if (value.then !== undefined) {
+  if (value.next !== undefined) {
     if (tool_calls.length === 0) {
-      return refuse("it has a `then` but no `tool_calls` whose answer it could be");
+      return refuse("it has a `next` but no `tool_calls` whose answer it could be");
     }
     if (
-      isRecord(value.then) &&
-      (value.then.answers !== undefined || value.then.case !== undefined)
+      isRecord(value.next) &&
+      (value.next.answers !== undefined || value.next.case !== undefined)
     ) {
-      return refuse("its `then` has an `answers` or a `case`; a link is found by walking");
+      return refuse("its `next` has an `answers` or a `case`; a link is found by walking");
     }
-    next = held(value.then, from, `${id}#then`);
+    next = held(value.next, from, `${id}#next`);
   }
   return {
     id,
@@ -224,9 +224,9 @@ const sameCalls = (made: readonly MadeCall[], written: Held["tool_calls"]): bool
   );
 
 /**
- * The link a chain has reached (`D37`): one `then` per message of calls made since the
+ * The link a chain has reached (`D37`): one `next` per message of calls made since the
  * user's message, each checked against the calls its link wrote. A differing call, or a
- * chain run out, is nothing. An answer without `then` is answered as it always was.
+ * chain run out, is nothing. An answer without `next` is answered as it always was.
  */
 const walked = (found: Held, calls: readonly (readonly MadeCall[])[]): Held | undefined => {
   if (found.next === undefined) return found;
