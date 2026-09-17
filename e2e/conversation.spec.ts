@@ -172,7 +172,9 @@ test("a pick, then a free message and its streamed reply, stay in order after th
 
   const said = column.locator("[data-entry]");
   await expect(said.filter({ hasText: message })).toHaveCount(1);
-  await expect(said.filter({ hasText: "No pre generated text" }).last()).toBeVisible({
+  // Two replies by now, the pick's and the message's (D31): waiting for the second keeps the
+  // reload below from racing the run that stores it.
+  await expect(said.filter({ hasText: "No pre generated text" })).toHaveCount(2, {
     timeout: 30_000,
   });
   await expect(count).toHaveText(answeredCount);
