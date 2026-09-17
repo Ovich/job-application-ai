@@ -181,3 +181,37 @@ export const append = async (
   if (written === undefined) throw new Error("the entry could not be written");
   return written;
 };
+
+/**
+ * Where the agent's context was cut (D36, `ID304`): entries before `cut` are not sent, tool
+ * results before `cleared` are sent as a placeholder. Absent both until a first cut.
+ */
+export type ContextWindow = { cut?: number; cleared?: number };
+
+const windowOf = (
+  row: { cut: number | null; cleared: number | null } | undefined,
+): ContextWindow => ({
+  ...(row?.cut == null ? {} : { cut: row.cut }),
+  ...(row?.cleared == null ? {} : { cleared: row.cleared }),
+});
+
+/** The conversation's context window, as the agent last stored it. */
+export const contextWindow = async (of: Conversation): Promise<ContextWindow> => {
+  const [row] = await db
+    .select({ cut: conversation.contextCut, cleared: conversation.contextCleared })
+    .from(conversation)
+    .where(eq(conversation.id, of.id));
+  return windowOf(row);
+};
+
+/** The conversation's context window, replaced in the caller's transaction. */
+export const setContextWindow = async (
+  tx: Transaction,
+  of: Conversation,
+  window: ContextWindow,
+): Promise<void> => {
+  await tx
+    .update(conversation)
+    .set({ contextCut: window.cut ?? null, contextCleared: window.cleared ?? null })
+    .where(eq(conversation.id, of.id));
+};

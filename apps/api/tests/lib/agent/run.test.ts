@@ -911,6 +911,7 @@ describe("the case and its header, default and bound (OD10)", () => {
       model: chatModelThroughTheApp(),
       store: conversationStore,
       transaction,
+      context: { maxInputTokens: 128000 },
     });
 
     await ranThrough(plain.run(profileAssistant, conversation, at.person));

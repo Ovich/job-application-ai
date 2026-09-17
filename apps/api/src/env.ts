@@ -135,6 +135,9 @@ const configuration = z.object({
   AI_API_KEY: z.string().min(1).default("local_dev_only_the_mock_ignores_it"),
   AI_MODEL: z.string().min(1).default("mock-model"),
   AI_MOCK_PACE: z.string().min(1).default("tps=40;ttft=400;chunk=3;jitter=0.15"),
+
+  AI_OPT_MAX_INPUT_TOKENS: z.coerce.number().int().positive().optional(),
+  AI_OPT_MAX_OUTPUT_TOKENS: z.coerce.number().int().positive().optional(),
 });
 
 // Destructured rather than indexed: the strictest TypeScript base requires bracket
@@ -157,6 +160,8 @@ const {
   AI_API_KEY,
   AI_MODEL,
   AI_MOCK_PACE,
+  AI_OPT_MAX_INPUT_TOKENS,
+  AI_OPT_MAX_OUTPUT_TOKENS,
 } = process.env;
 
 /**
@@ -175,6 +180,14 @@ const {
  * which environment it is running in.
  */
 const ownMock = `http://localhost:${PORT === undefined || PORT === "" ? defaultPort : PORT}/mock/v1`;
+
+/**
+ * The model's context window (D35, `ID304`): how much input it takes and the reply's
+ * reserve, handed to the agent when set. A real model's profile may say it; the mock's
+ * model has none, so the two are defaulted only while `AI_MODEL` is left at the mock's.
+ * A model named without them must carry its own profile, or the agent is not built.
+ */
+const mockContext = AI_MODEL === undefined ? { input: "128000", output: "16384" } : undefined;
 
 /** The parsed, frozen configuration. The only export, and the only reader of the environment. */
 export const env = Object.freeze(
@@ -195,5 +208,7 @@ export const env = Object.freeze(
     AI_API_KEY,
     AI_MODEL,
     AI_MOCK_PACE,
+    AI_OPT_MAX_INPUT_TOKENS: AI_OPT_MAX_INPUT_TOKENS ?? mockContext?.input,
+    AI_OPT_MAX_OUTPUT_TOKENS: AI_OPT_MAX_OUTPUT_TOKENS ?? mockContext?.output,
   }),
 );

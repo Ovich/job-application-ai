@@ -1,9 +1,16 @@
 import { Hono } from "hono";
 import { profileAssistant } from "./assistants/profile";
+import { env } from "./env";
 import { ConversationAgent } from "./lib/agent";
 import { answeredInProcessBy, chatModel } from "./lib/ai";
 import { auth } from "./lib/auth";
-import { append, entries, type Transaction } from "./lib/conversation";
+import {
+  append,
+  contextWindow,
+  entries,
+  setContextWindow,
+  type Transaction,
+} from "./lib/conversation";
 import { db } from "./lib/db";
 import { conversationsOf } from "./routes/conversations";
 import { health } from "./routes/health";
@@ -17,13 +24,29 @@ import { mock } from "./routes/mock";
  * which store it reads and writes a conversation through, which transaction a step commits
  * in, and what the header naming a step's case is called on this product's wire. The
  * header is the mock's own (`X-Jobapp-Case`), so what travels is what travelled before
- * (D19); the module's own default names no product.
+ * (D19); the module's own default names no product. The model's context window comes from
+ * the environment when it is set (D35); otherwise the model's own profile must say it.
  */
 const agent = new ConversationAgent({
   model: chatModel(),
-  store: { entries, append },
+  store: {
+    entries,
+    append,
+    window: contextWindow,
+    setWindow: setContextWindow,
+  },
   transaction: <T>(run: (tx: Transaction) => Promise<T>) => db.transaction(run),
   caseHeader: "X-Jobapp-Case",
+  ...(env.AI_OPT_MAX_INPUT_TOKENS === undefined
+    ? {}
+    : {
+        context: {
+          maxInputTokens: env.AI_OPT_MAX_INPUT_TOKENS,
+          ...(env.AI_OPT_MAX_OUTPUT_TOKENS === undefined
+            ? {}
+            : { maxOutputTokens: env.AI_OPT_MAX_OUTPUT_TOKENS }),
+        },
+      }),
 });
 
 /** The product's own API, everything under `/api`. */

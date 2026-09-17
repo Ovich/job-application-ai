@@ -2,6 +2,7 @@ import type { BaseMessage } from "@langchain/core/messages";
 import { SystemMessage } from "@langchain/core/messages";
 import { tool } from "@langchain/core/tools";
 import { createAgent } from "langchain";
+import { budgetOf } from "./context";
 import type {
   AssistantDefinition,
   ConversationAgentOptions,
@@ -80,6 +81,7 @@ export class ConversationAgent<Tx, C extends ConversationRef, E extends StoredEn
   constructor(options: ConversationAgentOptions<Tx, C, E>) {
     this.model = options.model;
     this.steps = options.steps ?? defaultSteps;
+    const budget = this.budgetOf(options);
     this.wiring = {
       store: options.store,
       transaction: options.transaction,
@@ -87,7 +89,17 @@ export class ConversationAgent<Tx, C extends ConversationRef, E extends StoredEn
       caseOf: options.caseOf ?? defaultCaseOf,
       steps: this.steps,
       stopped: options.stopped ?? defaultStopped,
+      model: options.model,
+      budget,
     };
+  }
+
+  /**
+   * The input budget (D35): the binding's `context`, else the model's own profile; with
+   * neither, the agent is not built, and the error names the model and the option.
+   */
+  private budgetOf(options: ConversationAgentOptions<Tx, C, E>): number {
+    return budgetOf(options.model, options.context);
   }
 
   private graphOf(definition: AssistantDefinition<Tx>) {
@@ -126,11 +138,13 @@ export class ConversationAgent<Tx, C extends ConversationRef, E extends StoredEn
     conversation: C,
     person: string,
   ): AsyncIterable<Ran<E>> {
-    const messages = asMessages(await this.wiring.store.entries(conversation), definition.describe);
+    const entries: StoredEntry[] = await this.wiring.store.entries(conversation);
+    const window = await this.wiring.store.window(conversation);
+    const messages = asMessages(entries, definition.describe);
     const stream = await this.graphOf(definition).stream(
       { messages },
       {
-        context: { person, conversation },
+        context: { person, conversation, ledger: { entries: [...entries], window } },
         streamMode: ["messages", "custom"],
         // A safety net a run never reaches: `beforeModel` ends it after `steps` steps.
         recursionLimit: 10 * this.steps,

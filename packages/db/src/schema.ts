@@ -374,6 +374,13 @@ export const conversation = pgTable(
       .references(() => user.id, { onDelete: "cascade" }),
     assistant: text("assistant").notNull(),
     subject: text("subject"),
+    /**
+     * The agent's context window (D36, `ID304`), two entry positions: entries before
+     * `context_cut` are not sent, tool results before `context_cleared` are sent as a
+     * placeholder. Both null until the conversation first reaches the budget's trigger.
+     */
+    contextCut: integer("context_cut"),
+    contextCleared: integer("context_cleared"),
     createdAt: timestamp("created_at").notNull().defaultNow(),
   },
   (table) => [

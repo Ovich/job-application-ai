@@ -84,6 +84,8 @@ export type AgentPart =
 /** The least the module reads of a conversation and of a stored entry; the project's own types extend them. */
 export type ConversationRef = { id: string };
 export type StoredEntry = {
+  /** Where the entry sits in its conversation; entries are append-only, so it never moves. */
+  position: number;
   author: "person" | "assistant" | "tool" | "system";
   parts: readonly Record<string, unknown>[];
 };
@@ -101,7 +103,24 @@ export type ConversationStore<Tx, C extends ConversationRef, E extends StoredEnt
     author: "assistant" | "tool" | "system",
     parts: AgentPart[],
   ) => Promise<E>;
+  /** The conversation's stored context window; both positions absent until a first cut. */
+  window: (of: C) => Promise<ContextWindow>;
+  /** The window a cut event decided, written in the agent's transaction. */
+  setWindow: (tx: Tx, of: C, window: ContextWindow) => Promise<void>;
 };
+
+/**
+ * How much the model takes (D35), in the library profile's own field names: the input it
+ * accepts, and the reply's reserve taken from it. The budget is their difference.
+ */
+export type ContextConfig = { maxInputTokens: number; maxOutputTokens?: number };
+
+/**
+ * Where the history was cut (D36), as entry positions: entries before `cut` are not sent,
+ * and tool results before `cleared` are sent as the placeholder. Stored on the
+ * conversation, so every request rebuilds the same prefix until the next cut.
+ */
+export type ContextWindow = { cut?: number; cleared?: number };
 
 export type ConversationAgentOptions<Tx, C extends ConversationRef, E extends StoredEntry> = {
   model: BaseChatModel;
@@ -115,6 +134,8 @@ export type ConversationAgentOptions<Tx, C extends ConversationRef, E extends St
   steps?: number;
   /** The last entry when the limit is reached. Default names the limit in English. */
   stopped?: (steps: number) => string;
+  /** The model's context window. Default the model's own profile; with neither, the agent is not built. */
+  context?: ContextConfig;
 };
 
 export { ConversationAgent } from "./agent";

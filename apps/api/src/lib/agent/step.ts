@@ -1,7 +1,9 @@
+import type { BaseChatModel } from "@langchain/core/language_models/chat_models";
 import { AIMessage, ToolMessage } from "@langchain/core/messages";
 import { createMiddleware } from "langchain";
 import { z } from "zod";
 import { callsOf, resultOf, summaryOf } from "./calls";
+import { fitted, type Ledger } from "./context";
 import type {
   AgentPart,
   AssistantDefinition,
@@ -22,7 +24,7 @@ import { resultMessage, unnamed } from "./messages";
  * failed.
  *
  * Beside that (D22, D26; spec 3.5): the step count and its phrase, the step limit, and
- * the case header per model call. The profile is no longer read before a call (D33): the
+ * the case header per model call, and the context budget each call is fitted to (D36). The profile is no longer read before a call (D33): the
  * agent reads it with a tool, and a read is a step's call like any other.
  *
  * **No transaction is open while the model is asked** (`ID179`): the step's transaction
@@ -37,17 +39,27 @@ export type Wiring<Tx, C extends ConversationRef, E extends StoredEntry> = {
   caseOf: (assistant: string, conversation: string, step: number) => string;
   steps: number;
   stopped: (steps: number) => string;
+  model: BaseChatModel;
+  /** The input budget each model call is fitted to (D35). */
+  budget: number;
 };
 
-/** The run's context: the person, and the conversation as the caller holds it (spec 3.4). */
-export type RunContext<C extends ConversationRef> = { person: string; conversation: C };
+/**
+ * The run's context: the person, the conversation as the caller holds it (spec 3.4), and
+ * what the run knows of that conversation's entries and window (D36).
+ */
+export type RunContext<C extends ConversationRef> = {
+  person: string;
+  conversation: C;
+  ledger: Ledger;
+};
 
 /**
  * The context schema, built per agent: the conversation passes through as the caller's own
  * value, since the module reads only its id and hands it back to the store untouched.
  */
 export const contextSchemaFor = <C extends ConversationRef>() =>
-  z.object({ person: z.string(), conversation: z.custom<C>() });
+  z.object({ person: z.string(), conversation: z.custom<C>(), ledger: z.custom<Ledger>() });
 
 /** The step middleware's own state: the step count, and the step's results by call id. */
 const stepState = z.object({
@@ -112,10 +124,21 @@ export const stepMiddleware = <Tx, C extends ConversationRef, E extends StoredEn
       // `options.headers` (D26, `ID282`); neither is in the call options' type.
       const modelSettings: unknown = { headers: caseHeader, options: { headers: caseHeader } };
       // The system prompt and the tools, then the history as it was appended (D33):
-      // nothing volatile sits ahead of it.
+      // nothing volatile sits ahead of it. The history is fitted to the budget (D36).
+      const messages = await fitted(request.messages.map(unnamed), {
+        budget: wiring.budget,
+        model: wiring.model,
+        system: request.systemMessage,
+        tools: request.tools,
+        describe: definition.describe,
+        ledger: context.ledger,
+        save: (window) =>
+          wiring.transaction((tx) => wiring.store.setWindow(tx, context.conversation, window)),
+        named: caseOf(context, request.state.step),
+      });
       return handler({
         ...request,
-        messages: request.messages.map(unnamed),
+        messages,
         modelSettings: modelSettings as Record<string, unknown>,
       });
     },
@@ -133,6 +156,7 @@ export const stepMiddleware = <Tx, C extends ConversationRef, E extends StoredEn
         const reply = await wiring.transaction((tx) =>
           wiring.store.append(tx, context.conversation, "assistant", [{ kind: "text", text }]),
         );
+        context.ledger.entries.push(reply);
         say({ kind: "entry", entry: reply });
         return;
       }
@@ -158,6 +182,7 @@ export const stepMiddleware = <Tx, C extends ConversationRef, E extends StoredEn
         const answered = await wiring.store.append(tx, context.conversation, "tool", parts);
         return { written: [asked, answered], parts };
       });
+      context.ledger.entries.push(...written);
       for (const entry of written) say({ kind: "entry", entry });
 
       return {
