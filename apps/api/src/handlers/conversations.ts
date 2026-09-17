@@ -4,7 +4,6 @@ import { stream } from "hono/streaming";
 import { validator } from "hono/validator";
 import { z } from "zod";
 import { type AssistantDefinition, NotYet, Refused, run } from "../lib/agent";
-import { ask, askFor, askStreaming, askWithTools } from "../lib/ai";
 import { append, type Conversation, type Entry, entries, open } from "../lib/conversation";
 import { db } from "../lib/db";
 import { type Asking, asking, refused } from "../lib/session";
@@ -158,7 +157,7 @@ export const runAction = (definitions: AssistantDefinition[]) =>
  * writes no half reply, and ends on an error frame. A tab closed mid-reply is the same
  * failure, and intended.
  *
- * The reply is `lib/agent`'s loop (`ID187`): each step's text streams on as it arrives,
+ * The reply is `lib/agent`'s agent (`ID187`, D18): each step's text streams on as it arrives,
  * and each of its entries once the step has committed. Step `n` is asked as
  * `<assistant>.message:<conversation id>#<n>` (`ID182`); what earlier steps committed
  * stays when a later one fails.
@@ -211,9 +210,7 @@ export const postMessage = (definitions: AssistantDefinition[]) =>
 
         try {
           await envelope.send({ kind: "entry", entry: onTheWire(mine) });
-          // `lib/ai` as the value the loop asks, gathered here where it is imported.
-          const ai = { ask, askStreaming, askFor, askWithTools };
-          for await (const ran of run(definition, conversation, person.id, ai)) {
+          for await (const ran of run(definition, conversation, person.id)) {
             // What the agent is doing travels as a status leaf and is never stored (`ID210`).
             await envelope.send(
               ran.kind === "entry"

@@ -32,29 +32,19 @@ vi.mock("../../src/lib/storage", async (importOriginal) => ({
 
 vi.mock("../../src/lib/ai", async (importOriginal) => {
   const real = await importOriginal<typeof import("../../src/lib/ai")>();
-  const { aiThroughTheApp } = await import("../support/ai");
+  const { aiThroughTheApp, chatModelThroughTheApp, failingMidStream } =
+    await import("../support/ai");
   const ai = aiThroughTheApp();
-  // A call that fails mid-stream, when a case says so: one piece, then the throw. Since
-  // `SL4` a message is answered through the agent loop, which asks with tools.
-  const askWithTools: typeof ai.askWithTools = (...asked) => {
-    if (!objects.failing) return ai.askWithTools(...asked);
-    const gone = new Error("the model went away mid-stream");
-    const calls = Promise.reject(gone);
-    calls.catch(() => {});
-    return {
-      pieces: (async function* () {
-        yield "No pre";
-        throw gone;
-      })(),
-      calls,
-    };
-  };
   return {
     ...real,
     ask: ai.ask,
     askStreaming: ai.askStreaming,
     askFor: ai.askFor,
-    askWithTools,
+    // The agent's model (D25): a call that fails mid-stream, one piece then the throw, when
+    // a case says so. A definition's graph keeps the model it was built with, so such a
+    // case answers through a definition built while `objects.failing` is set.
+    chatModel: () =>
+      objects.failing ? failingMidStream(chatModelThroughTheApp(), "#1") : chatModelThroughTheApp(),
   };
 });
 
@@ -350,11 +340,16 @@ describe("a free message (US2, SL3)", () => {
   it("keeps the person's entry, writes no half reply, and ends on an error frame when the call fails mid-stream", async () => {
     const person = await signedIn("message-fails@example.com");
     objects.failing = true;
+    const failingRoutes = new Hono().route(
+      "/api/conversations",
+      conversationsOf([{ ...aTestAssistant }]),
+    );
 
     const { status, leaves } = await post(
       "/api/conversations/profile/messages",
       "Something.",
       person.cookie,
+      failingRoutes,
     );
 
     expect(status).toBe(200);

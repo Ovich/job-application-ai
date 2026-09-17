@@ -1,9 +1,8 @@
 import { randomUUID } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { itemExperience, itemLine, profileItem, user } from "@app/db";
+import { toJsonSchema } from "@langchain/core/utils/json_schema";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { z } from "zod";
-import type { Ai } from "../../../src/lib/ai";
 import type { Conversation, Entry } from "../../../src/lib/conversation";
 
 /**
@@ -19,20 +18,35 @@ import type { Conversation, Entry } from "../../../src/lib/conversation";
  * table is read. Whether a transaction is open while the model is asked is held by the
  * code's shape and the review, not asserted here.
  */
+const objects = vi.hoisted(() => ({ failing: false }));
+
 vi.mock("../../../src/lib/db", async () => ({
   db: (await import("../../support/database")).testDb,
 }));
+
+// The agent's model on the application's own mock (D25). A definition's graph is built
+// once and keeps the model it was built with, so a failing model is taken by a definition
+// built while `objects.failing` is set.
+vi.mock("../../../src/lib/ai", async (importOriginal) => {
+  const real = await importOriginal<typeof import("../../../src/lib/ai")>();
+  const { chatModelThroughTheApp, failingMidStream } = await import("../../support/ai");
+  return {
+    ...real,
+    chatModel: () =>
+      objects.failing ? failingMidStream(chatModelThroughTheApp(), "#2") : chatModelThroughTheApp(),
+  };
+});
 
 const { testDb } = await import("../../support/database");
 const { append, entries, open } = await import("../../../src/lib/conversation");
 const { run, stepLimit } = await import("../../../src/lib/agent");
 const { apply, profileEditTool } = await import("../../../src/lib/profile-edit");
 const { profileAssistant } = await import("../../../src/assistants/profile");
-const { aiThroughTheApp, forgetRequests, requestsSent, withCases } =
-  await import("../../support/ai");
+const { forgetRequests, requestsSent, withCases } = await import("../../support/ai");
 const { failingOn } = await import("../../support/failing-entry");
 
 afterEach(() => {
+  objects.failing = false;
   forgetRequests();
   vi.restoreAllMocks();
 });
@@ -123,9 +137,7 @@ describe("on the mock, every step misses (US2, dev)", () => {
     const before = await standing(at.person, at.post);
     vi.spyOn(console, "warn").mockImplementation(() => {});
 
-    const { said, thrown } = await ranThrough(
-      run(profileAssistant, conversation, at.person, aiThroughTheApp()),
-    );
+    const { said, thrown } = await ranThrough(run(profileAssistant, conversation, at.person));
 
     expect(thrown).toBeUndefined();
     expect(textOf(said)).toBe("No pre generated text");
@@ -168,7 +180,7 @@ describe("recorded answers of two steps (S4.5)", () => {
 
     let ran: { said: Ran[]; thrown: unknown };
     try {
-      ran = await ranThrough(run(profileAssistant, conversation, at.person, aiThroughTheApp()));
+      ran = await ranThrough(run(profileAssistant, conversation, at.person));
     } finally {
       cases.dispose();
     }
@@ -256,9 +268,7 @@ describe("what the agent says it is doing (S7.5, ID210)", () => {
     const conversation = await conversationOf(at.person);
     vi.spyOn(console, "warn").mockImplementation(() => {});
 
-    const { said } = await ranThrough(
-      run(profileAssistant, conversation, at.person, aiThroughTheApp()),
-    );
+    const { said } = await ranThrough(run(profileAssistant, conversation, at.person));
 
     expect(said[0]).toEqual({ kind: "activity", text: "Reading your profile" });
     expect(said.findIndex((ran) => ran.kind === "activity")).toBeLessThan(
@@ -290,7 +300,7 @@ describe("what the agent says it is doing (S7.5, ID210)", () => {
 
     let ran: { said: Ran[]; thrown: unknown };
     try {
-      ran = await ranThrough(run(profileAssistant, conversation, at.person, aiThroughTheApp()));
+      ran = await ranThrough(run(profileAssistant, conversation, at.person));
     } finally {
       cases.dispose();
     }
@@ -333,7 +343,7 @@ describe("an edit that does not validate (the spec's Failure modes)", () => {
     });
     let ran: { said: Ran[]; thrown: unknown };
     try {
-      ran = await ranThrough(run(profileAssistant, conversation, at.person, aiThroughTheApp()));
+      ran = await ranThrough(run(profileAssistant, conversation, at.person));
     } finally {
       cases.dispose();
     }
@@ -454,7 +464,7 @@ describe("the step limit (ID180)", () => {
 
     let ran: { said: Ran[]; thrown: unknown };
     try {
-      ran = await ranThrough(run(profileAssistant, conversation, at.person, aiThroughTheApp()));
+      ran = await ranThrough(run(profileAssistant, conversation, at.person));
     } finally {
       cases.dispose();
     }
@@ -503,7 +513,7 @@ describe("failures (US6, the spec's Failure modes)", () => {
 
     let ran: { said: Ran[]; thrown: unknown };
     try {
-      ran = await ranThrough(run(profileAssistant, conversation, at.person, aiThroughTheApp()));
+      ran = await ranThrough(run(profileAssistant, conversation, at.person));
     } finally {
       cases.dispose();
       await failure.dispose();
@@ -522,23 +532,9 @@ describe("failures (US6, the spec's Failure modes)", () => {
   it("keeps step 1, writes nothing of step 2, and throws when step 2's call fails mid-stream", async () => {
     const at = await planted();
     const conversation = await conversationOf(at.person);
-    const ai = aiThroughTheApp();
-    const failingSecond: Ai = {
-      ...ai,
-      askWithTools: (messages, about, tools) => {
-        if (!about.input.endsWith("#2")) return ai.askWithTools(messages, about, tools);
-        const gone = new Error("the model went away mid-stream");
-        const calls = Promise.reject(gone);
-        calls.catch(() => {});
-        return {
-          pieces: (async function* () {
-            yield "Half a";
-            throw gone;
-          })(),
-          calls,
-        };
-      },
-    };
+    // Step 2's request fails mid-stream, on a definition whose graph is built now.
+    objects.failing = true;
+    const failingSecond = { ...profileAssistant };
     const cases = withCases({
       [stepOf(conversation, 1)]: {
         stands_for: "an edit",
@@ -564,7 +560,7 @@ describe("failures (US6, the spec's Failure modes)", () => {
 
     let ran: { said: Ran[]; thrown: unknown };
     try {
-      ran = await ranThrough(run(profileAssistant, conversation, at.person, failingSecond));
+      ran = await ranThrough(run(failingSecond, conversation, at.person));
     } finally {
       cases.dispose();
     }
@@ -618,7 +614,7 @@ describe("a definition's context and step phrases (D10)", () => {
 
     let ran: { said: Ran[]; thrown: unknown };
     try {
-      ran = await ranThrough(run(standIn, conversation, at.person, aiThroughTheApp()));
+      ran = await ranThrough(run(standIn, conversation, at.person));
     } finally {
       cases.dispose();
     }
@@ -670,7 +666,7 @@ describe("every request (S4.4, ID181, ID193)", () => {
       [stepOf(conversation, 2)]: { stands_for: "the reply", content: "Done." },
     });
     try {
-      await ranThrough(run(profileAssistant, conversation, at.person, aiThroughTheApp()));
+      await ranThrough(run(profileAssistant, conversation, at.person));
     } finally {
       cases.dispose();
     }
@@ -692,7 +688,7 @@ describe("every request (S4.4, ID181, ID193)", () => {
           function: {
             name: "edit_profile",
             description: profileEditTool.description,
-            parameters: z.toJSONSchema(profileEditTool.input),
+            parameters: toJsonSchema(profileEditTool.input),
           },
         },
       ]);
@@ -704,7 +700,7 @@ describe("every request (S4.4, ID181, ID193)", () => {
     const conversation = await conversationOf(at.person);
     vi.spyOn(console, "warn").mockImplementation(() => {});
 
-    await ranThrough(run(profileAssistant, conversation, at.person, aiThroughTheApp()));
+    await ranThrough(run(profileAssistant, conversation, at.person));
 
     // Vitest's own snapshot file, which the formatter leaves as the suite wrote it.
     const [tool] = bodyOf(0).tools;
@@ -713,12 +709,12 @@ describe("every request (S4.4, ID181, ID193)", () => {
 });
 
 /**
- * S4.5b, `ID206`: a provider's prompt cache keys on the bytes of what it was sent, so
- * step 2 must carry step 1's call exactly as the model wrote it — keys in its order, its
- * spacing — while the edit and the drawing read the parsed input.
+ * S4.5b, `ID206`, D23: the stored part keeps step 1's call exactly as the model wrote it,
+ * and step 2 carries it parsed and written again, keys in the model's order and only the
+ * whitespace gone, while the edit and the drawing read the parsed input.
  */
-describe("the model's own arguments, byte for byte (S4.5b, ID206)", () => {
-  it("gives step 2 the very arguments string step 1 received, and edits from the parsed input", async () => {
+describe("the model's own arguments (S4.5b, ID206, D23)", () => {
+  it("stores the arguments string step 1 received, gives step 2 its keys in the model's order, and edits from the parsed input", async () => {
     const at = await planted();
     const conversation = await conversationOf(at.person);
     const written = `{"operations": [{"text": "Shipped the developer platform.", "op": "replace_line", "lineId": "${at.lines[1]}"}],  "itemId": "${at.post}"}`;
@@ -733,7 +729,7 @@ describe("the model's own arguments, byte for byte (S4.5b, ID206)", () => {
 
     let ran: { said: Ran[]; thrown: unknown };
     try {
-      ran = await ranThrough(run(profileAssistant, conversation, at.person, aiThroughTheApp()));
+      ran = await ranThrough(run(profileAssistant, conversation, at.person));
     } finally {
       cases.dispose();
     }
@@ -741,7 +737,12 @@ describe("the model's own arguments, byte for byte (S4.5b, ID206)", () => {
     expect(ran.thrown).toBeUndefined();
     const asked = bodyOf(1).messages.find((message) => message.tool_calls !== undefined) as
       { tool_calls: { function: { arguments: string } }[] } | undefined;
-    expect(asked?.tool_calls[0]?.function.arguments).toBe(written);
+    // The model's string parsed and written again (D23): the same value, the keys in the
+    // model's order, only the whitespace gone.
+    const sent = asked?.tool_calls[0]?.function.arguments ?? "";
+    expect(JSON.parse(sent)).toEqual(JSON.parse(written));
+    expect(Object.keys(JSON.parse(sent))).toEqual(["operations", "itemId"]);
+    expect(sent).toBe(JSON.stringify(JSON.parse(written)));
     const [, , call] = await entries(conversation);
     expect(call?.parts[1]).toEqual({
       kind: "tool_use",

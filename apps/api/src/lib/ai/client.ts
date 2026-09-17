@@ -1,4 +1,4 @@
-import { ChatOpenAI } from "@langchain/openai";
+import { ChatOpenAICompletions } from "@langchain/openai";
 import OpenAI from "openai";
 import type { ChatCompletionMessageParam } from "openai/resources/chat/completions";
 import type { ZodType } from "zod";
@@ -248,26 +248,29 @@ export const createAi = (config: AiConfig): Ai => {
 };
 
 /**
- * The second client of the same provider (D24, D27): a `ChatOpenAI` built from the same
- * configuration as `createAi`, for a caller that speaks LangChain's messages and tools.
+ * The second client of the same provider (D24, D27): a LangChain chat model built from
+ * the same configuration as `createAi`, for a caller that speaks LangChain's messages and
+ * tools.
  *
- * Each field is the one the spec's 3.2 table names. The chat-completions path is asked
- * for with `useResponsesApi: false`; the retries stay the two the `openai` package makes
- * today, in place of the six `@langchain/core`'s caller would make; `streamUsage` is left
+ * Each field is the one the spec's 3.2 table names. The class is `ChatOpenAICompletions`
+ * (`ID281`), which always calls chat completions: `ChatOpenAI`'s `useResponsesApi: false`
+ * cannot keep a model whose name the library prefers on the Responses API from going
+ * there, and every OpenAI-compatible endpoint serves chat completions. The retries stay
+ * the two the `openai` package makes today, in place of the six `@langchain/core`'s
+ * caller would make; `streamUsage` is left
  * at its default, so a streamed body asks for the usage chunk as any caller of the class
  * would. Nothing else is set: every sampling field stays undefined and leaves the body.
  *
  * The metadata header is not set here: a call passes it in its own options, since only
  * the caller knows which step a call is.
  */
-export const createChatModel = (config: AiConfig): ChatOpenAI =>
-  new ChatOpenAI({
+export const createChatModel = (config: AiConfig): ChatOpenAICompletions =>
+  new ChatOpenAICompletions({
     model: config.model,
     apiKey: config.apiKey,
     configuration: {
       baseURL: config.baseUrl,
       ...(config.fetch === undefined ? {} : { fetch: config.fetch }),
     },
-    useResponsesApi: false,
     maxRetries: 2,
   });

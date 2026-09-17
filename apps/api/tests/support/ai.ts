@@ -1,6 +1,7 @@
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { ChatOpenAICompletions } from "@langchain/openai";
 // The client from the module that defines it, never from `lib/ai`'s index. A test of a
 // route that calls `lib/ai` stands that index in through `vi.mock`, whose factory
 // reaches this file; importing the index here would put this module inside the graph of
@@ -74,6 +75,47 @@ export const aiThroughTheApp = () => createAi(throughTheApp);
  * same recording fetch as `aiThroughTheApp`.
  */
 export const chatModelThroughTheApp = () => createChatModel(throughTheApp);
+
+/**
+ * A chat model whose request for the case ending in `at` fails mid-stream (D25, ID274):
+ * the answer's first chunk, one piece of text, arrives, then the body errors. Every other
+ * request goes where `model`'s own would, on the same configuration.
+ */
+export const failingMidStream = (
+  model: ChatOpenAICompletions,
+  at: string,
+): ChatOpenAICompletions => {
+  const otherwise = model.clientConfig.fetch ?? fetch;
+  const failing = async (input: string | URL | Request, init?: RequestInit) => {
+    const request = new Request(input, init);
+    if (!request.headers.get("x-jobapp-case")?.endsWith(at)) return otherwise(input, init);
+    const piece = {
+      id: "chatcmpl-failing",
+      object: "chat.completion.chunk",
+      created: 0,
+      model: model.model,
+      choices: [{ index: 0, delta: { role: "assistant", content: "No pre" }, finish_reason: null }],
+    };
+    let sent = false;
+    const body = new ReadableStream<Uint8Array>({
+      pull: (controller) => {
+        if (sent) {
+          controller.error(new Error("the model went away mid-stream"));
+          return;
+        }
+        sent = true;
+        controller.enqueue(new TextEncoder().encode(`data: ${JSON.stringify(piece)}\n\n`));
+      },
+    });
+    return new Response(body, { headers: { "content-type": "text/event-stream" } });
+  };
+  return new ChatOpenAICompletions({
+    model: model.model,
+    apiKey: throughTheApp.apiKey,
+    configuration: { ...model.clientConfig, fetch: failing },
+    maxRetries: 2,
+  });
+};
 
 /** What `withCases` hands back: the cases are in place until it is disposed of. */
 export type CasesInPlace = { dispose: () => void };
