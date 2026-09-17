@@ -87,6 +87,31 @@ describe("rules renamed profile concerns (SL3, D14)", () => {
   });
 });
 
+// SL5f, `AGENTS.md` rule 7: one file builds the agent, and its callers are handed it.
+describe("who builds the conversation agent (SL5f, rule 7)", () => {
+  it("has ConversationAgent constructed by the composition root alone", () => {
+    expect(matching(/new ConversationAgent\b/, api)).toEqual(["apps/api/src/app.ts"]);
+  });
+
+  it("has no handler, route or assistant import lib/agent at all", () => {
+    const reaching = sources(api)
+      .map(name)
+      .filter((file) => /^apps\/api\/src\/(assistants|handlers|routes)\//.test(file))
+      .filter((file) =>
+        importsOf(join(root, file)).some((it) => /(^|\/)lib\/agent(\/|$)/.test(it)),
+      );
+    expect(reaching).toEqual([]);
+  });
+
+  it("has the person-side contract in lib/assistant, and lib/agent name none of it", () => {
+    const contract = codeOf(join(api, "lib/assistant/index.ts"));
+    for (const named of ["NotYet", "Refused", "AgentAction", "About", "opening", "actions"]) {
+      expect(contract).toContain(named);
+    }
+    expect(matching(/\b(NotYet|Refused|AgentAction)\b/, join(api, "lib/agent"))).toEqual([]);
+  });
+});
+
 describe("the API core reads no profile (SL4, D10 to D12)", () => {
   it("has lib/agent import no lib/profile-edit and no assistant", () => {
     const reached = sources(join(api, "lib/agent")).flatMap(importsOf);
@@ -106,6 +131,13 @@ describe("the API core reads no profile (SL4, D10 to D12)", () => {
         (kind) => !["text", "tool_use", "tool_result", "activity", "entry"].includes(kind ?? ""),
       ),
     ).toEqual([]);
+  });
+
+  it("has lib/conversation name no part kind at all", () => {
+    const kinds = sources(join(api, "lib/conversation")).flatMap((file) =>
+      [...codeOf(file).matchAll(/kind\s*(?:===|!==|:)\s*"(\w+)"/g)].map(([, kind]) => kind),
+    );
+    expect(kinds).toEqual([]);
   });
 
   it("has handlers/conversations import no profile table from @app/db", () => {
@@ -148,6 +180,36 @@ describe("the LangChain packages' import boundary (langgraph-agent SL4, SL5, spe
       ]),
     );
     expect(outside(reaching, "lib/agent", "lib/ai").filter((it) => it !== reading)).toEqual([]);
+  });
+
+  // SL5f, OD7: `asMessages` moved into the agent, so LangChain is the agent's and the
+  // reading's, and no other module of the API names one of its packages at all.
+  it("has no langchain or @langchain package imported outside lib/agent, lib/ai and the reading", () => {
+    const reaching = importers(/^(langchain|@langchain\/)/);
+    expect(reaching.length).toBeGreaterThan(1);
+    expect(outside(reaching, "lib/agent", "lib/ai").filter((it) => it !== reading)).toEqual([]);
+  });
+
+  it("has lib/conversation import no langchain package at all", () => {
+    const reached = sources(join(api, "lib/conversation")).flatMap(importsOf);
+    expect(reached.length).toBeGreaterThan(0);
+    expect(reached.filter((it) => /^(langchain|@langchain\/)/.test(it))).toEqual([]);
+  });
+
+  it("has no assistant, handler or route import a langchain or @langchain package, the reading's messages aside", () => {
+    const reaching = importers(/^(langchain|@langchain\/)/);
+    expect(
+      reaching.filter((file) => /^apps\/api\/src\/(assistants|handlers|routes)\//.test(file)),
+    ).toEqual([reading]);
+    expect(
+      importsOf(join(root, reading)).filter((it) => /^(langchain|@langchain\/)/.test(it)),
+    ).toEqual(["@langchain/core/messages"]);
+  });
+
+  it("has handlers/conversations import no lib/ai", () => {
+    const reached = importsOf(join(api, "handlers/conversations.ts"));
+    expect(reached.length).toBeGreaterThan(0);
+    expect(reached.filter((it) => /\/lib\/ai(\/|$)/.test(it))).toEqual([]);
   });
 
   // SL5f, ID298: the model is an option the binding passes, so the agent reaches lib/ai

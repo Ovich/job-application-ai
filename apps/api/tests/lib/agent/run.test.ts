@@ -4,9 +4,17 @@ import { itemExperience, itemLine, profileItem, user } from "@app/db";
 import { toJsonSchema } from "@langchain/core/utils/json_schema";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { profileAssistant } from "../../../src/assistants/profile";
+import { ConversationAgent } from "../../../src/lib/agent";
 import type { Conversation, Entry } from "../../../src/lib/conversation";
 import { apply, profileEditTool } from "../../../src/lib/profile-edit";
-import { agentOn, append, entries, open } from "../../support/agent";
+import {
+  agentOn,
+  append,
+  conversationStore,
+  entries,
+  open,
+  transaction,
+} from "../../support/agent";
 import {
   chatModelThroughTheApp,
   failingMidStream,
@@ -827,5 +835,119 @@ describe("the model's own arguments (S4.5b, ID206, D23)", () => {
     expect((await standing(at.person, at.post)).lines[1]?.text).toBe(
       "Shipped the developer platform.",
     );
+  });
+});
+
+/**
+ * How many steps one message may take (`ID180`, OD6): an option now, defaulting to five,
+ * read back off the instance, and the entry that says the agent stopped names the number
+ * the instance was built with.
+ */
+describe("the steps an instance was built with (OD6)", () => {
+  it("is 5 by default and is read back off the instance, and an option changes it", () => {
+    expect(agentOn().steps).toBe(5);
+    expect(agentOn({ steps: 2 }).steps).toBe(2);
+  });
+
+  it("stops at the option's step, says so in the option's own number, and asks no further", async () => {
+    const at = await planted();
+    const conversation = await conversationOf(at.person);
+    const twoSteps = agentOn({ steps: 2 });
+    const cases = withCases(
+      Object.fromEntries(
+        [1, 2, 3].map((n) => [
+          stepOf(conversation, n),
+          {
+            stands_for: `step ${n} calls again`,
+            content: `Step ${n}.`,
+            tool_calls: [
+              {
+                id: `call_${n}`,
+                name: "edit_profile",
+                arguments: {
+                  itemId: at.post,
+                  operations: [{ op: "set", field: "title", value: `Title ${n}` }],
+                },
+              },
+            ],
+          },
+        ]),
+      ),
+    );
+
+    try {
+      await ranThrough(twoSteps.run(profileAssistant, conversation, at.person));
+    } finally {
+      cases.dispose();
+    }
+
+    expect(requestsSent()).toHaveLength(2);
+    expect((await entries(conversation)).at(-1)?.parts).toEqual([
+      { kind: "text", text: expect.stringContaining("2 steps") },
+    ]);
+    expect((await standing(at.person, at.post)).title).toBe("Title 2");
+  });
+});
+
+/**
+ * The case a step is asked as, and the header it travels in (OD10, D22): the module's own
+ * defaults name no product, and the binding's values are what reach the wire.
+ */
+describe("the case and its header, default and bound (OD10)", () => {
+  it("names no product by default: x-agent-case, and <assistant>.message:<conversation>#<n>", async () => {
+    const at = await planted();
+    const conversation = await conversationOf(at.person);
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    const plain = new ConversationAgent({
+      model: chatModelThroughTheApp(),
+      store: conversationStore,
+      transaction,
+    });
+
+    await ranThrough(plain.run(profileAssistant, conversation, at.person));
+
+    expect(requestsSent()[0]?.headers["x-agent-case"]).toBe(stepOf(conversation, 1));
+    expect(requestsSent()[0]?.headers["x-jobapp-case"]).toBeUndefined();
+  });
+
+  it("asks each step as the binding words it, in the header the binding names", async () => {
+    const at = await planted();
+    const conversation = await conversationOf(at.person);
+    const named = agentOn({
+      caseOf: (assistant, of, step) => `${assistant}/${of}/${step}`,
+    });
+    const cases = withCases({
+      [`profile/${conversation.id}/1`]: { stands_for: "the reply", content: "Done." },
+    });
+
+    try {
+      await ranThrough(named.run(profileAssistant, conversation, at.person));
+    } finally {
+      cases.dispose();
+    }
+
+    expect(requestsSent()[0]?.headers["x-jobapp-case"]).toBe(`profile/${conversation.id}/1`);
+  });
+});
+
+/**
+ * The cache of built graphs is the instance's (`ID284`, OD1): a definition asked of two
+ * agents is built twice, once per agent, so the second is never answered by the first's.
+ */
+describe("two agents share no built graph (OD1)", () => {
+  it("asks the same definition through each instance's own wiring", async () => {
+    const at = await planted();
+    const conversation = await conversationOf(at.person);
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    const one = agentOn();
+    const other = agentOn({ caseHeader: "X-Other-Case" });
+
+    await ranThrough(one.run(profileAssistant, conversation, at.person));
+    await ranThrough(other.run(profileAssistant, conversation, at.person));
+
+    expect(requestsSent()).toHaveLength(2);
+    expect(requestsSent()[0]?.headers["x-jobapp-case"]).toBe(stepOf(conversation, 1));
+    expect(requestsSent()[1]?.headers["x-jobapp-case"]).toBeUndefined();
+    expect(requestsSent()[1]?.headers["x-other-case"]).toBe(stepOf(conversation, 1));
   });
 });
