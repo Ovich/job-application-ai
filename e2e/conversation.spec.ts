@@ -156,7 +156,9 @@ test("a pick, then a free message and its streamed reply, stay in order after th
   await tool.locator("[data-action=alt]").first().click();
   await page.locator("[data-part=send]").click();
   const count = assistant.locator("[data-part=count]");
-  await expect(count).toHaveText(/^1 of \d+ answered$/);
+  // The count follows the agent's whole reply since D31; on a cold Lambda that is past the
+  // default five seconds, so it waits as its neighbours do.
+  await expect(count).toHaveText(/^1 of \d+ answered$/, { timeout: 30_000 });
   // The answer is a message to the agent (D31, `ID291`): its reply is the newest entry.
   const entries = column.locator("[data-entry]");
   await expect(entries.last()).toHaveAttribute("data-msg", "assistant", { timeout: 30_000 });
