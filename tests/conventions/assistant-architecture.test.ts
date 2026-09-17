@@ -108,7 +108,7 @@ describe("the API core reads no profile (SL4, D10 to D12)", () => {
   });
 });
 
-describe("the LangChain packages' import boundary (langgraph-agent SL4, spec 3.1)", () => {
+describe("the LangChain packages' import boundary (langgraph-agent SL4, SL5, spec 3.1)", () => {
   /** The API files, as `apps/api/src/...`, whose imports include one `specifier` matches. */
   const importers = (specifier: RegExp): string[] =>
     sources(api)
@@ -152,6 +152,52 @@ describe("the LangChain packages' import boundary (langgraph-agent SL4, spec 3.1
     const reached = importsOf(join(api, "handlers/conversations.ts"));
     expect(reached.length).toBeGreaterThan(0);
     expect(reached.filter((it) => /\/lib\/ai(\/|$)/.test(it))).toEqual([]);
+  });
+
+  // SL5: the model is lib/ai's (D24); the agent reaches it through `chatModel()` alone.
+  it("has lib/agent import no openai and no @langchain/openai", () => {
+    const reached = sources(join(api, "lib/agent")).flatMap(importsOf);
+    expect(reached).toContain("../ai");
+    expect(reached.filter((it) => /^(openai|@langchain\/openai)(\/|$)/.test(it))).toEqual([]);
+  });
+
+  // SL5, ID272: the history is LangChain messages, so lib/conversation needs no lib/ai type.
+  it("has lib/conversation import no lib/ai", () => {
+    const reached = sources(join(api, "lib/conversation")).flatMap(importsOf);
+    expect(reached).toContain("@langchain/core/messages");
+    expect(reached.filter((it) => /(^|\/)ai(\/|$)/.test(it))).toEqual([]);
+  });
+
+  // SL5, D24: lib/ai's public face is the spec's 3.1 list, the loop's names gone.
+  it("has lib/ai export the spec's list and nothing else", () => {
+    const code = codeOf(join(api, "lib/ai/index.ts"));
+    const exported = [
+      ...[...code.matchAll(/export const (\w+)/g)].map(([, it]) => it),
+      ...[...code.matchAll(/export \{([^}]*)\}/g)].flatMap(([, list]) =>
+        (list ?? "")
+          .split(",")
+          .map((it) => it.replace(/^\s*type\s+/, "").trim())
+          .filter((it) => it !== ""),
+      ),
+    ];
+    expect(exported.sort()).toEqual(
+      [
+        "createAi",
+        "ask",
+        "askStreaming",
+        "askFor",
+        "createChatModel",
+        "chatModel",
+        "answeredInProcessBy",
+        "answeringOwnAddress",
+        "About",
+        "Ai",
+        "AiConfig",
+        "Message",
+        "Fetch",
+        "OwnAddress",
+      ].sort(),
+    );
   });
 });
 
