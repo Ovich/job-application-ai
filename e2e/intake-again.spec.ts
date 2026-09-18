@@ -98,9 +98,11 @@ test("a second reading adds to the profile, and loses nothing the person settled
   await page.locator("[data-part=send]").click();
   await expect(count).toHaveText(/^1 of \d+ answered$/);
 
-  // The way back to the documents is on the profile, so nothing here types an address.
-  await page.getByRole("link", { name: "My documents" }).click();
-  await expect(page).toHaveURL(/\/documents$/);
+  // The way back to the documents is on the profile itself: `Add documents` opens the drop
+  // zone over the page the person is reading (`ID160`, D15), which is the same
+  // `documents-drop-zone` the `/documents` screen renders, embedded. Nothing here types an
+  // address, and nothing needs a second way in (`ID319`).
+  await page.getByRole("button", { name: "Add documents" }).click();
 
   // The second reading: the other CV, over the profile that already exists.
   await page.locator("input[type=file]").setInputFiles([cvOwnership]);
@@ -108,6 +110,9 @@ test("a second reading adds to the profile, and loses nothing the person settled
   await expect(
     page.locator("[data-row=document]").filter({ has: page.getByText("read", { exact: true }) }),
   ).toHaveCount(2, { timeout: 60_000 });
+
+  // Embedded, the last button says Done and hands back to the profile holding the modal.
+  await page.getByRole("button", { name: "Done" }).click();
 
   await page.goto("/profile");
   await expect(page.locator("profile-sheet")).toBeVisible();

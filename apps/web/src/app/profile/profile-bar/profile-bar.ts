@@ -1,5 +1,4 @@
 import { Component, input, output } from "@angular/core";
-import { RouterLink } from "@angular/router";
 import { HlmBtn } from "../../ui/hlm-button";
 import { UiRow } from "../../ui/layout/row/row";
 import { UiText } from "../../ui/typography/text/text";
@@ -13,15 +12,12 @@ import { UiText } from "../../ui/typography/text/text";
  * two buttons go out as they came in: `startApplication` is inert in this slice, and
  * `addDocuments` is the way back the empty profile needs.
  *
- * The one thing it decides for itself is the link to `/documents` (SL11): a route, not an
- * event, so the only component that can hold it is the one that draws it.
- *
  * The toggle is drawn only below 1024 px, where one column is shown at a time. Its two
  * labels are the mockup's own.
  */
 @Component({
   selector: "profile-bar",
-  imports: [HlmBtn, RouterLink, UiRow, UiText],
+  imports: [HlmBtn, UiRow, UiText],
   templateUrl: "./profile-bar.html",
 })
 export class ProfileBar {
