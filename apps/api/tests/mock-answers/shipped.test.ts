@@ -17,9 +17,12 @@ vi.mock("../../src/lib/db", async () => ({
 }));
 
 const { profileAssistant } = await import("../../src/assistants/profile");
+// The two shapes a reading holds a model to, so a recording is held to them too.
+const { additions, reading } = await import("../../src/handlers/reading");
 
 type Written = {
   case?: string;
+  quoting?: Record<string, string>;
   answers?: string;
   content?: string;
   tool_calls?: { name: string; arguments: unknown }[];
@@ -43,7 +46,9 @@ describe("the answers this project ships", () => {
    */
   it("holds one intake case per run of the person's real documents, and the profile's three replies", () => {
     expect(files).toEqual([
+      "intake/read-more__2026-09-09_cv-en_ownership-application-management.json",
       "intake/read__2026-08-30_cv_EN+2026-08-30_cv_FR.json",
+      "intake/read__2026-08-30_cv_EN+2026-09-09_cv-en_ownership-application-management.json",
       "intake/read__2026-08-30_cv_EN.json",
       "intake/read__2026-08-30_cv_FR+2026-08-30_cv_EN+BS-HEIGVD-IL-Diplome.json",
       "intake/read__2026-08-30_cv_FR+2026-08-30_cv_EN.json",
@@ -66,8 +71,10 @@ describe("the answers this project ships", () => {
         .map((file) => written(file).case)
         .sort(),
     ).toEqual([
+      "intake.read-more:2026-09-09_cv-en_ownership-application-management",
       "intake.read:2026-08-30_cv_EN",
       "intake.read:2026-08-30_cv_EN+2026-08-30_cv_FR",
+      "intake.read:2026-08-30_cv_EN+2026-09-09_cv-en_ownership-application-management",
       "intake.read:2026-08-30_cv_FR",
       "intake.read:2026-08-30_cv_FR+2026-08-30_cv_EN",
       "intake.read:2026-08-30_cv_FR+2026-08-30_cv_EN+BS-HEIGVD-IL-Diplome",
@@ -79,6 +86,10 @@ describe("the answers this project ships", () => {
 
   it("loads every file, each reached by the case or the message it names", async () => {
     const model = new ModelMock(mockAnswers, { pace: "instant" });
+    // An answer that quotes its request (`ID316`) is asked here with no request to quote,
+    // so it leaves its placeholders standing and says so. That is the point of this case:
+    // the file loads and is reached, whatever it would say to a real run.
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
 
     for (const file of files) {
       const answer = written(file);
@@ -104,6 +115,78 @@ describe("the answers this project ships", () => {
     expect(model.requests.map((each) => each.picked)).toEqual(
       files.map((file) => written(file).case ?? file.slice(0, -".json".length)),
     );
+    warn.mockRestore();
+  });
+});
+
+/**
+ * The two recordings the walks are made of (SL11, `ID315`, `ID316`, `ID317`).
+ *
+ * They are held to the very shapes the run holds a model to, imported from the reading
+ * itself: a recording that would fail a run fails here first. What they say is the two
+ * files' business — both were read out of the person's own PDFs — and what this asserts
+ * is that each is an answer its own prompt could have given.
+ */
+describe("the two readings of the ownership CV (SL11)", () => {
+  const walkOne =
+    "intake/read__2026-08-30_cv_EN+2026-09-09_cv-en_ownership-application-management.json";
+  const walkTwo = "intake/read-more__2026-09-09_cv-en_ownership-application-management.json";
+
+  const answered = (file: string): unknown => JSON.parse(written(file).content ?? "");
+
+  it("reads the first walk's answer under the prompt that creates a profile", () => {
+    const answer = reading.parse(answered(walkOne));
+
+    expect(written(walkOne).content).not.toBe("No pre generated text");
+    // A profile over two documents: every item of both, and the facts both state carry
+    // one source per document.
+    expect(answer.items.length).toBeGreaterThan(30);
+    expect(answer.items.filter((item) => item.sources.length > 1).length).toBeGreaterThan(15);
+    expect(
+      new Set(answer.items.flatMap((item) => item.sources.map((source) => source.document))),
+    ).toEqual(new Set(["2026-08-30_cv_EN", "2026-09-09_cv-en_ownership-application-management"]));
+  });
+
+  it("reads the second walk's answer under the prompt that adds to one", () => {
+    const answer = additions.parse(answered(walkTwo));
+
+    expect(written(walkTwo).content).not.toBe("No pre generated text");
+    // Both kinds of addition, which is what the walk is for: something the profile does
+    // not have at all, and something more on what it has.
+    expect(answer.items.length).toBeGreaterThan(0);
+    expect(answer.extends.length).toBeGreaterThan(0);
+    expect(answer.extends.flatMap((each) => each.lines).length).toBeGreaterThan(0);
+    expect(answer.extends.flatMap((each) => each.children).length).toBeGreaterThan(0);
+    // Only the second document: a second reading is shown nothing else to cite.
+    expect(
+      new Set(
+        answer.extends.flatMap((each) => [
+          ...each.lines.flatMap((line) => line.sources.map((source) => source.document)),
+          ...each.children.flatMap((child) => child.sources.map((source) => source.document)),
+        ]),
+      ),
+    ).toEqual(new Set(["2026-09-09_cv-en_ownership-application-management"]));
+  });
+
+  /**
+   * Every id the second walk names is quoted out of the request (`ID316`), because an id
+   * is a `randomUUID` that does not exist until the profile is written: a file that named
+   * one would name somebody else's item or nobody's.
+   */
+  it("names no item id of its own: every one is a placeholder `quoting` fills", () => {
+    const quoting = written(walkTwo).quoting ?? {};
+    const answer = additions.parse(answered(walkTwo));
+
+    expect(Object.keys(quoting).length).toBe(answer.extends.length);
+    for (const each of answer.extends) {
+      const name = /^\{\{(\w+)\}\}$/.exec(each.itemId)?.[1];
+      expect(name).toBeDefined();
+      expect(Object.keys(quoting)).toContain(name);
+    }
+    // Each one a regular expression with the one capture group the mock requires.
+    for (const expression of Object.values(quoting)) {
+      expect(new RegExp(`${expression}|`).exec("")).toHaveLength(2);
+    }
   });
 });
 

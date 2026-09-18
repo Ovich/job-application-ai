@@ -140,6 +140,9 @@ const slug = (filename: string) => filename.slice(0, filename.lastIndexOf("."));
  * It goes through the upload route rather than straight into the rows, because a second
  * reading needs a row whose object is really in storage — and since `ID309` the documents
  * a first reading took have none left.
+ *
+ * The case is `intake.read-more` and not `intake.read` (`ID315`): every caller of this is
+ * a person who already has a profile, so the run it names is the second reading.
  */
 const oneMore = async (cookie: string, filename: string) => {
   const added = await app.request("/api/intake/documents", {
@@ -149,13 +152,19 @@ const oneMore = async (cookie: string, filename: string) => {
   });
   expect(added.status).toBe(201);
   const { id } = (await added.json()) as { id: string };
-  return { id, case: `intake.read:${slug(filename)}` };
+  return { id, case: `intake.read-more:${slug(filename)}` };
 };
 
 /** What the second document said about a fact the second reading answers with. */
 const saidByTheFrenchCv = (said: string) => [{ document: slug(theSet.cvFrench.filename), said }];
 
-/** A second reading's answer, written here because no shipped recording is one (`ID308`). */
+/**
+ * A second reading's answer, written here rather than shipped (`ID308`).
+ *
+ * The one recording the project ships for a second reading stands for the ownership CV
+ * and nothing else (`ID317`); every claim below is about a document the project ships no
+ * second reading of, so its answer is the test's own.
+ */
 const aSecondReading = (answer: {
   items?: unknown[];
   extends?: unknown[];
@@ -907,9 +916,10 @@ const withAProfile = async (email: string) => {
  * something a reading can touch, and the shape of the answer is what makes that true
  * rather than the care of whoever wrote the prompt.
  *
- * The second reading's answer is written here with `model.use` and never as a shipped
- * recording: every recording the project ships is a first reading, and a case for a second
- * one would be a document standing for a run nobody has made (`D20`).
+ * The second reading's answer is written here with `model.use` rather than taken from a
+ * shipped recording: the project ships one second reading, of the ownership CV (`ID317`),
+ * and a case for any other document would stand for a run nobody has made (`D20`). The
+ * shipped one is walked in the describe that closes this file.
  */
 describe("a reading of a person who already has a profile (ID308, D38)", () => {
   it("asks the prompt that creates a profile when there is none, as it always did", async () => {
@@ -925,6 +935,33 @@ describe("a reading of a person who already has a profile (ID308, D38)", () => {
     // The composed document alone: nothing is put in front of it for a person who has no
     // profile to be shown.
     expect(human?.content.startsWith("<<<DOCUMENT 2026-08-30_cv_EN>>>")).toBe(true);
+  });
+
+  /**
+   * The two readings are two steps, and the call says which one it is (`ID315`).
+   *
+   * `intake.read` creates a profile and `intake.read-more` adds to one, so the header a
+   * run carries names the step it really is. Nothing here is for a double's benefit: this
+   * asserts the name the client puts on the wire, which is the same name whatever answers
+   * it.
+   */
+  it("carries intake.read on the first reading and intake.read-more on the second", async () => {
+    const person = await withAProfile("the-two-cases@example.com");
+    const first = requestsSent().map((request) => request.headers["x-jobapp-case"]);
+    const second = await oneMore(person.cookie, theSet.cvFrench.filename);
+    forgetRequests();
+    const cases = withCases({ [second.case]: { content: nothingNew } });
+
+    try {
+      await (await read(person.cookie)).text();
+    } finally {
+      cases.dispose();
+    }
+
+    expect(first).toEqual(["intake.read:2026-08-30_cv_EN"]);
+    expect(requestsSent().map((request) => request.headers["x-jobapp-case"])).toEqual([
+      "intake.read-more:2026-08-30_cv_FR",
+    ]);
   });
 
   it("is shown the profile with its ids, and then only the document nobody has read", async () => {
@@ -1183,6 +1220,51 @@ describe("a reading of a person who already has a profile (ID308, D38)", () => {
     // Read and disposed of, and the profile exactly as it was.
     expect(objectsHeld(storage)).toEqual([]);
     expect(await profileOf(person.cookie)).toEqual(before);
+  });
+});
+
+/**
+ * Walk 2, at the route rather than in a browser (SL11, `ID315`, `ID316`, `ID317`).
+ *
+ * Every other second reading in this file is answered by `model.use`, because its id is
+ * chosen by the test. This one is answered by the recording the project *ships*, and that
+ * is the whole claim: a file written last week names ids that did not exist when it was
+ * written, and it names the person's own because `quoting` reads them back out of the
+ * request the run just sent (`ID316`). An expression written against a guess at the JSON
+ * instead of against the real request would leave `{{post}}` standing, and the run would
+ * fail rather than write it — so this passing is what says the expressions are right.
+ */
+describe("the shipped second reading of the ownership CV (SL11)", () => {
+  it("extends the profile's own items, every id quoted out of the request it answers", async () => {
+    const person = await withAProfile("shipped-second-reading@example.com");
+    const before = await profileOf(person.cookie);
+    const second = await oneMore(person.cookie, theSet.cvOwnership.filename);
+    expect(second.case).toBe("intake.read-more:2026-09-09_cv-en_ownership-application-management");
+
+    await (await read(person.cookie)).text();
+
+    expect(await statusesOf(person.id)).toEqual([
+      ["2026-08-30_cv_EN.pdf", "read"],
+      ["2026-09-09_cv-en_ownership-application-management.pdf", "read"],
+    ]);
+    const after = await profileOf(person.cookie);
+    // Nothing the first reading wrote was replaced: every id, title, line and concern is
+    // where it was, and the additions are behind them.
+    for (const was of everyItemOf(before)) {
+      const now = everyItemOf(after).find((each) => each.id === was.id);
+      expect(now?.title).toBe(was.title);
+      expect(now?.lines.slice(0, was.lines.length)).toEqual(was.lines);
+      expect(now?.concerns).toEqual(was.concerns);
+    }
+    expect(everyItemOf(after).length).toBeGreaterThan(everyItemOf(before).length);
+    // What the ownership CV adds, in both of its kinds: an item the profile did not hold
+    // at all, and new lines on items the first reading wrote.
+    expect(after.groups.map((group) => group.title)).toContain("Operations and support");
+    const grew = everyItemOf(after).filter((now) => {
+      const was = everyItemOf(before).find((each) => each.id === now.id);
+      return was !== undefined && now.lines.length > was.lines.length;
+    });
+    expect(grew.length).toBeGreaterThan(1);
   });
 });
 
