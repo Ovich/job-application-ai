@@ -22,14 +22,23 @@
     {{ view() === "sheet" ? "Back to the chat" : "See my profile" }}
   </button>
 
-  <button
+  <!--
+    The way to the documents screen (SL11). Everything else on this bar is a button that
+    acts here; this is a link, because it goes somewhere, and it is the only thing that
+    points at `/documents` once a profile exists.
+  -->
+  <a
     hlmBtn
-    variant="secondary"
+    variant="ghost"
     size="sm"
-    type="button"
+    href="/documents"
+    routerLink="/documents"
     class="ms-auto lg:ms-0"
-    (click)="addDocuments.emit()"
   >
+    My documents
+  </a>
+
+  <button hlmBtn variant="secondary" size="sm" type="button" (click)="addDocuments.emit()">
     Add documents
   </button>
 

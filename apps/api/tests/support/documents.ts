@@ -17,6 +17,9 @@ import { testDb } from "./database";
  * two languages in one month, `leCVWeb.docx` is Word and an older year that disagrees
  * with them, `CV-2025.pdf` is the largest the person has at 4.3 MB, and the diploma and
  * the work certificate are two kinds that are not a CV at all.
+ * `2026-09-09_cv-en_ownership-application-management.pdf` is the same career written for
+ * another kind of post (`ID317`): most of what it holds the English CV already holds, and
+ * what it adds is what a second reading has to be able to add.
  *
  * **There is no LinkedIn export file and no photograph of a paper CV**, because the
  * person has neither. Both stay kinds the column accepts and the screen can draw, with
@@ -30,6 +33,10 @@ const fixtures = fileURLToPath(new URL("../fixtures/documents/", import.meta.url
 export const theSet = {
   cvFrench: { filename: "2026-08-30_cv_FR.pdf", from: "cv-generic/2026-08-30_cv_FR.pdf" },
   cvEnglish: { filename: "2026-08-30_cv_EN.pdf", from: "cv-generic/2026-08-30_cv_EN.pdf" },
+  cvOwnership: {
+    filename: "2026-09-09_cv-en_ownership-application-management.pdf",
+    from: "cv-generic/2026-09-09_cv-en_ownership-application-management.pdf",
+  },
   cvWord2022: { filename: "leCVWeb.docx", from: "cv-archive/2022/leCVWeb.docx" },
   cv2025: { filename: "CV-2025.pdf", from: "cv-archive/2025/CV-2025.pdf" },
   diploma: {
@@ -111,7 +118,7 @@ export const uploadOfAddress = (address: string): FormData => {
 /**
  * The bytes a run finds behind a row, by the name on that row.
  *
- * One of the person's six is its own file. Anything else is a name the suite has no
+ * One of the person's seven is its own file. Anything else is a name the suite has no
  * document for, and it is given bytes that are not the format its name claims — which
  * is exactly what a document that cannot become text is now that the reading turns
  * every file into characters before it asks anything (`ID157`, `ID159`). It is never a

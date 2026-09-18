@@ -32,6 +32,15 @@ export type Answer = {
   /** The counts, in envelope-independent names: each serialiser maps them to its own. */
   usage?: { input_tokens: number; output_tokens: number };
   /**
+   * What this answer says back out of the request it answers (`ID316`): a name for each
+   * regular expression, with one capture group, run against the request's last user
+   * message. `{{name}}` anywhere in `content` is replaced by what that name captured.
+   *
+   * It is "say back something the request said" and nothing more: this module knows no
+   * schema and no product, and what a capture means is the author's business.
+   */
+  quoting?: Record<string, string>;
+  /**
    * What answers the message after this answer's calls were made (`D37`): the next link of
    * a chain, found by walking, never by an `answers` or a `case` of its own.
    */
@@ -49,6 +58,8 @@ export type Held = {
   content: string;
   tool_calls: { id: string; name: string; arguments: unknown }[];
   usage: { input_tokens: number; output_tokens: number };
+  /** The expressions this answer quotes the request by, compiled, empty when it quotes nothing. */
+  quoting: Map<string, RegExp>;
   /** The next link of the chain, when the answer has one. */
   next: Held | undefined;
 };
@@ -63,6 +74,14 @@ const isRecord = (value: unknown): value is Written =>
 
 const isCount = (value: unknown): value is number =>
   typeof value === "number" && Number.isInteger(value) && value >= 0;
+
+/**
+ * How many capture groups an expression has, counted by the expression itself: an
+ * alternative that matches nothing at all always matches, and what it hands back is one
+ * slot per group. Counting parentheses by hand would miss `(?:`, `\(` and a class.
+ */
+const capturesIn = (expression: RegExp): number =>
+  (new RegExp(`${expression.source}|`).exec("")?.length ?? 1) - 1;
 
 /**
  * One value read as an answer, or a throw naming where it came from. Keys this module
@@ -96,6 +115,23 @@ const held = (value: unknown, from: string, fallbackId: string): Held => {
   if (!isRecord(usage) || !isCount(usage.input_tokens) || !isCount(usage.output_tokens)) {
     return refuse("`usage` is not `input_tokens` and `output_tokens`, whole and not negative");
   }
+  // An expression that cannot be compiled, or that captures nothing, is refused here and
+  // not at the request: a broken answer must fail like a file that is not JSON.
+  const quoting = new Map<string, RegExp>();
+  if (value.quoting !== undefined) {
+    if (!isRecord(value.quoting)) return refuse("`quoting` is not a JSON object");
+    for (const [key, written] of Object.entries(value.quoting)) {
+      if (typeof written !== "string") return refuse(`\`quoting.${key}\` is not a string`);
+      let expression: RegExp;
+      try {
+        expression = new RegExp(written);
+      } catch {
+        return refuse(`\`quoting.${key}\` is not a regular expression`);
+      }
+      if (capturesIn(expression) < 1) return refuse(`\`quoting.${key}\` has no capture group`);
+      quoting.set(key, expression);
+    }
+  }
   const name = named("case");
   const id = name ?? fallbackId;
   let next: Held | undefined;
@@ -119,6 +155,7 @@ const held = (value: unknown, from: string, fallbackId: string): Held => {
     content,
     tool_calls,
     usage: { input_tokens: usage.input_tokens, output_tokens: usage.output_tokens },
+    quoting,
     next,
   };
 };
@@ -273,5 +310,6 @@ export const placeholder: Held = {
   content: "No pre generated text",
   tool_calls: [],
   usage: { input_tokens: 0, output_tokens: 0 },
+  quoting: new Map(),
   next: undefined,
 };

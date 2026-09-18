@@ -59,6 +59,7 @@ One JSON file per answer, anywhere under the folder; subfolders are your own org
 | `tool_calls` | the calls, `{ name, arguments, id? }`; `arguments` an object, or a string sent verbatim        |
 | `usage`      | `{ input_tokens, output_tokens }`, mapped to each protocol's own names; zero when left out     |
 | `next`       | the answer to the next request, once these calls were made: an answer without `answers`/`case` |
+| `quoting`    | names to regular expressions, one capture group each, run against the last user message        |
 
 A request is answered by the `case` its header names, else by the answer whose `answers` equals
 its last user message, else by the placeholder `No pre generated text` with one warning line.
@@ -68,6 +69,26 @@ two answers with the same `case` or the same `answers` throw naming both.
 
 An answer's id is its `case`, else its path without the extension (`profile/greeting`); inline,
 its `case` or its index.
+
+### Saying something back
+
+`quoting` lets an answer say back something the request said. Each name is a regular expression
+with one capture group, run against the request's last user message, and `{{name}}` anywhere in
+`content` is replaced by what it captured. It is how a file written last week names something
+that only exists at run time.
+
+```json
+{
+  "case": "greeting",
+  "quoting": { "who": "my name is ([A-Za-z]+)" },
+  "content": "Hello, {{who}}."
+}
+```
+
+An expression that does not match leaves `{{name}}` in the content as it is and warns once,
+naming the answer and the placeholder: an unresolved placeholder must fail loudly wherever it
+lands rather than quietly become nothing. An expression that is not one, or that has no capture
+group, throws when the answer is read, as any other broken answer does.
 
 ### A chain
 

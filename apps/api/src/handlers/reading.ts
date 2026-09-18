@@ -238,9 +238,15 @@ export const readDocuments = (agent: ConversationsAgent, profile: Assistant) =>
             const standing = await db.transaction((tx) => itemsOf(tx, person.id));
             const answered =
               standing.length === 0
-                ? await retriedOnce(() => askFor(readingAll(text), theReadingOf(names), reading))
+                ? await retriedOnce(() =>
+                    askFor(readingAll(text), theReadingOf("read", names), reading),
+                  )
                 : await retriedOnce(() =>
-                    askFor(readingMore(standing, text), theReadingOf(names), additions),
+                    askFor(
+                      readingMore(standing, text),
+                      theReadingOf("read-more", names),
+                      additions,
+                    ),
                   );
             const written = await writeProfile(
               person.id,
@@ -673,10 +679,18 @@ const readingAll = (document: string): BaseMessage[] => [
   new HumanMessage(document),
 ];
 
-/** What a reading is about: the run's documents, by name, in the run's order. */
-const theReadingOf = (names: string[]): About => ({
+/**
+ * What a reading is about: which reading it is, and the run's documents by name in the
+ * run's order (`ID315`).
+ *
+ * The step is `read` for the reading that creates a profile and `read-more` for the one
+ * that adds to it, because they are two steps and the reading already names its steps
+ * (`ID182`). Nothing here is for anybody's benefit but the name's: what a step is called
+ * is decided by what it is, and this file knows of no double that might read it.
+ */
+const theReadingOf = (step: "read" | "read-more", names: string[]): About => ({
   feature: "intake",
-  step: "read",
+  step,
   input: names.join("+"),
 });
 
@@ -686,8 +700,11 @@ const theReadingOf = (names: string[]): About => ({
  * One shape for one call. A malformed half is a malformed answer — there is no partly
  * written profile with unasked questions beside it, because neither is written until
  * both have been read.
+ *
+ * Exported so the answers this project ships can be held to the very shape a run holds a
+ * model to: a recording that would fail the run must fail the suite first.
  */
-const reading = z.object({
+export const reading = z.object({
   items: z.array(mergedItem).min(1),
   candidates: z.array(candidate),
 });
@@ -718,8 +735,10 @@ const readingMore = (profile: ItemRead[], document: string): BaseMessage[] => [
  *
  * Every part of it may be empty, and that is a successful reading: documents that say
  * nothing the profile does not already hold are still documents that were read.
+ *
+ * Exported for the same reason `reading` is: the recordings are checked against it.
  */
-const additions = z.object({
+export const additions = z.object({
   items: z.array(mergedItem).default([]),
   extends: z.array(extension).default([]),
   candidates: z.array(candidate).default([]),
