@@ -44,7 +44,7 @@ describe("the answers this project ships", () => {
    * case and no photograph case, and that is not an omission: the person's set holds
    * neither document, and a canned answer standing for no real file is what `D20` forbids.
    */
-  it("holds one intake case per run of the person's real documents, and the profile's three replies", () => {
+  it("holds one intake case per run of the person's real documents, and a reply per option of every recorded question", () => {
     expect(files).toEqual([
       "intake/read-more__2026-09-09_cv-en_ownership-application-management.json",
       "intake/read__2026-08-30_cv_EN+2026-08-30_cv_FR.json",
@@ -58,12 +58,18 @@ describe("the answers this project ships", () => {
       "profile/charrette-a-personal-project.json",
       "profile/charrette-built-for-this-job-search.json",
       "profile/charrette-work-that-became-open-source.json",
+      "profile/ciip-both-the-work-and-the-workloads.json",
+      "profile/ciip-developer-engineer.json",
+      "profile/ciip-the-workloads-were-mine.json",
       "profile/java-earlier-work.json",
       "profile/java-studies.json",
       "profile/java-the-ciip-platform.json",
       "profile/roster-a-personal-project.json",
       "profile/roster-both-over-time.json",
       "profile/roster-work-at-heig-vd.json",
+      "profile/title-both-depending-on-the-application.json",
+      "profile/title-keep-rnd-collaborator.json",
+      "profile/title-software-engineer-platform.json",
     ]);
     expect(
       files
@@ -278,6 +284,95 @@ describe("the profile's replies to the preset CV's decisions (ID292)", () => {
 });
 
 /**
+ * The replies to the second reading's own decisions (`ID320`).
+ *
+ * A second reading asks its own questions, and until these existed every one of them was
+ * answered by the placeholder: the walk `SL11` opened died at its first decision. The
+ * questions come from the shipped `read-more` recording, so their wording and their
+ * options are fixed, and a reply exists for each option but `Something else`, which is
+ * the person's own words and carries no concern of its own.
+ */
+describe("the profile's replies to the second reading's decisions (ID320)", () => {
+  type Candidate = {
+    item: string;
+    where: string;
+    lead: string;
+    options: { label: string; hint: string }[];
+  };
+
+  const { candidates } = JSON.parse(
+    written("intake/read-more__2026-09-09_cv-en_ownership-application-management.json").content ??
+      "",
+  ) as { candidates: Candidate[] };
+
+  const messageFor = (item: string, label: string): string | null => {
+    const question = candidates.find((each) => each.item === item);
+    if (question === undefined) throw new Error(`the recorded reading asks nothing about ${item}`);
+    const options = question.options.map((option, at) => ({
+      id: `option-${at}`,
+      label: option.label,
+      hint: option.hint,
+    }));
+    return profileAssistant.describe({
+      kind: "question_answered",
+      lead: question.lead,
+      where: question.where,
+      options,
+      picked: options.find((option) => option.label === label)?.id ?? null,
+      words: null,
+    });
+  };
+
+  it("asks about exactly these two in the recorded second reading", () => {
+    expect(candidates.map((each) => each.item)).toEqual([
+      "R&D Collaborator in Software Engineering",
+      "CIIP platform",
+    ]);
+  });
+
+  /** Every option but `Something else` has a reply, and none of them is the placeholder. */
+  it.each([
+    [
+      "R&D Collaborator in Software Engineering",
+      "Keep R&D Collaborator in Software Engineering",
+      "profile/title-keep-rnd-collaborator.json",
+    ],
+    [
+      "R&D Collaborator in Software Engineering",
+      "Software Engineer - Platform Development, Operations and Ownership",
+      "profile/title-software-engineer-platform.json",
+    ],
+    [
+      "R&D Collaborator in Software Engineering",
+      "Both, depending on the application",
+      "profile/title-both-depending-on-the-application.json",
+    ],
+    ["CIIP platform", "Developer engineer in the team", "profile/ciip-developer-engineer.json"],
+    ["CIIP platform", "The workloads were mine", "profile/ciip-the-workloads-were-mine.json"],
+    [
+      "CIIP platform",
+      "Both: the work and the workloads",
+      "profile/ciip-both-the-work-and-the-workloads.json",
+    ],
+  ])("%s answered with `%s` is what %s answers", (item, label, file) => {
+    const answer = written(file);
+
+    expect(answer.answers).toBe(messageFor(item, label));
+    expect(answer.answers).toContain(`: ${label} (`);
+    expect(answer.case).toBeUndefined();
+    const words = answer.next?.content ?? answer.content;
+    expect(words?.length).toBeGreaterThan(0);
+    expect(words).not.toBe("No pre generated text");
+  });
+
+  it("leaves `Something else` without a reply, as the person's own words", () => {
+    for (const question of candidates) {
+      expect(question.options.at(-1)?.label).toBe("Something else");
+    }
+  });
+});
+
+/**
  * Every call the shipped answers write is one the agent would run (D37): the tool is the
  * profile assistant's, and the arguments fit that tool's own input schema, at every link.
  */
@@ -295,9 +390,11 @@ describe("the calls the shipped answers write (D37)", () => {
 
   it("has calls to hold, so the case below cannot pass on nothing", () => {
     expect(written.map(([file, name]) => `${file}: ${name}`)).toEqual([
+      "profile/ciip-the-workloads-were-mine.json: read_profile",
       "profile/java-earlier-work.json: read_profile",
       "profile/java-studies.json: read_profile",
       "profile/java-the-ciip-platform.json: read_profile",
+      "profile/title-software-engineer-platform.json: read_profile",
     ]);
   });
 
