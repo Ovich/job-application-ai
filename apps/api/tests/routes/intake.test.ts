@@ -1,6 +1,7 @@
 import { document } from "@app/db";
 import { eq } from "drizzle-orm";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import type { ObjectKey, Storage, StoredObject } from "../../src/lib/storage";
 import { subjectAt } from "../support/providers";
 import { localStorageIn, objectsHeld } from "../support/storage";
 
@@ -38,6 +39,7 @@ const { cookiesSetBy, signInThrough, signedInAs } = await import("../support/sig
 const { bytesOfFixture, fiveOfThem, theSet, uploadOf, uploadOfAddress, uploadOfFixture } =
   await import("../support/documents");
 const { env } = await import("../../src/env");
+const { keyFor } = await import("../../src/lib/storage");
 
 let storage: ReturnType<typeof localStorageIn>;
 
@@ -129,6 +131,47 @@ describe("the documents a person hands over (US1, criterion 4)", () => {
     expect(removed.status).toBe(200);
     expect(await rowsOf(await list(person.cookie))).toEqual([]);
     expect(objectsHeld(storage)).toEqual([]);
+  });
+
+  /**
+   * A document the reading has consumed has no file and no key (`ID309`), and taking its
+   * row back still works: the removal asks the storage for nothing when there is nothing
+   * to ask for. The row is what a fact cites, so removing it takes the provenance with it
+   * through the foreign key, as it always did.
+   */
+  it("removes a document whose file the reading already took, without asking the storage", async () => {
+    const person = await signedIn("remove-one-already-read@example.com");
+    const created = (await (
+      await post(person.cookie, uploadOfFixture(theSet.cvFrench.filename))
+    ).json()) as Row;
+    await testDb
+      .update(document)
+      .set({ status: "read", readAt: new Date(), storageKey: null })
+      .where(eq(document.id, created.id));
+    // The file is gone the way a reading leaves it gone: the row alone is what is removed.
+    await storage.delete(keyFor(person.id, created.id));
+    const asked: string[] = [];
+    objects.storage = {
+      put: (key: ObjectKey, object: StoredObject) => storage.put(key, object),
+      get: (key: ObjectKey) => storage.get(key),
+      delete: (key: ObjectKey) => {
+        asked.push(key);
+        return storage.delete(key);
+      },
+    } satisfies Storage;
+
+    try {
+      const removed = await app.request(`/api/intake/documents/${created.id}`, {
+        method: "DELETE",
+        headers: { cookie: person.cookie },
+      });
+
+      expect(removed.status).toBe(200);
+      expect(await rowsOf(await list(person.cookie))).toEqual([]);
+      expect(asked).toEqual([]);
+    } finally {
+      objects.storage = storage;
+    }
   });
 });
 

@@ -13,10 +13,12 @@ import { localStorageIn } from "../../support/storage";
  * library owns. That sessions, accounts and the user row go is the library's own and is
  * proved by `accounts-login`; it is not re-proved here.
  *
- * The person under test uploads two real documents of the person's own set through the
- * intake's own route, so the objects the erasure removes are objects a real upload put
- * (`D20`, the slice's criterion 9), and a reading run gives them items, lines,
- * provenance, questions and rules to be erased with.
+ * The person under test uploads three real documents of the person's own set through the
+ * intake's own route, so the object the erasure removes is an object a real upload put
+ * (`D20`, the slice's criterion 9), and a reading run over two of them gives them items,
+ * lines, provenance, questions and rules to be erased with. The third is left unread,
+ * because a reading disposes of what it read (`ID309`): what a person still has bytes for
+ * is what nobody has read yet.
  */
 
 const objects = vi.hoisted(() => ({ storage: undefined as unknown }));
@@ -77,22 +79,18 @@ const signedIn = async (email: string) => {
 const twoRealCvs = [theSet.cvFrench.filename, theSet.cvEnglish.filename] as const;
 
 /**
- * A person with everything this slice erases: two uploaded documents with their objects,
- * a reading run's items, lines and provenance, its questions, and two profile concerns, each
- * kept by an answer.
+ * A person with everything this slice erases: three uploaded documents, two of them read
+ * and one still holding its object, a reading run's items, lines and provenance, its
+ * questions, and two profile concerns, each kept by an answer.
  */
 const aPersonWithAProfile = async (email: string) => {
   const person = await signedIn(email);
-  const documents: string[] = [];
   for (const filename of twoRealCvs) {
-    const created = (await (
-      await app.request("/api/intake/documents", {
-        method: "POST",
-        headers: { cookie: person.cookie },
-        body: uploadOfFixture(filename),
-      })
-    ).json()) as { id: string };
-    documents.push(created.id);
+    await app.request("/api/intake/documents", {
+      method: "POST",
+      headers: { cookie: person.cookie },
+      body: uploadOfFixture(filename),
+    });
   }
 
   await (
@@ -116,7 +114,24 @@ const aPersonWithAProfile = async (email: string) => {
     if (answered.status !== 200) throw new Error(`the answer for ${email} was ${answered.status}`);
   }
 
-  return { ...person, keys: documents.map((id) => keyFor(person.id, id)) };
+  /**
+   * One more document, handed over and left unread, and it is the one object this file
+   * watches.
+   *
+   * A reading consumes what it reads since `ID309`: the two CVs above have rows, and their
+   * facts, and no file at all once the run has written the profile. So the object the
+   * erasure has to take is a document nobody has read yet — which is also the state a
+   * person is in when they delete their account mid-intake.
+   */
+  const unread = (await (
+    await app.request("/api/intake/documents", {
+      method: "POST",
+      headers: { cookie: person.cookie },
+      body: uploadOfFixture(theSet.diploma.filename),
+    })
+  ).json()) as { id: string };
+
+  return { ...person, keys: [keyFor(person.id, unread.id)] };
 };
 
 /** The library's own route, driven as the web app's client drives it. */
@@ -160,8 +175,8 @@ describe("the erasure, through the library's own delete-user (criterion 9)", () 
 
     const before = await whatIsLeftOf(person);
     const trace = await traceOf(person);
-    expect(before.documents).toBe(2);
-    expect(before.objects).toBe(2);
+    expect(before.documents).toBe(3);
+    expect(before.objects).toBe(1);
     expect(before.items).toBeGreaterThan(0);
     expect(before.questions).toBeGreaterThan(0);
     expect(before.rules).toBe(2);
@@ -181,9 +196,9 @@ describe("the erasure, through the library's own delete-user (criterion 9)", () 
     expect(await profileOf(person.id)).toMatchObject({ questions: [], experience: [] });
   }, 120_000);
 
-  it("asks the storage for both real uploads by their own keys, and neither is there", async () => {
+  it("asks the storage for the upload it still holds, by its own key, and it is not there", async () => {
     const person = await aPersonWithAProfile("erased-objects@example.com");
-    expect(person.keys).toHaveLength(2);
+    expect(person.keys).toHaveLength(1);
     for (const key of person.keys) expect(await storage.get(key)).not.toBeNull();
 
     await deleteAccount(person.cookie);
@@ -251,8 +266,8 @@ describe("a failure anywhere in it (criterion 11)", () => {
     });
     expect(session?.user.email).toBe("refused@example.com");
     const left = await whatIsLeftOf(person);
-    expect(left.documents).toBe(2);
-    expect(left.objects).toBe(2);
+    expect(left.documents).toBe(3);
+    expect(left.objects).toBe(1);
     expect(left.items).toBeGreaterThan(0);
 
     refusing = false;

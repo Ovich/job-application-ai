@@ -438,6 +438,41 @@ describe("a reload mid-run (criterion 11, US3)", () => {
  * with the way to what the reading made (the person, 2026-09-12).
  */
 describe("documents already read", () => {
+  /**
+   * A document the reading has consumed keeps its row and loses its file (`ID309`), so the
+   * screen must offer nothing that would read it again or open it. It shows as read, the
+   * button reads what is still unread, and the only thing a read row offers is taking it
+   * back — there is no link on it, because there is nothing behind one.
+   */
+  it("offers no way to read a read document again, and no way to open it", async () => {
+    documentsAre([
+      rowOf({
+        id: "one",
+        filename: "2026-08-30_cv_FR.pdf",
+        status: "read",
+        readAt: "2026-09-12T10:00:00.000Z",
+      }),
+      rowOf({ id: "two", filename: "BS-HEIGVD-IL-Diplome.pdf", status: "waiting" }),
+    ]);
+
+    const screen = await opened();
+
+    await screen.eventually(() => {
+      expect(screen.rows()).toEqual(["2026-08-30_cv_FR.pdf read", "BS-HEIGVD-IL-Diplome.pdf CV"]);
+      // There is something to read, so the button is here — for the one nobody has read.
+      expect(screen.read()?.disabled).toBe(false);
+      const [alreadyRead] = Array.from(
+        screen.page()?.querySelectorAll("[data-row=document]") ?? [],
+      );
+      expect(alreadyRead?.querySelectorAll("a")).toHaveLength(0);
+      expect(
+        Array.from(alreadyRead?.querySelectorAll("button") ?? []).map((button) =>
+          button.getAttribute("aria-label"),
+        ),
+      ).toEqual(["Remove 2026-08-30_cv_FR.pdf"]);
+    });
+  });
+
   it("hands the list back, and offers the profile instead of a dead button", async () => {
     documentsAre([
       rowOf({
