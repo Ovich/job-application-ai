@@ -106,6 +106,12 @@ test("the profile shows everything that was read, and each region lights alone",
   await expect(page.locator("profile-bar")).toContainText(`Read ${today}`);
   await expect(page.locator("profile-bar")).not.toContainText(`${answered.documents} document`);
 
+  // And nowhere else either: the sheet stopped saying how many documents a part came
+  // from (product-flow-rework `S2.2`, `H10`, `ID334`), so no region of the page counts
+  // documents at all.
+  await expect(page.getByText(/\d+ documents?\b/)).toHaveCount(0);
+  await expect(page.locator("[data-part=from]")).toHaveCount(0);
+
   /**
    * The hover, in a browser that has the stylesheet (criterion 10). Regions nest and
    * the pointer is over all of them at once, so `:hover:not(:has(.region:hover))` must

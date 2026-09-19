@@ -130,7 +130,7 @@ describe("the documents screen, empty (criterion 8)", () => {
     expect(textOf(screen.page())).toContain("Drop everything here");
     expect(screen.field()?.placeholder).toBe("linkedin.com/in/…");
     expect(textOf(screen.page())).toContain(
-      "Your documents are read once, into your profile. They stay only so you can see where each fact came from, and they go when you delete your account.",
+      "Your documents are read once, into your profile. They stay until you delete your account.",
     );
   });
 
@@ -349,7 +349,30 @@ describe("the reading (US3, criterion 8)", () => {
 
     await screen.eventually(() => {
       expect(textOf(screen.page())).toContain("Put it together");
-      expect(textOf(screen.page())).toContain("one profile, every fact with its source");
+      expect(textOf(screen.page())).toContain("one profile");
+    });
+  });
+
+  /**
+   * `H10`: the screen promises no source. The retention line used to explain the keeping
+   * as being about showing where each fact came from, and the reading checklist promised
+   * "one profile, every fact with its source". What is still true is kept: the documents
+   * stay until the account is deleted.
+   */
+  it("promises no source, in any of its copy, in any of its states", async () => {
+    documentsAre(two);
+    runSays([{ kind: "run", status: "done" }]);
+    const screen = await opened();
+
+    const promises = /source|where each fact|came from|with its/i;
+    expect(textOf(screen.screen())).not.toMatch(promises);
+
+    await screen.eventually(() => expect(screen.read()?.disabled).toBe(false));
+    screen.read()?.click();
+
+    await screen.eventually(() => {
+      expect(textOf(screen.page())).toContain("Put it together");
+      expect(textOf(screen.screen())).not.toMatch(promises);
     });
   });
 

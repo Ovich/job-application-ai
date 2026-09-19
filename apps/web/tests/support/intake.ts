@@ -46,8 +46,12 @@ export const rowOf = (row: Partial<Row> & { id: string; filename: string }): Row
 
 /**
  * One item of a profile, as `GET /api/intake/profile` answers it: the spine, the block
- * for its own kind, its lines, what hangs under it, and what each document said about
- * it. Nothing here is reshaped, because nothing is reshaped on the wire either.
+ * for its own kind, its lines and what hangs under it. Nothing here is reshaped, because
+ * nothing is reshaped on the wire either.
+ *
+ * Where a fact came from is not among these fields: the web app reads no `sources`, no
+ * quote and no count of documents on an item (product-flow-rework `H10`, `ID334`), so a
+ * stand-in that carried them would let a screen pass that read one.
  */
 export type Item = {
   id: string;
@@ -56,7 +60,6 @@ export type Item = {
   subtitle: string | null;
   startText: string | null;
   endText: string | null;
-  documents: number;
   experience: {
     organisation: string;
     organisationNote: string | null;
@@ -71,17 +74,14 @@ export type Item = {
     note: string | null;
   } | null;
   entry: { label: string; qualifier: string | null } | null;
-  lines: { id: string; text: string; documents: number; sources: Quote[] }[];
+  lines: { id: string; text: string }[];
   children: Item[];
-  sources: Quote[];
   /** What the person said about it, newest first, and the one nothing superseded. */
   concerns: Concern[];
   concern: Concern | null;
   /** The question this intake asked about it, whatever state it is now in. */
   question: Question | null;
 };
-
-type Quote = { document: string; said: string };
 
 /** One profile concern on the wire, as `GET /profile` carries it (SL4, ID121, D14). */
 export type Concern = {
@@ -126,14 +126,12 @@ export const itemOf = (
   subtitle: null,
   startText: null,
   endText: null,
-  documents: 1,
   experience: null,
   project: null,
   education: null,
   entry: null,
   lines: [],
   children: [],
-  sources: [],
   concerns: [],
   concern: null,
   question: null,

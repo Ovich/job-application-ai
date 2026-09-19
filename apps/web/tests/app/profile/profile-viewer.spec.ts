@@ -68,14 +68,12 @@ const aFullProfile = (): Profile => ({
     id: "summary",
     kind: "summary",
     title: "Software Engineer and IT Project Manager.",
-    documents: 4,
   }),
   identity: itemOf({
     id: "identity",
     kind: "identity",
     title: "Stefan Teofanovic",
     subtitle: "Montreux, Switzerland",
-    documents: 4,
   }),
   experience: [
     itemOf({
@@ -84,7 +82,6 @@ const aFullProfile = (): Profile => ({
       title: "R&D Collaborator in Software Engineering",
       startText: "Aug 2022",
       endText: "Aug 2026",
-      documents: 4,
       experience: {
         organisation: "HEIG-VD",
         organisationNote: null,
@@ -95,23 +92,18 @@ const aFullProfile = (): Profile => ({
         {
           id: "line-1",
           text: "Academic Assistant for the TWEB course.",
-          documents: 2,
-          sources: [],
         },
         {
           id: "line-2",
           text: "Practical lab support on the DevOps course.",
-          documents: 1,
-          sources: [],
         },
-        { id: "line-3", text: "Design and maintenance of platforms.", documents: 1, sources: [] },
+        { id: "line-3", text: "Design and maintenance of platforms." },
       ],
       children: [
         itemOf({
           id: "project-opendidac",
           kind: "project",
           title: "Opendidac",
-          documents: 3,
           project: { description: "An educational platform.", datesText: "since 2022" },
           children: [chip("chip-nextjs", "Next.js")],
         }),
@@ -119,7 +111,6 @@ const aFullProfile = (): Profile => ({
           id: "project-eval",
           kind: "project",
           title: "Eval",
-          documents: 1,
           project: { description: "A grading platform.", datesText: null },
         }),
       ],
@@ -130,14 +121,13 @@ const aFullProfile = (): Profile => ({
       title: "IT Project Manager",
       startText: "2007",
       endText: "2016",
-      documents: 2,
       experience: {
         organisation: "Altran",
         organisationNote: null,
         location: "Lausanne",
         arrangement: null,
       },
-      lines: [{ id: "line-4", text: "Led the migration programme.", documents: 1, sources: [] }],
+      lines: [{ id: "line-4", text: "Led the migration programme." }],
     }),
   ],
   projects: [
@@ -145,14 +135,12 @@ const aFullProfile = (): Profile => ({
       id: "personal-trader",
       kind: "project",
       title: "Autonomous-Trader",
-      documents: 2,
       project: { description: "A paper-trading loop.", datesText: "Feb - Dec 2024" },
     }),
     itemOf({
       id: "personal-grader",
       kind: "project",
       title: "Lab Grader",
-      documents: 1,
       project: { description: "Skills for grading student labs.", datesText: null },
     }),
   ],
@@ -161,7 +149,6 @@ const aFullProfile = (): Profile => ({
       id: "group-languages",
       kind: "group",
       title: "Programming languages",
-      documents: 4,
       children: [
         chip("chip-js", "JavaScript"),
         chip("chip-ts", "TypeScript"),
@@ -172,14 +159,12 @@ const aFullProfile = (): Profile => ({
       id: "group-devops",
       kind: "group",
       title: "DevOps and cloud",
-      documents: 3,
       children: [chip("chip-docker", "Docker"), chip("chip-k8s", "Kubernetes")],
     }),
     itemOf({
       id: "group-tools",
       kind: "group",
       title: "Tools",
-      documents: 2,
       children: [chip("chip-git", "Git"), chip("chip-figma", "Figma")],
     }),
   ],
@@ -190,7 +175,6 @@ const aFullProfile = (): Profile => ({
       title: "Bachelor of Applied Science (BASc), Software Engineering",
       startText: "2018",
       endText: "2022",
-      documents: 4,
       education: {
         institution: "HEIG-VD",
         location: "Yverdon-les-Bains",
@@ -203,7 +187,6 @@ const aFullProfile = (): Profile => ({
       kind: "education",
       title: "CFC, Informatics",
       startText: "2008",
-      documents: 3,
       education: {
         institution: "Ecole des Arches",
         location: "Lausanne",
@@ -216,12 +199,11 @@ const aFullProfile = (): Profile => ({
       kind: "publication",
       title: "Designing a Data-Driven Survey System",
       subtitle: "ACM CHI 2024",
-      documents: 2,
     }),
     // One row per language, as the merge writes them (the slice's *The modules*).
-    itemOf({ id: "language-fr", kind: "language", title: "French", documents: 3 }),
-    itemOf({ id: "language-en", kind: "language", title: "English", documents: 3 }),
-    itemOf({ id: "language-sr", kind: "language", title: "Serbian", documents: 2 }),
+    itemOf({ id: "language-fr", kind: "language", title: "French" }),
+    itemOf({ id: "language-en", kind: "language", title: "English" }),
+    itemOf({ id: "language-sr", kind: "language", title: "Serbian" }),
   ],
 });
 
@@ -362,12 +344,17 @@ describe("the sheet is exhaustive (criterion 8, US4)", () => {
     );
   });
 
-  it("says beside each item how many documents it came from", async () => {
+  /**
+   * The other half of `H10`: the bar stopped counting documents in `S2.1` and the sheet
+   * stops here. It used to say `4 documents` beside every row.
+   */
+  it("says beside no item how many documents it came from", async () => {
     profileIs(aFullProfile());
-    const { all } = await opened();
+    const { all, page } = await opened();
 
-    const post = all("[data-row=post]")[0];
-    expect(textOf(post?.querySelector("[data-part=from]"))).toBe("4 documents");
+    expect(all("[data-row=post]").length).toBeGreaterThan(0);
+    expect(all("[data-part=from]").length).toBe(0);
+    expect(textOf(page())).not.toMatch(/\d+ documents?\b/);
   });
 });
 
@@ -384,8 +371,8 @@ describe("nothing inferred (criterion 9, D16)", () => {
     expect(rows.length).toBeGreaterThan(0);
     for (const row of rows) {
       for (const figure of piecesOf(row).join(" ").match(/\d+/g) ?? []) {
-        // A source count is a count of rows and is drawn from `documents`, so it is
-        // answered too; anything else has to be a document's own word.
+        // Every figure left in a row is a document's own word: no row counts documents
+        // any more (`H10`).
         expect(answered).toContain(figure);
       }
     }

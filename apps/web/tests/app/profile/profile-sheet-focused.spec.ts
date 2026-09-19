@@ -5,7 +5,7 @@ import { emptyProfile, itemOf, type Profile, questionOf } from "../../support/in
 
 /**
  * Seam E, the half of it that is the sheet: `profile/profile-sheet` under an open tool
- * (criterion 10, rules 1, 2, 3, and the ask mark and the check line).
+ * (criterion 10, rules 1, 2 and 3).
  *
  * Behind it: nothing but the DOM. The hover rule itself is CSS and has no computed style
  * in jsdom, so what is asserted here is that the selector is on the element a browser
@@ -136,25 +136,20 @@ describe("the hover rule (criterion 10, rule 3)", () => {
   });
 });
 
-describe("the mark and the check line", () => {
-  it("marks the item a question waits on, with the word beside it", async () => {
-    const { regionOf } = await rendered(false, null);
+describe("what the assistant's review used to leave on an item", () => {
+  /**
+   * The ask mark and the check line both went with `profile-review-flag`
+   * (product-flow-rework `H6`, `ID326`, `ID333`): nothing asks any more, so nothing on
+   * an item says it was asked about or answered. The two cases that read those marks are
+   * retired into this one, which holds that neither can come back unnoticed.
+   */
+  it("leaves nothing on it: no mark, no word beside it and no check line", async () => {
+    const { element, regionOf } = await rendered(false, null);
 
-    const marked = regionOf("k8s");
-    expect(marked?.querySelector("[data-part=ask]")).not.toBeNull();
-    expect(marked?.querySelector("[data-part=askword]")?.textContent?.trim()).toBe(
-      "scope to clarify",
-    );
-    expect(regionOf("docker")?.querySelector("[data-part=ask]")).toBeNull();
-  });
-
-  it("shows the concern under an answered item, and takes the mark away", async () => {
-    const { regionOf } = await rendered(false, null);
-
-    const answered = regionOf("terraform");
-    expect(answered?.querySelector("[data-part=concern]")?.textContent?.trim()).toBe(
-      "✓ Terraform: covered in a course, never production",
-    );
-    expect(answered?.querySelector("[data-part=ask]")).toBeNull();
+    expect(regionOf("k8s")?.querySelector("[data-part=ask]")).toBeNull();
+    expect(regionOf("k8s")?.querySelector("[data-part=askword]")).toBeNull();
+    expect(regionOf("terraform")?.querySelector("[data-part=concern]")).toBeNull();
+    expect(element.textContent).not.toContain("scope to clarify");
+    expect(element.textContent).not.toContain("✓");
   });
 });
