@@ -21,8 +21,11 @@ import { testDb } from "./database";
  * suites needed a question to exist before they could test an answer, a skip, an opening
  * or an erasure, and the only way to get one was to upload documents and run a whole
  * reading. The question was never the subject there — it is the precondition — so it is
- * written here, and the reading is left to the suites that are actually about it
- * (`intake-read`, `intake-questions`).
+ * written here, and the reading is left to the suite that is actually about it
+ * (`intake-read`).
+ *
+ * **Since `S3.1` it is the only way a suite gets one.** A reading writes no question at
+ * all (`ID333`): every question a case needs is written here, whatever that case is about.
  *
  * **What it writes is what a question cannot exist without.** A `question` row points at
  * a `profile_item` through a foreign key, so the item is written when the person has none
@@ -39,8 +42,7 @@ import { testDb } from "./database";
  *
  * **A person's questions are this fixture's.** Any question already standing is removed
  * before these are written, so calling it after a reading leaves the person holding these
- * four and not eight. Once the reading no longer writes questions (`S3.1`) that removal is
- * a no-op.
+ * four and not eight. Since `S3.1` a reading writes none, so that removal is a no-op.
  */
 
 /** One row a question offers. The last one carries no concern: it is the person's words. */
@@ -158,25 +160,45 @@ const theQuestions: readonly Asked[] = [
   },
 ];
 
-/** How many questions this fixture can write, so a caller asking for more is told. */
-export const howManyQuestions = theQuestions.length;
-
 /**
- * A person with the questions a reading would have left them, written directly.
+ * The one the shipped case proposes for the person's English CV read alone: the question
+ * three shipped answers of the profile assistant are written against (`profile/java-*`).
  *
- * `count` is how many of them, in the order they are asked; the default is all four. The
- * ids come back for a case that acts on a question without reading the profile first.
+ * It is written out here, word for word from that recording, because the walk that drives
+ * those answers used to run a reading to obtain it and a reading writes no question any
+ * more (`S3.1`, `ID333`). The lead, the place and each option's label and hint are what
+ * the assistant's message quotes, so a word changed here is a shipped answer nothing picks.
  */
-export const withQuestions = async (
-  userId: string,
-  count: number = howManyQuestions,
-): Promise<{ questionIds: string[]; optionIds: string[] }> => {
-  if (count > howManyQuestions) {
-    throw new Error(
-      `the fixture holds ${howManyQuestions} questions and ${count} were asked for; add the one you need to tests/support/questions.ts`,
-    );
-  }
+const theJavaQuestion: Asked = {
+  item: { kind: "entry", title: "Java", under: "Languages" },
+  kind: "scope",
+  where: "What you work with · Languages · in 1 document",
+  lead: "Java is in your languages and your summary names Java APIs, but no post or project in this CV says where you wrote it. Where was that?",
+  options: [
+    {
+      label: "The CIIP platform",
+      hint: "its Spring Boot services",
+      concern: "Java: the CIIP platform's Spring Boot services, at HEIG-VD",
+    },
+    {
+      label: "Earlier work",
+      hint: "before HEIG-VD",
+      concern: "Java: earlier professional work, before HEIG-VD",
+    },
+    {
+      label: "Studies",
+      hint: "courses and lab work",
+      concern: "Java: studies and teaching, never production work of my own",
+    },
+    { label: "Something else", hint: "say it below" },
+  ],
+};
 
+/** The questions written against the person's profile, whatever a caller asked for. */
+const written = async (
+  userId: string,
+  asking: readonly Asked[],
+): Promise<{ questionIds: string[]; optionIds: string[] }> => {
   // The person's questions are this fixture's: the options go with them through the
   // foreign key's cascade.
   await testDb.delete(question).where(eq(question.userId, userId));
@@ -225,7 +247,7 @@ export const withQuestions = async (
 
   const questionIds: string[] = [];
   const optionIds: string[] = [];
-  for (const [at, asked] of theQuestions.slice(0, count).entries()) {
+  for (const [at, asked] of asking.entries()) {
     const parentId =
       asked.item.under === undefined ? null : await itemFor("group", asked.item.under, null);
     const itemId = await itemFor(asked.item.kind, asked.item.title, parentId);
@@ -259,3 +281,32 @@ export const withQuestions = async (
   }
   return { questionIds, optionIds };
 };
+
+/** How many questions this fixture can write, so a caller asking for more is told. */
+export const howManyQuestions = theQuestions.length;
+
+/**
+ * A person with the questions a reading would have left them, written directly.
+ *
+ * `count` is how many of them, in the order they are asked; the default is all four. The
+ * ids come back for a case that acts on a question without reading the profile first.
+ */
+export const withQuestions = async (
+  userId: string,
+  count: number = howManyQuestions,
+): Promise<{ questionIds: string[]; optionIds: string[] }> => {
+  if (count > howManyQuestions) {
+    throw new Error(
+      `the fixture holds ${howManyQuestions} questions and ${count} were asked for; add the one you need to tests/support/questions.ts`,
+    );
+  }
+  return written(userId, theQuestions.slice(0, count));
+};
+
+/**
+ * A person holding the English CV's Java question alone, for the walk that answers it
+ * with one of the shipped answers.
+ */
+export const withTheJavaQuestion = async (
+  userId: string,
+): Promise<{ questionIds: string[]; optionIds: string[] }> => written(userId, [theJavaQuestion]);
