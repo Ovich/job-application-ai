@@ -126,7 +126,9 @@ export class ProfileViewer {
    */
   protected readonly readLine = computed(() => {
     const profile = this.profile();
-    if (profile === null || profile.documents === 0) return "";
+    // `readOn` is the guard as well as the date: it is null until a reading has read
+    // something, and the count that used to stand here went with `provenance` (`ID334`).
+    if (profile === null || profile.readOn === null) return "";
     return `Read ${this.when(profile.readOn)}`;
   });
 
