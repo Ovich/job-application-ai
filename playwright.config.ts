@@ -59,7 +59,20 @@ export default defineConfig({
       // reading over a profile that already exists, and dev is one shared database.
       testMatch:
         /(health-stream|auth|entry-route|intake|intake-again|intake-questions|profile|conversation|dev-sql)\.spec\.ts$/,
-      use: { baseURL: "http://localhost:4200" },
+      // A trace of a walk that failed, and of no walk that passed. `intake-again`'s second
+      // reading has failed four times in this pipeline and passed every time it was asked
+      // to explain itself on a laptop, so the page snapshot it leaves is all anyone has
+      // ever had to go on — and a snapshot is the end of the story, not the story. A trace
+      // carries every step, every request and the DOM at each of them, which is what tells
+      // a flake that is the app's from one that is the walk's. `retain-on-failure` keeps
+      // nothing when the suite is green, which is nearly always, so it costs nearly
+      // nothing; `check.yml` uploads what it keeps.
+      //
+      // Local only. The deployed project sets `trace: "off"` deliberately, a few lines
+      // down: a trace taken there carries the signed session cookie and every request's
+      // body (agent-consolidation SL9, ID231). Here the cookie is a throwaway minted
+      // against a container that lives for the length of the job.
+      use: { baseURL: "http://localhost:4200", trace: "retain-on-failure" },
     },
     {
       name: "look",

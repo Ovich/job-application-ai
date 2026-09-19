@@ -20,7 +20,7 @@
 #
 # The checks that need a deployed address are still not here and cannot be:
 # `pnpm test:e2e:deployed` asks the development environment whether the merge reached it,
-# so it is a step of the deploy workflow, after the migration (D20).
+# so it is `e2e-dev.yml`, dispatched by hand after a deploy rather than run by one (D20).
 name: check
 
 on:
@@ -155,3 +155,25 @@ jobs:
       - name: The stack's own output, if the suite failed
         if: failure()
         run: tail -80 /tmp/dev.log
+
+      # And what the browser saw. `test-results/` holds the page snapshot Playwright
+      # already wrote and, from `retain-on-failure`, the trace of the walk that failed:
+      # every step, every request, and the DOM at each of them, opened with
+      # `pnpm exec playwright show-trace <file>`.
+      #
+      # It exists because a walk that only fails here cannot be read from here. The
+      # second-reading walk has failed this pipeline four times and passed every time it
+      # was asked to account for itself on a laptop, and each failure cost an afternoon of
+      # hypotheses against one snapshot of the end state. The fourth also cost a deploy:
+      # it gates `deploy-dev`, so a flake left a merged change unshipped.
+      #
+      # Seven days, because the point is to read it while the run is still the one in
+      # front of you; nothing here is a record worth keeping.
+      - name: What the browser saw, if the suite failed
+        if: failure()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: e2e-local-trace-${{ github.run_id }}-${{ github.run_attempt }}
+          path: test-results/
+          retention-days: 7
+          if-no-files-found: ignore
