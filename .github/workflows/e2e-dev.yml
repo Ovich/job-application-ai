@@ -1,0 +1,97 @@
+# The last word on a deploy, and the only workflow that asks the environment rather than
+# the API that built it: does the address answer, is a real database behind it, does a
+# stream survive the distribution, and can a person sign in — each of the three providers
+# reached at its door, the payload hash a signed origin demands, and the session cookie's
+# road through the distribution in both directions.
+#
+# Run by hand, from the Actions tab, and by nothing else. It began as the last two steps
+# of `deploy-dev`, became a job of its own so that deploying and judging the deploy failed
+# separately, and is a workflow of its own from 2026-09-19 so that judging the deploy is a
+# thing a person asks for. Every merge to main used to pay four minutes for an answer
+# nobody was waiting on, and a red verdict stopped nothing, because it runs after the
+# environment is already updated: the deploy it grades has happened whatever this says.
+#
+# What it can still be trusted for is the question a laptop cannot answer, which is why it
+# is kept rather than deleted. `pnpm test:e2e` in `check.yml` runs the local project
+# against a dev server inside the runner and proves the code works; this runs the deployed
+# project against the development address and proves the deploy reached the internet. Only
+# this one collects `health.spec`, the stream held past the origin read timeout and the
+# bodied sign-in, because only this address has a distribution in front of it.
+#
+# WHEN TO RUN IT. After a deploy whose result is in doubt; after rotating anything in
+# `jobapp/dev/auth`, since the fixture signs a person in with the secret the function
+# verifies with and a stale function fails here first; before trusting dev for a demo.
+name: e2e-dev
+
+on:
+  workflow_dispatch:
+
+# One at a time. The specs share one development environment and one of them measures
+# time: a stream watched for forty seconds beside another run's is measuring the runner.
+concurrency:
+  group: e2e-dev
+  cancel-in-progress: false
+
+jobs:
+  e2e-dev:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      # What lets Actions mint the token AWS trusts. The role's trust condition names
+      # `refs/heads/main`, so this is dispatchable from main and from nowhere else.
+      id-token: write
+      contents: read
+    env:
+      AWS_REGION: ${{ vars.AWS_REGION }}
+      DATABASE_SECRET: jobapp/dev/database-url
+      AUTH_SECRET: jobapp/dev/auth
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4.3.0
+
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: Assume the deployment role
+        uses: aws-actions/configure-aws-credentials@61815dcd50bd041e203e49132bacad1fd04d2708 # v5.1.1
+        with:
+          role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN_DEV }}
+          aws-region: ${{ vars.AWS_REGION }}
+
+      # Playwright ships no browser with the package and the runner refuses to start
+      # without the one its projects could use, so it is installed here rather than for
+      # every job in `check.yml`, which runs no Playwright project at all.
+      - name: Install the browser the deployed check runs in
+        run: pnpm exec playwright install --with-deps chromium
+
+      # Two values are handed to it and neither may be written anywhere (ID102): no test
+      # can drive a provider's own sign-in page, so the fixture writes the session row
+      # itself and mints the cookie, which needs the deployed database and the deployed
+      # secret.
+      - name: Check the deployed environment
+        run: |
+          set -euo pipefail
+          DEPLOYED_DATABASE_URL=$(aws secretsmanager get-secret-value \
+            --secret-id "$DATABASE_SECRET" --query SecretString --output text)
+          echo "::add-mask::$DEPLOYED_DATABASE_URL"
+          auth=$(aws secretsmanager get-secret-value \
+            --secret-id "$AUTH_SECRET" --query SecretString --output text)
+          # The entry is JSON over several lines, and every value in it is masked one at a
+          # time. Never the entry itself: `::add-mask::` is a single-line command, so a
+          # multi-line value masks its first line and PRINTS THE REST as ordinary output,
+          # which is how this step once published the entry's client secrets and the
+          # signing secret to a world-readable log.
+          AUTH_JSON="$auth" node -e '
+            for (const value of Object.values(JSON.parse(process.env.AUTH_JSON))) {
+              if (typeof value === "string" && value !== "") console.log("::add-mask::" + value);
+            }
+          '
+          DEPLOYED_BETTER_AUTH_SECRET=$(AUTH_JSON="$auth" node -e \
+            'process.stdout.write(JSON.parse(process.env.AUTH_JSON).betterAuthSecret)')
+          export DEPLOYED_DATABASE_URL DEPLOYED_BETTER_AUTH_SECRET
+          pnpm test:e2e:deployed

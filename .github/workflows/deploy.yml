@@ -8,14 +8,19 @@
 # not a rollback. Both consequences are written in the spec and are the accepted cost of
 # never having a schema ahead of the code that reads it.
 #
-# The pipeline ends by checking what it deployed. `check-dev` runs
-# `pnpm test:e2e:deployed` against the development address once `deploy-dev` is through,
-# and a failure fails that job: CloudFormation reporting success is not the same as the
-# environment working, and a deploy that breaks DNS, the certificate or the distribution
-# used to be reported successful until a person looked. D9 described this step in a
-# comment and never made it real; D20 does, on 2026-09-10. It became a job of its own on
-# 2026-09-19, so that deploying and judging the deploy fail separately and the judgment
-# can be re-run on its own.
+# This pipeline no longer judges what it deployed. Checking the environment is
+# `e2e-dev.yml`, run by hand from the Actions tab, and the reason is what the check
+# could never do rather than what it costs: it runs after the environment is already
+# updated, so a red verdict stops nothing — the deploy it grades has happened whatever it
+# says. Paying four minutes of the plan's minutes on every merge for an answer nobody was
+# waiting on, and which blocks nothing when it is bad, is a poor trade. D9 described the
+# step in a comment and never made it real; D20 did, on 2026-09-10; it became a job of its
+# own and then a workflow of its own on 2026-09-19.
+#
+# What the deploy still owes a reader is that CloudFormation reporting success is not the
+# same as the environment working. That question is now asked deliberately — after a
+# doubtful deploy, after rotating `jobapp/dev/auth`, before trusting dev for a demo —
+# rather than automatically and unread.
 #
 # What made it unrunnable before was what it drove: the run skeleton, so every merge
 # wrote runs into the domain tables, which on prod means writing product data as a side
@@ -71,13 +76,11 @@ jobs:
       # Where the development database's connection string lives. Neon issues it, a
       # person put it here, and nothing in the repository holds it (D19).
       DATABASE_SECRET: jobapp/dev/database-url
-      # The three dev client apps and what the function signs its session cookies with,
-      # one entry with a JSON key per value. App-dev.yaml resolves it while the stack is
-      # applied; this workflow reads it once more, for the deployed check, which signs a
-      # person in by writing the session itself and so needs the same secret the function
-      # verifies with (ID101). The deploy role may read this entry and the one above, and
-      # no other.
-      AUTH_SECRET: jobapp/dev/auth
+      # `jobapp/dev/auth` — the three dev client apps and the session signing secret — is
+      # deliberately absent here. App-dev.yaml resolves that entry itself while the stack
+      # is applied, so this workflow never reads it; `e2e-dev.yml` does, because signing a
+      # person in by writing the session row needs the secret the function verifies with
+      # (ID101). The deploy role may read that entry and the one above, and no other.
       # Stamped on every stack, and from there onto every resource that supports a tag.
       # A resource whose identifier AWS assigned (a distribution id, a hosted zone id)
       # can never say what it is; its tags are the only place that meaning can live, and
@@ -259,75 +262,3 @@ jobs:
           echo "::add-mask::$DATABASE_URL"
           export DATABASE_URL
           pnpm --filter @app/db run db:migrate
-
-  # The last word on the deploy, and the only job that asks the environment rather than
-  # the API that built it: does the address answer, is a real database behind it, does a
-  # stream survive the distribution, and since S5.5 can a person sign in — each of the
-  # three providers reached at its door, the payload hash a signed origin demands, and
-  # the session cookie's road through the distribution in both directions.
-  #
-  # Its own job rather than two steps at the end of `deploy-dev`, because the deploy and
-  # the verdict on it are two different questions: which one failed is read off the graph
-  # instead of out of a log, a red check here can be re-run without deploying again, and
-  # `deploy-dev` ends when the environment is updated rather than three minutes later.
-  check-dev:
-    needs: deploy-dev
-    runs-on: ubuntu-24.04
-    timeout-minutes: 20
-    permissions:
-      id-token: write
-      contents: read
-    env:
-      AWS_REGION: ${{ vars.AWS_REGION }}
-      DATABASE_SECRET: jobapp/dev/database-url
-      AUTH_SECRET: jobapp/dev/auth
-    steps:
-      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
-
-      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4.3.0
-
-      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
-        with:
-          node-version-file: .nvmrc
-          cache: pnpm
-
-      - run: pnpm install --frozen-lockfile
-
-      - name: Assume the deployment role
-        uses: aws-actions/configure-aws-credentials@61815dcd50bd041e203e49132bacad1fd04d2708 # v5.1.1
-        with:
-          role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN_DEV }}
-          aws-region: ${{ vars.AWS_REGION }}
-
-      # Playwright ships no browser with the package and the runner refuses to start
-      # without the one its projects could use, so it is installed here rather than for
-      # every job in `check.yml`, which runs no Playwright project at all.
-      - name: Install the browser the deployed check runs in
-        run: pnpm exec playwright install --with-deps chromium
-
-      # Two values are handed to it and neither may be written anywhere (ID102): no test
-      # can drive a provider's own sign-in page, so the fixture writes the session row
-      # itself and mints the cookie, which needs the deployed database and the deployed
-      # secret.
-      - name: Check the deployed environment
-        run: |
-          set -euo pipefail
-          DEPLOYED_DATABASE_URL=$(aws secretsmanager get-secret-value \
-            --secret-id "$DATABASE_SECRET" --query SecretString --output text)
-          echo "::add-mask::$DEPLOYED_DATABASE_URL"
-          auth=$(aws secretsmanager get-secret-value \
-            --secret-id "$AUTH_SECRET" --query SecretString --output text)
-          # The entry is JSON over several lines, and every value in it is masked one at a
-          # time. Never the entry itself: `::add-mask::` is a single-line command, so a
-          # multi-line value masks its first line and PRINTS THE REST as ordinary output,
-          # which is how this step published the entry's client secrets and the signing
-          # secret to a world-readable log.
-          AUTH_JSON="$auth" node -e '
-            for (const value of Object.values(JSON.parse(process.env.AUTH_JSON))) {
-              if (typeof value === "string" && value !== "") console.log("::add-mask::" + value);
-            }
-          '
-          DEPLOYED_BETTER_AUTH_SECRET=$(AUTH_JSON="$auth" node -e \
-            'process.stdout.write(JSON.parse(process.env.AUTH_JSON).betterAuthSecret)')
-          export DEPLOYED_DATABASE_URL DEPLOYED_BETTER_AUTH_SECRET
-          pnpm test:e2e:deployed
