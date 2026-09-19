@@ -156,12 +156,19 @@ test("a pick, then a free message and its streamed reply, stay in order after th
   await tool.locator("[data-action=alt]").first().click();
   await page.locator("[data-part=send]").click();
   const count = assistant.locator("[data-part=count]");
-  await expect(count).toHaveText(/^1 of \d+ answered$/);
+  // The count follows the agent's whole reply since D31; on a cold Lambda that is past the
+  // default five seconds, so it waits as its neighbours do.
+  await expect(count).toHaveText(/^1 of \d+ answered$/, { timeout: 30_000 });
   // The answer is a message to the agent (D31, `ID291`): its reply is the newest entry.
   const entries = column.locator("[data-entry]");
   await expect(entries.last()).toHaveAttribute("data-msg", "assistant", { timeout: 30_000 });
   // The preset's first pick has a written answer (`ID292`); the free message below has none.
   await expect(entries.last()).toContainText("Java on the CIIP platform");
+  // The answer is a chain (D33, D37): the whole profile read first, drawn as one quiet line
+  // before the reply, never its JSON.
+  const readLine = column.locator("[data-part=read]");
+  await expect(readLine).toHaveText(["Read your profile"]);
+  await expect(column).not.toContainText('"items"');
   await expect(page.locator("[data-part=waiting]")).toBeVisible({ timeout: 15_000 });
   const answeredCount = (await count.textContent())?.trim() ?? "";
 
@@ -192,6 +199,8 @@ test("a pick, then a free message and its streamed reply, stay in order after th
   await expect(typed).toHaveCount(1);
   const reply = said.filter({ hasText: "No pre generated text" }).last();
   await expect(reply).toBeVisible();
+  // The read is stored, and drawn again as the same one line.
+  await expect(readLine).toHaveText(["Read your profile"]);
 
   const inOrder = await page.evaluate(
     (drawn) =>
@@ -204,6 +213,8 @@ test("a pick, then a free message and its streamed reply, stay in order after th
     [
       await opening.elementHandle(),
       await answered.elementHandle(),
+      await readLine.elementHandle(),
+      await entries.filter({ hasText: "Java on the CIIP platform" }).elementHandle(),
       await typed.elementHandle(),
       await reply.elementHandle(),
     ],

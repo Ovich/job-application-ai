@@ -1,4 +1,10 @@
-import { AIMessage, type BaseMessage, HumanMessage, ToolMessage } from "@langchain/core/messages";
+import {
+  AIMessage,
+  type BaseMessage,
+  HumanMessage,
+  SystemMessage,
+  ToolMessage,
+} from "@langchain/core/messages";
 import { z } from "zod";
 import type { AgentPart, AssistantDefinition, StoredEntry } from "./index";
 
@@ -20,7 +26,7 @@ const toolUsePart = z.object({
   arguments: z.string().optional(),
 });
 
-/** A `tool_result` part as this module reads one back: before and after, or a refusal. */
+/** A `tool_result` part as this module reads one back: before and after, a refusal, or a read. */
 const toolResultPart = z
   .object({
     kind: z.literal("tool_result"),
@@ -29,14 +35,14 @@ const toolResultPart = z
     before: z.record(z.string(), z.unknown()).optional(),
     after: z.record(z.string(), z.unknown()).optional(),
     refused: z.string().optional(),
+    read: z.unknown().optional(),
   })
-  .refine(
-    (result) =>
-      result.refused === undefined
-        ? result.before !== undefined && result.after !== undefined
-        : result.before === undefined && result.after === undefined,
-    "a tool_result carries before and after, or a refusal",
-  );
+  .refine((result) => {
+    const edited = result.before !== undefined && result.after !== undefined;
+    const halfEdited = (result.before === undefined) !== (result.after === undefined);
+    const outcomes = [edited, result.refused !== undefined, result.read !== undefined];
+    return !halfEdited && outcomes.filter(Boolean).length === 1;
+  }, "a tool_result carries before and after, or a refusal, or a read, never two");
 
 /** How a part beyond plain text reads to the model, as the definition words it (D11). */
 type Describe = AssistantDefinition<never>["describe"];
@@ -57,17 +63,37 @@ const personSays =
 /** A tool call's arguments as the model reads them back: an object, as `tool_calls` wants. */
 type Args = Record<string, unknown>;
 
-/** What a `tool_result` says to the model: the thing before and after, or the refusal. */
+/**
+ * A value as JSON with every object's keys in one order, the code-unit order: a stored
+ * part is a `jsonb` value, which keeps no key order, so the read a step hands the model and
+ * the same read given back from the store on a later message are the same bytes (D33).
+ */
+const canonical = (value: unknown): string =>
+  JSON.stringify(value, (_key, held: unknown) =>
+    typeof held === "object" && held !== null && !Array.isArray(held)
+      ? Object.fromEntries(
+          Object.entries(held).sort(([one], [other]) => (one < other ? -1 : one > other ? 1 : 0)),
+        )
+      : held,
+  );
+
+/**
+ * What a `tool_result` says to the model: the thing before and after, the refusal, or
+ * what was read, which is the tool message's whole content.
+ */
 const said = (result: {
   refused?: string | undefined;
   before?: unknown;
   after?: unknown;
-}): string =>
-  JSON.stringify(
+  read?: unknown;
+}): string => {
+  if (result.read !== undefined) return canonical(result.read);
+  return JSON.stringify(
     result.refused === undefined
       ? { before: result.before, after: result.after }
       : { refused: result.refused },
   );
+};
 
 /**
  * The conversation as the agent reads it (`ID162`, spec 3.3, `ID272`).
@@ -75,8 +101,10 @@ const said = (result: {
  * The person's entry is a `HumanMessage` of its parts, `describe` wording or leaving out
  * a part that is not text (D11). An assistant's entry is one `AIMessage`: its text, and
  * its `tool_use` parts as the calls. A `tool` entry is one `ToolMessage` per
- * `tool_result`, answering its call's id with the before and after, or the refusal. An
- * entry with nothing to say is left out rather than sent empty.
+ * `tool_result`, answering its call's id with the before and after, the refusal, or the
+ * read. A `system` entry is one `SystemMessage` of its notices, at its place in the history
+ * (D34), and never the person's words. An entry with nothing to say is left out rather
+ * than sent empty.
  *
  * A call's `args` are the model's own arguments string, parsed: the key order is kept and
  * only whitespace is dropped, since the converter serialises `args` again (D23). The
@@ -92,6 +120,15 @@ export const asMessages = (entries: readonly StoredEntry[], describe: Describe):
         const { id, name } = read.data;
         return [new ToolMessage({ tool_call_id: id, name, content: said(read.data) })];
       });
+    }
+
+    if (entry.author === "system") {
+      const notices = entry.parts
+        .flatMap((part) =>
+          part["kind"] === "notice" && typeof part["text"] === "string" ? [part["text"]] : [],
+        )
+        .join("\n\n");
+      return notices === "" ? [] : [new SystemMessage(notices)];
     }
 
     if (entry.author === "person") {

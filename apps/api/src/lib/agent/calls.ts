@@ -40,9 +40,9 @@ export const resultOf = async <Tx>(
     };
   }
   const outcome = await tool.run(tx, person, input.data);
-  return "refused" in outcome
-    ? { ...said, refused: outcome.refused }
-    : { ...said, before: outcome.before, after: outcome.after };
+  if ("refused" in outcome) return { ...said, refused: outcome.refused };
+  if ("read" in outcome) return { ...said, read: outcome.read };
+  return { ...said, before: outcome.before, after: outcome.after };
 };
 
 /**

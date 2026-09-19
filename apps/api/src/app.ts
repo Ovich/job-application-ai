@@ -1,13 +1,20 @@
 import { Hono } from "hono";
 import { profileAssistant } from "./assistants/profile";
+import { env } from "./env";
 import { ConversationAgent } from "./lib/agent";
 import { answeredInProcessBy, chatModel } from "./lib/ai";
 import { auth } from "./lib/auth";
-import { append, entries, type Transaction } from "./lib/conversation";
+import {
+  append,
+  contextWindow,
+  entries,
+  setContextWindow,
+  type Transaction,
+} from "./lib/conversation";
 import { db } from "./lib/db";
 import { conversationsOf } from "./routes/conversations";
 import { health } from "./routes/health";
-import { intake } from "./routes/intake";
+import { intakeOf } from "./routes/intake";
 import { mock } from "./routes/mock";
 
 /**
@@ -17,20 +24,37 @@ import { mock } from "./routes/mock";
  * which store it reads and writes a conversation through, which transaction a step commits
  * in, and what the header naming a step's case is called on this product's wire. The
  * header is the mock's own (`X-Jobapp-Case`), so what travels is what travelled before
- * (D19); the module's own default names no product.
+ * (D19); the module's own default names no product. The model's context window comes from
+ * the environment when it is set (D35); otherwise the model's own profile must say it.
  */
 const agent = new ConversationAgent({
   model: chatModel(),
-  store: { entries, append },
+  store: {
+    entries,
+    append,
+    window: contextWindow,
+    setWindow: setContextWindow,
+  },
   transaction: <T>(run: (tx: Transaction) => Promise<T>) => db.transaction(run),
   caseHeader: "X-Jobapp-Case",
+  ...(env.AI_OPT_MAX_INPUT_TOKENS === undefined
+    ? {}
+    : {
+        context: {
+          maxInputTokens: env.AI_OPT_MAX_INPUT_TOKENS,
+          ...(env.AI_OPT_MAX_OUTPUT_TOKENS === undefined
+            ? {}
+            : { maxOutputTokens: env.AI_OPT_MAX_OUTPUT_TOKENS }),
+        },
+      }),
 });
 
 /** The product's own API, everything under `/api`. */
 const api = new Hono()
   .route("/health", health)
-  // The intake: what a person hands over, and the reading of it (ID118).
-  .route("/intake", intake)
+  // The intake: what a person hands over, and the reading of it (ID118). The reading
+  // notifies the profile conversation through the same agent (D34).
+  .route("/intake", intakeOf(agent, profileAssistant))
   // A person's conversations with the assistants, one registry of definitions held here
   // and nowhere else (ID186): an assistant added later is a value in this list.
   .route("/conversations", conversationsOf(agent, [profileAssistant]))

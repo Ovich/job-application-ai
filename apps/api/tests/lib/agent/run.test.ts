@@ -6,7 +6,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { profileAssistant } from "../../../src/assistants/profile";
 import { ConversationAgent } from "../../../src/lib/agent";
 import type { Conversation, Entry } from "../../../src/lib/conversation";
-import { apply, profileEditTool } from "../../../src/lib/profile-edit";
+import { apply, profileEditTool, profileReadTool } from "../../../src/lib/profile-edit";
 import {
   agentOn,
   append,
@@ -19,6 +19,7 @@ import {
   chatModelThroughTheApp,
   failingMidStream,
   forgetRequests,
+  requestsAnswered,
   requestsSent,
   withCases,
 } from "../../support/ai";
@@ -220,8 +221,8 @@ describe("recorded answers of two steps (S4.5)", () => {
     // Each entry was yielded once it had committed: what was yielded is what is stored.
     expect(entriesOf(ran.said)).toEqual(stored.slice(2));
 
-    // Step 2 is handed the model's own message back, and the tool's answer to it (S4.3),
-    // and the profile as it now stands, read fresh (ID193). The call's arguments and the
+    // Step 2 is handed the model's own message back, and the tool's answer to it (S4.3);
+    // no profile is sent ahead of the history (D33). The call's arguments and the
     // tool's answer are compared as JSON values: the entry's parts are a `jsonb` column,
     // which keeps every value and not the order of an object's keys.
     expect(requestsSent()).toHaveLength(2);
@@ -247,8 +248,7 @@ describe("recorded answers of two steps (S4.5)", () => {
     const answered = bodyOf(1).messages.find((message) => message.role === "tool");
     expect(answered?.tool_call_id).toBe("call_1");
     expect(JSON.parse(String(answered?.content))).toEqual({ before, after });
-    expect(String(bodyOf(0).messages[1]?.content)).not.toContain("Shipped the developer platform.");
-    expect(String(bodyOf(1).messages[1]?.content)).toContain("Shipped the developer platform.");
+    expect(bodyOf(1).messages.slice(0, bodyOf(0).messages.length)).toEqual(bodyOf(0).messages);
   });
 });
 
@@ -268,11 +268,13 @@ describe("what the agent says it is doing (S7.5, ID210)", () => {
 
     const { said } = await ranThrough(agent.run(profileAssistant, conversation, at.person));
 
-    expect(said[0]).toEqual({ kind: "activity", text: "Reading your profile" });
+    expect(said[0]).toEqual({ kind: "activity", text: "Thinking about your message" });
     expect(said.findIndex((ran) => ran.kind === "activity")).toBeLessThan(
       said.findIndex((ran) => ran.kind === "text"),
     );
-    expect(JSON.stringify(await entries(conversation))).not.toContain("Reading your profile");
+    expect(JSON.stringify(await entries(conversation))).not.toContain(
+      "Thinking about your message",
+    );
   });
 
   it("yields profileEditTool's summary of the call after the step's words and before its entries", async () => {
@@ -310,9 +312,9 @@ describe("what the agent says it is doing (S7.5, ID210)", () => {
     expect(summary).toBeGreaterThan(ran.said.findIndex((each) => each.kind === "text"));
     expect(summary).toBeLessThan(ran.said.findIndex((each) => each.kind === "entry"));
     expect(activitiesOf(ran.said)).toEqual([
-      "Reading your profile",
+      "Thinking about your message",
       "Rewriting a line",
-      "Reading what changed",
+      "Thinking it through",
     ]);
     expect(JSON.stringify(await entries(conversation))).not.toContain("Rewriting a line");
   });
@@ -661,18 +663,17 @@ describe("the case header (D22, D26)", () => {
 });
 
 /**
- * What the loop takes from the definition and knows nothing of itself (D10): the context,
- * as system messages after the prompt, and each step's phrase. A stand-in definition, so
- * nothing the profile assistant says can make these pass.
+ * What the loop takes from the definition and knows nothing of itself (D10, D33): the
+ * prompt, then the history with nothing between, and each step's phrase. A stand-in
+ * definition, so nothing the profile assistant says can make these pass.
  */
-describe("a definition's context and step phrases (D10)", () => {
-  it("sends its context strings as system messages after the prompt, and yields its stepPhrase(n) for each step", async () => {
+describe("a definition's prompt and step phrases (D10, D33)", () => {
+  it("sends its prompt then the history, nothing between, and yields its stepPhrase(n) for each step", async () => {
     const at = await planted();
     const conversation = await conversationOf(at.person);
     const standIn = {
       ...profileAssistant,
       prompt: "The stand-in's prompt.",
-      context: async (_tx: unknown, person: string) => [`First of ${person}.`, "Second."],
       stepPhrase: (n: number) => `Step ${n} of the stand-in`,
     };
     const cases = withCases({
@@ -703,11 +704,10 @@ describe("a definition's context and step phrases (D10)", () => {
     expect(ran.thrown).toBeUndefined();
     expect(requestsSent()).toHaveLength(2);
     for (const index of requestsSent().keys()) {
-      expect(bodyOf(index).messages.slice(0, 4)).toEqual([
+      expect(bodyOf(index).messages.slice(0, 3)).toEqual([
         { role: "system", content: "The stand-in's prompt." },
-        { role: "system", content: `First of ${at.person}.` },
-        { role: "system", content: "Second." },
         { role: "assistant", content: "I read your 1 document." },
+        { role: "user", content: "Shorten the second line of my Nexplore post." },
       ]);
     }
     const steps = ran.said.flatMap((each) =>
@@ -726,7 +726,7 @@ describe("a definition's context and step phrases (D10)", () => {
 });
 
 describe("every request (S4.4, ID181, ID193)", () => {
-  it("carries the profile definition's system prompt first, the profile second, and the edit tool", async () => {
+  it("carries the profile definition's system prompt, then the history, and the read and edit tools", async () => {
     const at = await planted();
     const conversation = await conversationOf(at.person);
     const cases = withCases({
@@ -762,8 +762,17 @@ describe("every request (S4.4, ID181, ID193)", () => {
     for (const index of requestsSent().keys()) {
       const { messages, tools } = bodyOf(index);
       expect(messages[0]).toEqual({ role: "system", content: prompt });
-      expect(messages[1]).toEqual({ role: "system", content: expect.stringContaining(at.post) });
+      expect(messages.slice(1).map((message) => message.role)).not.toContain("system");
+      expect(messages[1]).toEqual({ role: "assistant", content: "I read your 1 document." });
       expect(tools).toEqual([
+        {
+          type: "function",
+          function: {
+            name: "read_profile",
+            description: profileReadTool.description,
+            parameters: toJsonSchema(profileReadTool.input),
+          },
+        },
         {
           type: "function",
           function: {
@@ -784,7 +793,7 @@ describe("every request (S4.4, ID181, ID193)", () => {
     await ranThrough(agent.run(profileAssistant, conversation, at.person));
 
     // Vitest's own snapshot file, which the formatter leaves as the suite wrote it.
-    const [tool] = bodyOf(0).tools;
+    const tool = bodyOf(0).tools.find((each) => each.function.name === "edit_profile");
     expect(tool?.function.parameters).toMatchSnapshot();
   });
 });
@@ -902,6 +911,7 @@ describe("the case and its header, default and bound (OD10)", () => {
       model: chatModelThroughTheApp(),
       store: conversationStore,
       transaction,
+      context: { maxInputTokens: 128000 },
     });
 
     await ranThrough(plain.run(profileAssistant, conversation, at.person));
@@ -949,5 +959,239 @@ describe("two agents share no built graph (OD1)", () => {
     expect(requestsSent()[0]?.headers["x-jobapp-case"]).toBe(stepOf(conversation, 1));
     expect(requestsSent()[1]?.headers["x-jobapp-case"]).toBeUndefined();
     expect(requestsSent()[1]?.headers["x-other-case"]).toBe(stepOf(conversation, 1));
+  });
+});
+
+/**
+ * The profile read through the tool (D33, `ID301`), on a chain the mock plays (D37): the
+ * shipped kind of answer, found by the person's message, whose call is `read_profile` and
+ * whose `next` is the reply. The read runs for real; only the model's side is written.
+ */
+describe("a read, then words (D33, D37)", () => {
+  const theMessage = "Shorten the second line of my Nexplore post.";
+  const theReply = "Your Nexplore post has three lines; which words should go?";
+
+  /** A chain answering the conversation's message: the whole profile read, then words. */
+  const chain = (conversation: Conversation) =>
+    withCases({
+      [`chain:${conversation.id}`]: {
+        stands_for: "the agent reads the whole profile, then asks",
+        answers: theMessage,
+        tool_calls: [{ id: "call_read", name: "read_profile", arguments: {} }],
+        next: { content: theReply },
+      },
+    });
+
+  /** The run, and the answers the mock picked, read before the cases are disposed of. */
+  const run = async (conversation: Conversation, person: string) => {
+    const cases = chain(conversation);
+    try {
+      const ran = await ranThrough(agent.run(profileAssistant, conversation, person));
+      return {
+        ...ran,
+        picked: requestsAnswered()
+          .map((each) => each.picked)
+          .slice(-2),
+      };
+    } finally {
+      cases.dispose();
+    }
+  };
+
+  it("stores the call, the read and one spoken reply, and streams the read's own phrase", async () => {
+    const at = await planted();
+    const conversation = await conversationOf(at.person);
+    const post = await standing(at.person, at.post);
+
+    const ran = await run(conversation, at.person);
+
+    expect(ran.thrown).toBeUndefined();
+    const stored = await entries(conversation);
+    expect(stored.map((entry) => entry.author)).toEqual([
+      "assistant",
+      "person",
+      "assistant",
+      "tool",
+      "assistant",
+    ]);
+    expect(stored[2]?.parts).toEqual([
+      { kind: "tool_use", id: "call_read", name: "read_profile", input: {}, arguments: "{}" },
+    ]);
+    expect(stored[3]?.parts).toEqual([
+      {
+        kind: "tool_result",
+        id: "call_read",
+        name: "read_profile",
+        read: { items: [{ ...post, concerns: [] }] },
+      },
+    ]);
+    expect(stored[4]?.parts).toEqual([{ kind: "text", text: theReply }]);
+    // One spoken reply: the words are the reply's alone.
+    expect(textOf(ran.said)).toBe(theReply);
+    expect(entriesOf(ran.said)).toEqual(stored.slice(2));
+    expect(ran.said.flatMap((each) => (each.kind === "activity" ? [each.text] : []))).toEqual([
+      "Thinking about your message",
+      "Reading your profile",
+      "Thinking it through",
+    ]);
+  });
+
+  it("asks with the prompt, then the history alone, and hands the read back as the tool message", async () => {
+    const at = await planted();
+    const conversation = await conversationOf(at.person);
+    const post = await standing(at.person, at.post);
+
+    const { picked } = await run(conversation, at.person);
+
+    expect(requestsSent()).toHaveLength(2);
+    for (const index of requestsSent().keys()) {
+      const roles = bodyOf(index).messages.map((message) => message.role);
+      expect(roles.lastIndexOf("system")).toBe(0);
+      expect(JSON.stringify(bodyOf(index).messages.slice(1, 3))).not.toContain(at.lines[0]);
+    }
+    expect(bodyOf(1).messages.map((message) => message.role)).toEqual([
+      "system",
+      "assistant",
+      "user",
+      "assistant",
+      "tool",
+    ]);
+    const read = bodyOf(1).messages[4];
+    expect(read?.tool_call_id).toBe("call_read");
+    expect(JSON.parse(String(read?.content))).toEqual({ items: [{ ...post, concerns: [] }] });
+    // The mock's own evidence: the file, then its link.
+    expect(picked).toEqual([`chain:${conversation.id}`, `chain:${conversation.id}#next`]);
+  });
+
+  it("sends the read back the same bytes on the next message, read from the store", async () => {
+    const at = await planted();
+    const conversation = await conversationOf(at.person);
+    await run(conversation, at.person);
+    const inStep = bodyOf(1).messages[4]?.content;
+    await testDb.transaction((tx) =>
+      append(tx, conversation, "person", [{ kind: "text", text: "Thanks." }]),
+    );
+    forgetRequests();
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+
+    await ranThrough(agent.run(profileAssistant, conversation, at.person));
+
+    const reloaded = bodyOf(0).messages.find((message) => message.role === "tool");
+    expect(reloaded?.content).toBe(inStep);
+  });
+
+  it("writes nothing of a step whose read cannot be stored, and throws (D21)", async () => {
+    const at = await planted();
+    await testDb
+      .insert(itemLine)
+      .values({ id: randomUUID(), itemId: at.post, text: "INJECTED-FAILURE-READ", position: 3 });
+    const conversation = await conversationOf(at.person);
+    const failure = await failingOn(testDb, "INJECTED-FAILURE-READ");
+
+    let ran: { said: Ran[]; thrown: unknown };
+    try {
+      ran = await run(conversation, at.person);
+    } finally {
+      await failure.dispose();
+    }
+
+    expect(String(ran.thrown)).toMatch(/INJECTED-FAILURE-READ/);
+    expect(entriesOf(ran.said)).toEqual([]);
+    expect(requestsSent()).toHaveLength(1);
+    expect((await entries(conversation)).map((entry) => entry.author)).toEqual([
+      "assistant",
+      "person",
+    ]);
+  });
+});
+
+/**
+ * What changed outside the conversation, pushed into its history (SL8, D34, ID303):
+ * `notify` appends one `system` entry through the store in the agent's transaction and asks
+ * no model; the next message reads the notice as a system message where it sits.
+ */
+describe("notify (D34)", () => {
+  const notice =
+    "Your profile was updated from your documents. Read it again before relying on it.";
+  const theMessage = "Shorten the second line of my Nexplore post.";
+
+  it("appends one system entry of one notice, resolves it, and calls no model", async () => {
+    const at = await planted();
+    const conversation = await conversationOf(at.person);
+
+    const written = await agent.notify(conversation, notice);
+
+    expect(written).toMatchObject({
+      position: 3,
+      author: "system",
+      parts: [{ kind: "notice", text: notice }],
+    });
+    expect(await entries(conversation)).toEqual([
+      expect.objectContaining({ author: "assistant" }),
+      expect.objectContaining({ author: "person" }),
+      written,
+    ]);
+    expect(requestsSent()).toEqual([]);
+  });
+
+  it.each([
+    ["an empty text", ""],
+    ["a blank text", "   "],
+  ])("refuses %s and writes nothing", async (_what, text) => {
+    const at = await planted();
+    const conversation = await conversationOf(at.person);
+
+    await expect(agent.notify(conversation, text)).rejects.toThrow(/empty/);
+    expect(await entries(conversation)).toHaveLength(2);
+    expect(requestsSent()).toEqual([]);
+  });
+
+  it("writes nothing when the store fails, and throws", async () => {
+    const at = await planted();
+    const conversation = await conversationOf(at.person);
+    const failure = await failingOn(testDb, "INJECTED-FAILURE-8");
+
+    try {
+      await expect(agent.notify(conversation, "INJECTED-FAILURE-8")).rejects.toThrow(
+        /INJECTED-FAILURE-8/,
+      );
+    } finally {
+      await failure.dispose();
+    }
+    expect(await entries(conversation)).toHaveLength(2);
+  });
+
+  it("sends the notice as a system message at its place, and the last user message is unchanged", async () => {
+    const at = await planted();
+    const conversation = await conversationOf(at.person);
+    await agent.notify(conversation, notice);
+    const cases = withCases({
+      [`notice:${conversation.id}`]: {
+        stands_for: "the person's message, answered past the notice",
+        answers: theMessage,
+        content: "Which words should go?",
+      },
+    });
+
+    // What the mock answered is read before the cases are disposed of, which forgets it.
+    let ran: { said: Ran[]; thrown: unknown };
+    let answered: ReturnType<typeof requestsAnswered>;
+    try {
+      ran = await ranThrough(agent.run(profileAssistant, conversation, at.person));
+      answered = [...requestsAnswered()];
+    } finally {
+      cases.dispose();
+    }
+
+    expect(ran.thrown).toBeUndefined();
+    expect(textOf(ran.said)).toBe("Which words should go?");
+    expect(requestsSent()).toHaveLength(1);
+    expect(bodyOf(0).messages.slice(1)).toEqual([
+      { role: "assistant", content: "I read your 1 document." },
+      { role: "user", content: theMessage },
+      { role: "system", content: notice },
+    ]);
+    expect(answered.at(-1)).toMatchObject({ lastUserMessage: theMessage });
+    expect(answered.at(-1)?.picked).not.toBeNull();
   });
 });

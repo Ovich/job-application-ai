@@ -3,9 +3,22 @@ import { readFileSync } from "node:fs";
 import { glob } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { itemEducation, itemExperience, itemLine, profileItem, user } from "@app/db";
+import {
+  itemEducation,
+  itemExperience,
+  itemLine,
+  profileConcern,
+  profileItem,
+  user,
+} from "@app/db";
+import { eq } from "drizzle-orm";
 import { describe, expect, it } from "vitest";
-import { apply, type Operation } from "../../../src/lib/profile-edit";
+import {
+  apply,
+  type Operation,
+  profileReadTool,
+  type ReadInput,
+} from "../../../src/lib/profile-edit";
 import { testDb } from "../../support/database";
 
 /**
@@ -337,6 +350,189 @@ describe("the caller's transaction (US6)", () => {
     ).rejects.toThrow("the entry could not be written");
 
     expect(await standing(at.person, at.post)).toEqual(thePost(at));
+  });
+});
+
+/** One read, in a transaction of its own, as the step would run it. */
+const readThrough = (person: string, input: ReadInput) =>
+  testDb.transaction((tx) => profileReadTool.run(tx, person, input));
+
+/** The post's concerns: one superseded by the other, so only the second is kept. */
+const withConcerns = async (at: Planted) => {
+  const first = randomUUID();
+  const second = randomUUID();
+  await testDb.insert(profileConcern).values({
+    id: first,
+    userId: at.person,
+    itemId: at.post,
+    kind: "scope",
+    text: "Kubernetes: running the cluster",
+    source: "answer",
+    createdAt: new Date("2026-09-01T09:00:00.000Z"),
+  });
+  await testDb.insert(profileConcern).values({
+    id: second,
+    userId: at.person,
+    itemId: at.post,
+    kind: "scope",
+    text: "Kubernetes: shipping to a cluster run by others",
+    source: "own words",
+    createdAt: new Date("2026-09-02T09:00:00.000Z"),
+  });
+  await testDb
+    .update(profileConcern)
+    .set({ supersededBy: second })
+    .where(eq(profileConcern.id, first));
+};
+
+/** The planted items in the profile's order: by position, then by id. */
+const inOrder = (at: Planted): string[] =>
+  [
+    { id: at.post, position: 0 },
+    { id: at.child, position: 0 },
+    { id: at.diploma, position: 1 },
+  ]
+    .sort((one, other) =>
+      one.position === other.position
+        ? one.id < other.id
+          ? -1
+          : 1
+        : one.position - other.position,
+    )
+    .map((each) => each.id);
+
+/**
+ * `read_profile` (`ID301`, D33): what the agent knows of the profile, read at its run on
+ * the test database. The whole profile, one kind, or one item, each item in the shape
+ * `apply` answers it with the concerns kept on it; a refusal in words the model can act
+ * on; nothing written.
+ */
+describe("read_profile (ID301, D33)", () => {
+  it("reads the whole profile with no argument, every item in the edit's shape and the profile's order", async () => {
+    const at = await planted();
+
+    const read = await readThrough(at.person, {});
+
+    expect(read).toEqual({
+      read: {
+        items: inOrder(at).map((id) => expect.objectContaining({ id })),
+      },
+    });
+    if (!("read" in read)) throw new Error("the read was refused");
+    expect(read.read.items.find((item) => item.id === at.post)).toEqual({
+      ...thePost(at),
+      concerns: [],
+    });
+  });
+
+  it("carries the concerns kept on an item, and not the ones superseded", async () => {
+    const at = await planted();
+    await withConcerns(at);
+
+    const read = await readThrough(at.person, { itemId: at.post });
+
+    expect(read).toEqual({
+      read: {
+        itemId: at.post,
+        items: [
+          {
+            ...thePost(at),
+            concerns: [
+              {
+                kind: "scope",
+                text: "Kubernetes: shipping to a cluster run by others",
+                source: "own words",
+              },
+            ],
+          },
+        ],
+      },
+    });
+  });
+
+  it("reads one kind: its items alone, and says which kind it read", async () => {
+    const at = await planted();
+
+    const read = await readThrough(at.person, { kind: "education" });
+
+    expect(read).toEqual({
+      read: { kind: "education", items: [expect.objectContaining({ id: at.diploma })] },
+    });
+    if (!("read" in read)) throw new Error("the read was refused");
+    expect(read.read.items[0]).toEqual({
+      id: at.diploma,
+      kind: "education",
+      title: "Bachelor in computer science",
+      subtitle: null,
+      startText: null,
+      endText: null,
+      block: { institution: "HEIG-VD", location: null, credential: null, note: null },
+      lines: [{ id: at.diplomaLine, text: "Thesis on scheduling." }],
+      children: [],
+      concerns: [],
+    });
+  });
+
+  it("answers the same bytes for two reads of an unchanged profile", async () => {
+    const at = await planted();
+    await withConcerns(at);
+
+    const once = JSON.stringify(await readThrough(at.person, {}));
+    const again = JSON.stringify(await readThrough(at.person, {}));
+
+    expect(again).toBe(once);
+    expect(once).toContain(at.diplomaLine);
+  });
+
+  it("refuses a kind and an itemId together, saying how to ask instead", async () => {
+    const at = await planted();
+
+    const read = await readThrough(at.person, { kind: "experience", itemId: at.post });
+
+    expect(read).toEqual({ refused: expect.stringMatching(/not both/) });
+  });
+
+  it("refuses an item that is not the person's, naming it, and reads nothing of it", async () => {
+    const at = await planted();
+    const other = await planted();
+
+    const read = await readThrough(at.person, { itemId: other.post });
+
+    expect(read).toEqual({ refused: expect.stringContaining(other.post) });
+    expect(JSON.stringify(read)).not.toContain("Platform engineer");
+    expect(read).toEqual({ refused: expect.stringMatching(/read the whole profile/) });
+  });
+
+  it("refuses a kind the profile has none of, naming the kind", async () => {
+    const at = await planted();
+
+    const read = await readThrough(at.person, { kind: "publication" });
+
+    expect(read).toEqual({ refused: expect.stringContaining("publication") });
+  });
+
+  it("refuses a kind the tool does not know, at its input", () => {
+    expect(profileReadTool.input.safeParse({ kind: "hobby" }).success).toBe(false);
+    expect(profileReadTool.input.safeParse({}).success).toBe(true);
+  });
+
+  it("writes nothing: the profile reads the same before and after", async () => {
+    const at = await planted();
+    await withConcerns(at);
+    const before = await readThrough(at.person, {});
+
+    await readThrough(at.person, { itemId: at.post });
+    await readThrough(at.person, { kind: "experience" });
+    await readThrough(at.person, { kind: "experience", itemId: at.post });
+
+    expect(await readThrough(at.person, {})).toEqual(before);
+    expect(await standing(at.person, at.post)).toEqual(thePost(at));
+  });
+
+  it("says what it is doing while it runs: the profile, a kind, or an item", () => {
+    expect(profileReadTool.summarise({})).toBe("Reading your profile");
+    expect(profileReadTool.summarise({ kind: "experience" })).toBe("Reading: Experience");
+    expect(profileReadTool.summarise({ itemId: "item-1" })).toBe("Reading an item of your profile");
   });
 });
 

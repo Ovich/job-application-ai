@@ -1,5 +1,13 @@
 {
-  "stands_for": "the preset CV's Java question answered with \"Earlier work\": the assistant's reply, no tool call",
+  "stands_for": "the preset CV's Java question answered with \"Earlier work\": the assistant reads the whole profile, then replies",
   "answers": "I answered \"Java is in your languages and your summary names Java APIs, but no post or project in this CV says where you wrote it. Where was that?\" (What you work with · Languages · in 1 document): Earlier work (before HEIG-VD).",
-  "content": "Java, before HEIG-VD, in professional work: noted. I will keep it as earlier experience and not tie it to the CIIP platform. If you remember the employer or the kind of system, say so and I will place it with that post."
+  "tool_calls": [
+    {
+      "name": "read_profile",
+      "arguments": {}
+    }
+  ],
+  "next": {
+    "content": "Java, before HEIG-VD, in professional work: noted. I will keep it as earlier experience and not tie it to the CIIP platform. If you remember the employer or the kind of system, say so and I will place it with that post."
+  }
 }

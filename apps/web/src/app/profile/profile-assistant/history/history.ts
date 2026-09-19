@@ -1,6 +1,7 @@
 import { HistoryAboutPart } from "./history-about-part/history-about-part";
 import { HistoryAnswerPart } from "./history-answer-part/history-answer-part";
 import { HistoryEditPart } from "./history-edit-part/history-edit-part";
+import { HistoryReadPart } from "./history-read-part/history-read-part";
 import { HistorySkipPart } from "./history-skip-part/history-skip-part";
 
 /**
@@ -9,6 +10,7 @@ import { HistorySkipPart } from "./history-skip-part/history-skip-part";
  */
 export const profileAssistantHistory = [
   HistoryEditPart,
+  HistoryReadPart,
   HistoryAnswerPart,
   HistorySkipPart,
   HistoryAboutPart,

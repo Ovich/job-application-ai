@@ -36,7 +36,7 @@ export type Transaction = PgTransaction<
   ExtractTablesWithRelations<typeof schema>
 >;
 
-export type Author = "person" | "assistant" | "tool";
+export type Author = "person" | "assistant" | "tool" | "system";
 
 export type Entry = {
   id: string;
@@ -126,6 +126,16 @@ export const open = async (
   }
 };
 
+/**
+ * The person's conversation with that assistant about that subject, when one exists; never
+ * created. What a writer outside the conversation notifies (D34).
+ */
+export const existing = (
+  person: Asking,
+  assistant: string,
+  subject: string | null,
+): Promise<Conversation | undefined> => found(person, assistant, subject);
+
 /** Every entry of the conversation, in order. Parts are read as they were stored. */
 export const entries = async (of: Conversation): Promise<Entry[]> =>
   db
@@ -170,4 +180,38 @@ export const append = async (
     });
   if (written === undefined) throw new Error("the entry could not be written");
   return written;
+};
+
+/**
+ * Where the agent's context was cut (D36, `ID304`): entries before `cut` are not sent, tool
+ * results before `cleared` are sent as a placeholder. Absent both until a first cut.
+ */
+export type ContextWindow = { cut?: number; cleared?: number };
+
+const windowOf = (
+  row: { cut: number | null; cleared: number | null } | undefined,
+): ContextWindow => ({
+  ...(row?.cut == null ? {} : { cut: row.cut }),
+  ...(row?.cleared == null ? {} : { cleared: row.cleared }),
+});
+
+/** The conversation's context window, as the agent last stored it. */
+export const contextWindow = async (of: Conversation): Promise<ContextWindow> => {
+  const [row] = await db
+    .select({ cut: conversation.contextCut, cleared: conversation.contextCleared })
+    .from(conversation)
+    .where(eq(conversation.id, of.id));
+  return windowOf(row);
+};
+
+/** The conversation's context window, replaced in the caller's transaction. */
+export const setContextWindow = async (
+  tx: Transaction,
+  of: Conversation,
+  window: ContextWindow,
+): Promise<void> => {
+  await tx
+    .update(conversation)
+    .set({ contextCut: window.cut ?? null, contextCleared: window.cleared ?? null })
+    .where(eq(conversation.id, of.id));
 };

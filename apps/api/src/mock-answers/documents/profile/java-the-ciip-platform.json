@@ -1,5 +1,13 @@
 {
-  "stands_for": "the preset CV's Java question answered with \"The CIIP platform\": the assistant's reply, no tool call",
+  "stands_for": "the preset CV's Java question answered with \"The CIIP platform\": the assistant reads the whole profile, then replies",
   "answers": "I answered \"Java is in your languages and your summary names Java APIs, but no post or project in this CV says where you wrote it. Where was that?\" (What you work with · Languages · in 1 document): The CIIP platform (its Spring Boot services).",
-  "content": "Java on the CIIP platform, in its Spring Boot services: noted. I will place it with your R&D post at HEIG-VD, so a reader sees where you wrote it and not only that you know it."
+  "tool_calls": [
+    {
+      "name": "read_profile",
+      "arguments": {}
+    }
+  ],
+  "next": {
+    "content": "Java on the CIIP platform, in its Spring Boot services: noted. I will place it with your R&D post at HEIG-VD, so a reader sees where you wrote it and not only that you know it."
+  }
 }

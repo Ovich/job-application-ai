@@ -80,8 +80,6 @@ const aTestAssistant: Assistant = {
   tools: [],
   actions: [],
   opening: async (_tx, person) => [{ kind: "text", text: `Hello, ${person}.`, scripted: true }],
-  // What the model reads after the prompt is the definition's since `SL4` (D10).
-  context: async () => ["The person's profile, as this definition gives it."],
   stepPhrase: () => "Working",
   describe: () => null,
 };
@@ -127,6 +125,28 @@ describe("opening the profile's conversation (US8)", () => {
     const other = await get("/api/conversations/profile?subject=other", person.cookie);
 
     expect(other.body.id).not.toBe(one.body.id);
+  });
+});
+
+describe("a system entry (SL8, D34)", () => {
+  it("answers a notice the agent wrote like any other entry, in its place", async () => {
+    const person = await signedIn("conversation-notified@example.com");
+    const opened = await get("/api/conversations/profile", person.cookie);
+    const notice = "Your profile was updated from your documents.";
+    await agentOn().notify(
+      { id: opened.body.id, userId: person.id, assistant: "profile", subject: null },
+      notice,
+    );
+
+    const { status, body } = await get("/api/conversations/profile", person.cookie);
+
+    expect(status).toBe(200);
+    expect(
+      body.entries.map(({ position, author, parts }) => ({ position, author, parts })),
+    ).toEqual([
+      { position: 1, author: "assistant", parts: [expect.objectContaining({ kind: "text" })] },
+      { position: 2, author: "system", parts: [{ kind: "notice", text: notice }] },
+    ]);
   });
 });
 
@@ -322,13 +342,12 @@ describe("a free message (US2, SL3)", () => {
     ]);
 
     // Step 1 of this conversation's message, named per step (`ID182`), asked with the
-    // profile as it stands as a system message (`ID193`; this test's definition has no
-    // prompt of its own), then the conversation as messages (`ID162`).
+    // conversation as messages and nothing ahead of it (`ID162`, D33; this test's
+    // definition has no prompt of its own).
     const [sent] = requestsSent();
     expect(requestsSent()).toHaveLength(1);
     expect(sent?.headers["x-jobapp-case"]).toBe(`profile.message:${body.id}#1`);
     expect((sent?.body as { messages: unknown[] } | undefined)?.messages).toEqual([
-      { role: "system", content: expect.stringContaining("profile") },
       { role: "assistant", content: `Hello, ${person.id}.` },
       { role: "user", content: "I ran the services, not the cluster." },
     ]);
@@ -357,6 +376,30 @@ describe("a free message (US2, SL3)", () => {
     expect(body.entries.map((entry) => entry.author)).toEqual(["assistant", "person"]);
   });
 
+  it("answers a message too large for the model's budget with the error frame, and keeps it (SL9, D36)", async () => {
+    const person = await signedIn("message-too-large@example.com");
+    const smallRoutes = new Hono().route(
+      "/api/conversations",
+      conversationsOf(agentOn({ context: { maxInputTokens: 100 } }), [{ ...aTestAssistant }]),
+    );
+
+    const { status, leaves } = await post(
+      "/api/conversations/profile/messages",
+      "word ".repeat(200),
+      person.cookie,
+      smallRoutes,
+    );
+
+    expect(status).toBe(200);
+    expect(shapeOf(leaves)).toEqual(["entry", "status", "error"]);
+    expect(leaves.at(-1)?.message).toBe(
+      "The assistant could not answer this time. Your message is kept.",
+    );
+    expect(requestsSent()).toEqual([]);
+    const { body } = await get("/api/conversations/profile", person.cookie);
+    expect(body.entries.map((entry) => entry.author)).toEqual(["assistant", "person"]);
+  });
+
   /** What the agent is doing, streamed and never stored (`S7.5`, `ID210`, spec `H27`). */
   it("streams the step's phrase as a status leaf before the reply's words, and stores none of it", async () => {
     const person = await signedIn("message-status@example.com");
@@ -369,7 +412,7 @@ describe("a free message (US2, SL3)", () => {
       await app.request("/api/intake/read", { method: "POST", headers: { cookie: person.cookie } })
     ).text();
 
-    // The phrase is the profile assistant's own (D10): the application as it is composed.
+    // The phrase is the profile assistant's own (D10, D33): the application as it is composed.
     const { leaves } = await post(
       "/api/conversations/profile/messages",
       "Which document did you read first?",
@@ -378,10 +421,10 @@ describe("a free message (US2, SL3)", () => {
     );
 
     const status = leaves.findIndex((leaf) => leaf.kind === "status");
-    expect(leaves[status]).toEqual({ kind: "status", text: "Reading your profile" });
+    expect(leaves[status]).toEqual({ kind: "status", text: "Thinking about your message" });
     expect(status).toBeLessThan(leaves.findIndex((leaf) => leaf.kind === "text"));
     const { body } = await get("/api/conversations/profile", person.cookie);
-    expect(JSON.stringify(body)).not.toContain("Reading your profile");
+    expect(JSON.stringify(body)).not.toContain("Thinking about your message");
   });
 
   it("answers 401 to nobody signed in", async () => {

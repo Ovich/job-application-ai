@@ -20,14 +20,16 @@ import type { ZodType } from "zod";
  *
  * **No transaction is open while the model is asked** (`ID179`): the caller's connection
  * may be one, and a transaction held across a model call would block every other query of
- * the request. The conversation and the definition's context are read before a step asks,
- * each in its own short read; a step's calls, its assistant entry and its tool entry are
+ * the request. The conversation is read before the first step asks, in its own short
+ * read; a step's calls, its assistant entry and its tool entry are
  * one transaction once its answer is whole. An entry is yielded only after it committed.
  */
 
-/** What a tool did: the thing it changed, before and after, or why it refused. */
+/** What a tool did: the thing it changed, before and after, why it refused, or what it read. */
 export type ToolOutcome =
-  { before: Record<string, unknown>; after: Record<string, unknown> } | { refused: string };
+  | { before: Record<string, unknown>; after: Record<string, unknown> }
+  | { refused: string }
+  | { read: unknown };
 
 /**
  * One thing the agent may do, its input validated by zod (`ID187`). `Tx` is the caller's
@@ -45,15 +47,14 @@ export type AgentTool<Tx, I = unknown, R extends ToolOutcome = ToolOutcome> = {
 
 /**
  * One concrete assistant: what the loop takes from it, and nothing of the project (D10 to
- * D12). Its `name` is the `:assistant` of a route and the first half of a step's case; its
- * `context` is read fresh before each step, one string per system message; `stepPhrase` is
- * what a step shows before its first words.
+ * D12). Its `name` is the `:assistant` of a route and the first half of a step's case;
+ * `stepPhrase` is what a step shows before its first words. Nothing volatile is sent ahead
+ * of the history (D33): what the agent needs to know of the world, it reads with a tool.
  */
 export type AssistantDefinition<Tx> = {
   name: string;
   prompt: string;
   tools: AgentTool<Tx>[];
-  context: (tx: Tx, person: string) => Promise<string[]>;
   stepPhrase: (n: number) => string;
   /** A person's part beyond plain text, in the words the model reads; null for one it does not. */
   describe: (part: Record<string, unknown>) => string | null;
@@ -76,12 +77,16 @@ export type AgentPart =
       before?: unknown;
       after?: unknown;
       refused?: string;
-    };
+      read?: unknown;
+    }
+  | { kind: "notice"; text: string };
 
 /** The least the module reads of a conversation and of a stored entry; the project's own types extend them. */
 export type ConversationRef = { id: string };
 export type StoredEntry = {
-  author: "person" | "assistant" | "tool";
+  /** Where the entry sits in its conversation; entries are append-only, so it never moves. */
+  position: number;
+  author: "person" | "assistant" | "tool" | "system";
   parts: readonly Record<string, unknown>[];
 };
 
@@ -92,8 +97,30 @@ export type Ran<E extends StoredEntry = StoredEntry> =
 /** What the module needs of a conversation's store: read, and write inside the caller's transaction. */
 export type ConversationStore<Tx, C extends ConversationRef, E extends StoredEntry> = {
   entries: (of: C) => Promise<E[]>;
-  append: (tx: Tx, of: C, author: "assistant" | "tool", parts: AgentPart[]) => Promise<E>;
+  append: (
+    tx: Tx,
+    of: C,
+    author: "assistant" | "tool" | "system",
+    parts: AgentPart[],
+  ) => Promise<E>;
+  /** The conversation's stored context window; both positions absent until a first cut. */
+  window: (of: C) => Promise<ContextWindow>;
+  /** The window a cut event decided, written in the agent's transaction. */
+  setWindow: (tx: Tx, of: C, window: ContextWindow) => Promise<void>;
 };
+
+/**
+ * How much the model takes (D35), in the library profile's own field names: the input it
+ * accepts, and the reply's reserve taken from it. The budget is their difference.
+ */
+export type ContextConfig = { maxInputTokens: number; maxOutputTokens?: number };
+
+/**
+ * Where the history was cut (D36), as entry positions: entries before `cut` are not sent,
+ * and tool results before `cleared` are sent as the placeholder. Stored on the
+ * conversation, so every request rebuilds the same prefix until the next cut.
+ */
+export type ContextWindow = { cut?: number; cleared?: number };
 
 export type ConversationAgentOptions<Tx, C extends ConversationRef, E extends StoredEntry> = {
   model: BaseChatModel;
@@ -107,6 +134,8 @@ export type ConversationAgentOptions<Tx, C extends ConversationRef, E extends St
   steps?: number;
   /** The last entry when the limit is reached. Default names the limit in English. */
   stopped?: (steps: number) => string;
+  /** The model's context window. Default the model's own profile; with neither, the agent is not built. */
+  context?: ContextConfig;
 };
 
 export { ConversationAgent } from "./agent";

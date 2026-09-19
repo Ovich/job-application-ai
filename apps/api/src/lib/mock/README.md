@@ -38,9 +38,9 @@ new OpenAI({
 
 ## An answer
 
-One JSON file per answer, anywhere under the folder; subfolders are your own organisation. Only
-`content` is required, and keys the mock does not know (`stands_for`, `note`, `$schema`) are
-ignored.
+One JSON file per answer, anywhere under the folder; subfolders are your own organisation.
+`content` is required unless the answer has `tool_calls`, and keys the mock does not know
+(`stands_for`, `note`, `$schema`) are ignored.
 
 ```json
 {
@@ -51,22 +51,62 @@ ignored.
 }
 ```
 
-| key          | what it is                                                                                   |
-| ------------ | -------------------------------------------------------------------------------------------- |
-| `content`    | the text the model says                                                                      |
-| `answers`    | the exact last `user` message this replies to: the whole string, untrimmed, no partial match |
-| `case`       | an exact name a request may ask for in the case header                                       |
-| `tool_calls` | the calls, `{ name, arguments, id? }`; `arguments` an object, or a string sent verbatim      |
-| `usage`      | `{ input_tokens, output_tokens }`, mapped to each protocol's own names; zero when left out   |
+| key          | what it is                                                                                     |
+| ------------ | ---------------------------------------------------------------------------------------------- |
+| `content`    | the text the model says                                                                        |
+| `answers`    | the exact last `user` message this replies to: the whole string, untrimmed, no partial match   |
+| `case`       | an exact name a request may ask for in the case header                                         |
+| `tool_calls` | the calls, `{ name, arguments, id? }`; `arguments` an object, or a string sent verbatim        |
+| `usage`      | `{ input_tokens, output_tokens }`, mapped to each protocol's own names; zero when left out     |
+| `next`       | the answer to the next request, once these calls were made: an answer without `answers`/`case` |
+| `quoting`    | names to regular expressions, one capture group each, run against the last user message        |
 
 A request is answered by the `case` its header names, else by the answer whose `answers` equals
 its last user message, else by the placeholder `No pre generated text` with one warning line.
-Files are read on every request, so an edited file is the next answer. A file that is not JSON or
-has no `content` throws naming the file; two answers with the same `case` or the same `answers`
-throw naming both.
+Files are read on every request, so an edited file is the next answer. A file that is not JSON,
+has no `content` and no `tool_calls`, or has a `next` but no `tool_calls` throws naming the file;
+two answers with the same `case` or the same `answers` throw naming both.
 
 An answer's id is its `case`, else its path without the extension (`profile/greeting`); inline,
 its `case` or its index.
+
+### Saying something back
+
+`quoting` lets an answer say back something the request said. Each name is a regular expression
+with one capture group, run against the request's last user message, and `{{name}}` anywhere in
+`content` is replaced by what it captured. It is how a file written last week names something
+that only exists at run time.
+
+```json
+{
+  "case": "greeting",
+  "quoting": { "who": "my name is ([A-Za-z]+)" },
+  "content": "Hello, {{who}}."
+}
+```
+
+An expression that does not match leaves `{{name}}` in the content as it is and warns once,
+naming the answer and the placeholder: an unresolved placeholder must fail loudly wherever it
+lands rather than quietly become nothing. An expression that is not one, or that has no capture
+group, throws when the answer is read, as any other broken answer does.
+
+### A chain
+
+An answer with `next` is a chain: the call is answered, the caller runs the tool, and the next
+request, which carries the call and its result after the same user message, gets the `next`.
+
+```json
+{
+  "answers": "What is the capital of Vaud?",
+  "tool_calls": [{ "name": "look_up", "arguments": { "canton": "VD" } }],
+  "next": { "content": "Lausanne." }
+}
+```
+
+The mock walks one `next` per assistant message with calls since the last user message, and
+checks each against the calls written at its link, by name and by arguments deep-equal. A call
+that differs, or a chain that has run out, is a miss. An answer without `next` is answered
+whatever came after the user message.
 
 ## The options
 

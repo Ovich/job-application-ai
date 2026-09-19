@@ -18,7 +18,7 @@ import { and, asc, countDistinct, eq, isNull, ne } from "drizzle-orm";
 import { z } from "zod";
 import { type AgentAction, type Assistant, NotYet, Refused } from "../../lib/assistant";
 import type { Transaction } from "../../lib/conversation";
-import { itemsOf, profileEditTool } from "../../lib/profile-edit";
+import { profileEditTool, profileReadTool } from "../../lib/profile-edit";
 import prompt from "./prompt.md" with { type: "text" };
 
 /**
@@ -31,7 +31,8 @@ import prompt from "./prompt.md" with { type: "text" };
  * never stored (`ID200`).
  *
  * Its system prompt is `prompt.md` beside this file, imported as text so it is inside the
- * bundle (`ID181`, `ID188`); its one tool is the shared profile edit (`ID187`).
+ * bundle (`ID181`, `ID188`); its tools are the shared profile read and edit (`ID187`,
+ * `ID301`).
  */
 
 /** `First, Java.` for the first question, `Next, Java.` once the run has moved on. */
@@ -227,18 +228,15 @@ const skipQuestion: AgentAction<{ questionId: string }> = {
 export const profileAssistant: Assistant = {
   name: "profile",
   prompt,
-  tools: [profileEditTool],
+  // The profile is read through the tool, never sent ahead of the history (D33).
+  tools: [profileReadTool, profileEditTool],
   // Each typed by its own input, and listed as the definition takes them, as the tools are.
   actions: [answerQuestion as AgentAction, skipQuestion as AgentAction],
   /**
-   * The profile as it stands, as the model reads it (`ID193`, D10), read fresh before each
-   * step, so a step sees what the step before it changed.
+   * What a step is doing before its first words. It claims no read: a read is a call, and
+   * says so itself while it runs.
    */
-  context: async (tx, person) => [
-    `The person's profile as it stands, as JSON. Every item, and every line of an item, carries the id an edit names it by.\n${JSON.stringify(await itemsOf(tx, person))}`,
-  ],
-  /** What a step is doing before its first words: the first reads the profile, a later one what changed. */
-  stepPhrase: (n) => (n === 1 ? "Reading your profile" : "Reading what changed"),
+  stepPhrase: (n) => (n === 1 ? "Thinking about your message" : "Thinking it through"),
   describe,
   /**
    * Where the words are, composed from the person's own profile (D12): the item's title,

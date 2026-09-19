@@ -66,6 +66,33 @@ const anthropic: Envelope = {
   frames: anthropicFrames,
 };
 
+/**
+ * The answer with what the request said in it (`ID316`): every `{{name}}` in the content
+ * replaced by what that name's expression captured out of the last user message.
+ *
+ * A name whose expression does not match **leaves its placeholder standing** and says so
+ * once, naming the answer and the placeholder. An unresolved placeholder is a loud
+ * failure wherever it lands, which is what a silent empty string would not be: a static
+ * answer that says back an id the request never showed it must not look like a good one.
+ */
+const quoted = (answer: Held, lastUserMessage: string | null): Held => {
+  if (answer.quoting.size === 0) return answer;
+  let content = answer.content;
+  for (const [name, expression] of answer.quoting) {
+    const captured =
+      lastUserMessage === null ? undefined : (expression.exec(lastUserMessage)?.[1] ?? undefined);
+    if (captured === undefined) {
+      console.warn(
+        `mock: the answer ${answer.from} quotes \`${name}\`, which its expression did not match; "{{${name}}}" is left as it is.`,
+      );
+      continue;
+    }
+    // A function replacement, so a capture holding `$&` or `$1` goes in as it was read.
+    content = content.replaceAll(`{{${name}}}`, () => captured);
+  }
+  return { ...answer, content };
+};
+
 const wait = (ms: number) =>
   ms <= 0 ? Promise.resolve() : new Promise((done) => setTimeout(done, ms));
 
@@ -196,7 +223,7 @@ export class ModelMock {
       // The case is named and the message is not: a message is the person's own words.
       console.warn(`mock: ${missed}; answered "${placeholder.content}".`);
     }
-    const answer = held ?? placeholder;
+    const answer = quoted(held ?? placeholder, read.lastUserMessage);
 
     const streaming = this.streams === "as-asked" ? read.stream : this.streams === "always";
     if (!streaming) return Response.json(envelope.whole(answer, read.model));

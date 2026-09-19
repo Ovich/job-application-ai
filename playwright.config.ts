@@ -55,8 +55,10 @@ export default defineConfig({
       // `dev-sql` is the local project's alone and always will be (agent-consolidation SL9,
       // ID228): it proves `pnpm dev:sql` on the local container, and dev is one shared
       // database nothing but the app may write to.
+      // `intake-again` joins at SL11 and is the local project's alone: it walks a second
+      // reading over a profile that already exists, and dev is one shared database.
       testMatch:
-        /(health-stream|auth|entry-route|intake|intake-questions|profile|conversation|dev-sql)\.spec\.ts$/,
+        /(health-stream|auth|entry-route|intake|intake-again|intake-questions|profile|conversation|dev-sql)\.spec\.ts$/,
       use: { baseURL: "http://localhost:4200" },
     },
     {

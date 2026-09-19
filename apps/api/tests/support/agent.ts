@@ -1,11 +1,17 @@
-import { conversationEntry } from "@app/db";
+import { conversation, conversationEntry } from "@app/db";
 import { asc, eq } from "drizzle-orm";
-import { ConversationAgent, type ConversationAgentOptions } from "../../src/lib/agent";
+import { env } from "../../src/env";
+import {
+  type ContextWindow,
+  ConversationAgent,
+  type ConversationAgentOptions,
+} from "../../src/lib/agent";
 import {
   append,
   type Conversation,
   type Entry,
   open as openIn,
+  setContextWindow,
   type Transaction,
 } from "../../src/lib/conversation";
 import type { Asking } from "../../src/lib/session";
@@ -47,8 +53,25 @@ export const open = (
 
 export { append };
 
-/** The store the agent is handed: this suite's read, and `lib/conversation`'s own write. */
-export const conversationStore = { entries, append };
+/** The conversation's stored context window, read from the test database. */
+export const contextWindow = async (of: Conversation): Promise<ContextWindow> => {
+  const [row] = await testDb
+    .select({ cut: conversation.contextCut, cleared: conversation.contextCleared })
+    .from(conversation)
+    .where(eq(conversation.id, of.id));
+  return {
+    ...(row?.cut == null ? {} : { cut: row.cut }),
+    ...(row?.cleared == null ? {} : { cleared: row.cleared }),
+  };
+};
+
+/** The store the agent is handed: this suite's reads, and `lib/conversation`'s own writes. */
+export const conversationStore = {
+  entries,
+  append,
+  window: contextWindow,
+  setWindow: setContextWindow,
+};
 
 /** The transaction the agent commits a step in: the test database's. */
 export const transaction = <T>(run: (tx: Transaction) => Promise<T>): Promise<T> =>
@@ -65,5 +88,11 @@ export const agentOn = (
     store: conversationStore,
     transaction,
     caseHeader: "X-Jobapp-Case",
+    context: {
+      maxInputTokens: env.AI_OPT_MAX_INPUT_TOKENS ?? 0,
+      ...(env.AI_OPT_MAX_OUTPUT_TOKENS === undefined
+        ? {}
+        : { maxOutputTokens: env.AI_OPT_MAX_OUTPUT_TOKENS }),
+    },
     ...overrides,
   });

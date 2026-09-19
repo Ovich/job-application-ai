@@ -1,5 +1,13 @@
 {
-  "stands_for": "the preset CV's Java question answered with \"Studies\": the assistant's reply, no tool call",
+  "stands_for": "the preset CV's Java question answered with \"Studies\": the assistant reads the whole profile, then replies",
   "answers": "I answered \"Java is in your languages and your summary names Java APIs, but no post or project in this CV says where you wrote it. Where was that?\" (What you work with · Languages · in 1 document): Studies (courses and lab work).",
-  "content": "Java from your studies, in courses and lab work: noted. I will keep it among your languages and not present it as professional experience."
+  "tool_calls": [
+    {
+      "name": "read_profile",
+      "arguments": {}
+    }
+  ],
+  "next": {
+    "content": "Java from your studies, in courses and lab work: noted. I will keep it among your languages and not present it as professional experience."
+  }
 }

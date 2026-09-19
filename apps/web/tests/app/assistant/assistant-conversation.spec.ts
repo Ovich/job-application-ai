@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { Assistant } from "../../../src/app/assistant/assistant/assistant";
 import { AssistantConversation } from "../../../src/app/assistant/assistant-conversation/assistant-conversation";
 import { AssistantCore } from "../../../src/app/assistant/assistant-core";
+import type { Entry as BrowserEntry } from "../../../src/app/assistant/entry";
 import { provideAssistant } from "../../../src/app/assistant/provide-assistant";
 import { CurrentUser } from "../../../src/app/auth/current-user";
 import { HistoryAnswerPart } from "../../../src/app/profile/profile-assistant/history/history-answer-part/history-answer-part";
@@ -616,5 +617,67 @@ describe("who writes what (S4.7)", () => {
 
     theReply.ends();
     await posting;
+  });
+});
+
+/**
+ * A notice under the `system` author (SL8, D34): what changed outside the conversation, as
+ * one quiet line with no avatar, which the person has nothing to answer on.
+ */
+describe("a notice (D34)", () => {
+  const notice =
+    "Your profile was updated from your documents. Read it again before relying on it.";
+
+  const withNotice = [
+    entryOf(1, [{ kind: "text", text: "I read your 2 documents.", scripted: true }]),
+    entryOf(2, [{ kind: "text", text: "Shorten the second line." }], "person"),
+    entryOf(3, [{ kind: "notice", text: notice }], "system"),
+  ];
+
+  const expectOneQuietLine = (element: HTMLElement) => {
+    const lines = Array.from(element.querySelectorAll("[data-part=notice]"));
+    expect(lines.map(textOf)).toEqual([notice]);
+    const entry = lines[0]?.closest("[data-entry]");
+    expect(entry?.getAttribute("data-msg")).toBe("system");
+    expect(lines[0]?.getAttribute("variant")).toBe("caption");
+    expect(lines[0]?.getAttribute("tone")).toBe("muted");
+    expect(entry?.querySelector("[data-part=avatar]")).toBeNull();
+    expect(entry?.querySelector("button, input, textarea, a")).toBeNull();
+    expect(textOf(element)).not.toContain("This part cannot be shown here.");
+  };
+
+  it("is an author the browser's entry type accepts", () => {
+    const author: BrowserEntry["author"] = "system";
+    expect(author).toBe("system");
+  });
+
+  it("draws a stored notice as one quiet line, in its place, after a reload", async () => {
+    const element = await rendered(withNotice);
+
+    expectOneQuietLine(element);
+    const authors = Array.from(element.querySelectorAll("[data-entry]")).map((entry) =>
+      entry.getAttribute("data-msg"),
+    );
+    expect(authors).toEqual(["assistant", "person", "system"]);
+  });
+
+  it("draws the notice when the conversation is next opened, with no reload", async () => {
+    const element = await rendered(withNotice.slice(0, 2));
+    expect(element.querySelectorAll("[data-part=notice]")).toHaveLength(0);
+
+    conversationIs(withNotice);
+    await TestBed.inject(AssistantCore).open();
+    const fixture = TestBed.createComponent(AssistantConversation);
+    await fixture.whenStable();
+
+    expectOneQuietLine(fixture.nativeElement as HTMLElement);
+  });
+
+  it("opens no tool on a notice", async () => {
+    const element = await rendered(withNotice, ColumnHost);
+
+    expectOneQuietLine(element);
+    expect(element.querySelector("[data-part=dock]")).toBeNull();
+    expect(element.querySelector("tool-prefix")).toBeNull();
   });
 });

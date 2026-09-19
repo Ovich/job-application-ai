@@ -62,6 +62,23 @@ Parameters:
       The model the reading and the assistants ask for. The default is the name the mock
       answers to.
 
+  # The model's context window, which the agent keeps every request inside (D35, ID304).
+  # The mock's model has no profile that says it, so the function is always handed both:
+  # a model named here must have its own two values named beside it.
+  AiMaxInputTokens:
+    Type: Number
+    Default: 128000
+    MinValue: 1
+    Description: >-
+      How many input tokens the model takes, the reply's reserve included.
+
+  AiMaxOutputTokens:
+    Type: Number
+    Default: 16384
+    MinValue: 1
+    Description: >-
+      How many tokens of that the agent keeps free for the model's reply.
+
 Conditions:
   HasAiKey: !Not [!Equals [!Ref AiKeyEntry, ""]]
 
@@ -199,6 +216,9 @@ Resources:
           AI_BASE_URL: !Ref AiBaseUrl
           # The model asked for, from the AiModel parameter (ID234).
           AI_MODEL: !Ref AiModel
+          # The model's context window, from the two parameters (D35, ID304).
+          AI_OPT_MAX_INPUT_TOKENS: !Ref AiMaxInputTokens
+          AI_OPT_MAX_OUTPUT_TOKENS: !Ref AiMaxOutputTokens
           # The provider's key, only when AiKeyEntry names an entry, and then only as a
           # dynamic reference resolved while the stack applies (ID214). Absent otherwise,
           # so the schema's throwaway stands and the mock ignores it.

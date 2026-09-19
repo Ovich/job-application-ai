@@ -36,7 +36,14 @@ describe("the agent's folder, extractable as it stands (rule 8)", () => {
   const sources = filesUnder(library, isSource);
 
   it("holds the files the claims below are made of (OD8)", () => {
-    expect(sources).toEqual(["agent.ts", "calls.ts", "index.ts", "messages.ts", "step.ts"]);
+    expect(sources).toEqual([
+      "agent.ts",
+      "calls.ts",
+      "context.ts",
+      "index.ts",
+      "messages.ts",
+      "step.ts",
+    ]);
   });
 
   it("imports nothing from the application: every relative import stays inside the folder", () => {

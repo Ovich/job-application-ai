@@ -1,6 +1,8 @@
+import type { MadeCall } from "./answers";
+
 /**
  * A `Request` read once into what the mock answers from: the protocol's own body, the case
- * its header names, and the last thing the user said.
+ * its header names, the last thing the user said, and the calls the model made since.
  *
  * The rest of a real provider's body is accepted and ignored.
  */
@@ -17,6 +19,8 @@ export type Asked = {
   includeUsage: boolean;
   caseName: string | null;
   lastUserMessage: string | null;
+  /** Each assistant message with calls after the last user message, its calls in order (D37). */
+  callsSince: MadeCall[][];
 };
 
 /** What a body, a message or a block may hold, each key unread until it is checked. */
@@ -30,7 +34,12 @@ type Written = Partial<
     | "role"
     | "content"
     | "type"
-    | "text",
+    | "text"
+    | "tool_calls"
+    | "function"
+    | "name"
+    | "arguments"
+    | "input",
     unknown
   >
 >;
@@ -54,11 +63,58 @@ const textOf = (content: unknown): string | null => {
     .join("");
 };
 
-/** The last `user` message's text, or nothing: an earlier one is never looked at. */
-const lastUserMessageOf = (messages: unknown): string | null => {
-  if (!Array.isArray(messages)) return null;
-  const last = messages.findLast((message) => isRecord(message) && message.role === "user");
-  return isRecord(last) ? textOf(last.content) : null;
+/**
+ * Whether a `user` message is the user's: Anthropic's protocol sends a call's result as a
+ * `user` message of `tool_result` blocks, which nobody said.
+ */
+const isSaid = (message: unknown): message is Written =>
+  isRecord(message) &&
+  message.role === "user" &&
+  !(
+    Array.isArray(message.content) &&
+    message.content.length > 0 &&
+    message.content.every((block) => isRecord(block) && block.type === "tool_result")
+  );
+
+/** An assistant message's calls, as either protocol writes them. */
+const callsOf = (message: Written): MadeCall[] => {
+  const calls: MadeCall[] = [];
+  if (Array.isArray(message.tool_calls)) {
+    for (const call of message.tool_calls) {
+      if (isRecord(call) && isRecord(call.function) && typeof call.function.name === "string") {
+        calls.push({ name: call.function.name, arguments: call.function.arguments });
+      }
+    }
+  }
+  if (Array.isArray(message.content)) {
+    for (const block of message.content) {
+      if (isRecord(block) && block.type === "tool_use" && typeof block.name === "string") {
+        calls.push({ name: block.name, arguments: block.input });
+      }
+    }
+  }
+  return calls;
+};
+
+/**
+ * The last user message's text, or nothing: an earlier one is never looked at; and every
+ * message of calls the model made after it.
+ */
+const conversationOf = (
+  messages: unknown,
+): { lastUserMessage: string | null; callsSince: MadeCall[][] } => {
+  if (!Array.isArray(messages)) return { lastUserMessage: null, callsSince: [] };
+  const at = messages.findLastIndex(isSaid);
+  const last: unknown = messages[at];
+  return {
+    lastUserMessage: isRecord(last) ? textOf(last.content) : null,
+    callsSince: messages
+      .slice(at + 1)
+      .flatMap((message: unknown) =>
+        isRecord(message) && message.role === "assistant" ? [callsOf(message)] : [],
+      )
+      .filter((calls) => calls.length > 0),
+  };
 };
 
 export const asked = async (request: Request, caseHeader: string): Promise<Asked> => {
@@ -72,6 +128,6 @@ export const asked = async (request: Request, caseHeader: string): Promise<Asked
     stream: said.stream === true,
     includeUsage: isRecord(options) && options.include_usage === true,
     caseName: request.headers.get(caseHeader),
-    lastUserMessage: lastUserMessageOf(said.messages),
+    ...conversationOf(said.messages),
   };
 };

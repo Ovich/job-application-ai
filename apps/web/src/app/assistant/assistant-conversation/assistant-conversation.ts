@@ -68,7 +68,8 @@ const wordsIn = (column: HTMLElement): { words: number; text: number } => {
  * **Who wrote an entry is where it sits** (`S4.7`, spec `H26`): what the assistant writes,
  * its streaming reply and its records included, takes the column's full width behind its
  * avatar; what the person writes, and the parts of their own tool use, sits on the right at
- * most 70% wide, the components library's `.me` bubble, behind their initials.
+ * most 70% wide, the components library's `.me` bubble, behind their initials; a `system`
+ * entry's notice is one quiet line with no avatar (D34), which nothing answers.
  *
  * **It keeps its own column at its end** (D6, `ID227`, `ID237`): the newest line in view
  * above the dock, until the person scrolls or presses in it.
@@ -231,7 +232,7 @@ export class AssistantConversation {
     return exactly(new Date(createdAt));
   }
 
-  /** The words of a `text` part. */
+  /** The words of a `text` or a `notice` part. */
   protected textOf(part: Part): string {
     return "text" in part && typeof part.text === "string" ? part.text : "";
   }

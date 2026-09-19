@@ -62,6 +62,8 @@ const nothingSet = {
   AI_API_KEY: undefined,
   AI_MODEL: undefined,
   AI_MOCK_PACE: undefined,
+  AI_OPT_MAX_INPUT_TOKENS: undefined,
+  AI_OPT_MAX_OUTPUT_TOKENS: undefined,
   STORAGE_URL: undefined,
   UPLOAD_LIMIT_BYTES: undefined,
 };
@@ -233,6 +235,47 @@ describe("the local runtime", () => {
       model: "gpt-5",
     });
   });
+
+  /**
+   * The model's context window (D35, `ID304`): the mock's model has no profile, so a laptop
+   * left on the mock is given one; a model named in `AI_MODEL` is given none unless the two
+   * are set beside it, and must then carry its own profile.
+   */
+  it("gives the mock's model a context window of 128000 tokens, 16384 kept for the reply", async () => {
+    const env = await load({ ...nothingSet, ...everyValue });
+
+    expect([env.AI_OPT_MAX_INPUT_TOKENS, env.AI_OPT_MAX_OUTPUT_TOKENS]).toEqual([128000, 16384]);
+  });
+
+  it("gives a named model no context window unless one is set", async () => {
+    const env = await load({ ...nothingSet, ...everyValue, AI_MODEL: "gpt-5" });
+
+    expect([env.AI_OPT_MAX_INPUT_TOKENS, env.AI_OPT_MAX_OUTPUT_TOKENS]).toEqual([
+      undefined,
+      undefined,
+    ]);
+  });
+
+  it("takes the context window that is set, for the mock and for a named model", async () => {
+    const window = { AI_OPT_MAX_INPUT_TOKENS: "400000", AI_OPT_MAX_OUTPUT_TOKENS: "32000" };
+
+    for (const model of [{}, { AI_MODEL: "gpt-5" }]) {
+      const env = await load({ ...nothingSet, ...everyValue, ...model, ...window });
+      expect([env.AI_OPT_MAX_INPUT_TOKENS, env.AI_OPT_MAX_OUTPUT_TOKENS]).toEqual([400000, 32000]);
+    }
+  });
+
+  it.each(["0", "-1", "1.5", "many", ""])(
+    "refuses %j as a context window, naming the variable",
+    async (value) => {
+      await expect(
+        load({ ...nothingSet, ...everyValue, AI_OPT_MAX_INPUT_TOKENS: value }),
+      ).rejects.toThrow(/AI_OPT_MAX_INPUT_TOKENS/);
+      await expect(
+        load({ ...nothingSet, ...everyValue, AI_OPT_MAX_OUTPUT_TOKENS: value }),
+      ).rejects.toThrow(/AI_OPT_MAX_OUTPUT_TOKENS/);
+    },
+  );
 
   /**
    * ID128: `lib/storage` is chosen by configuration (ID115) and takes its values as

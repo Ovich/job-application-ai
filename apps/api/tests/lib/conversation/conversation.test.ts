@@ -17,7 +17,8 @@ vi.mock("../../../src/lib/db", async () => ({
 }));
 
 const { testDb } = await import("../../support/database");
-const { append, entries, open } = await import("../../../src/lib/conversation");
+const { append, contextWindow, entries, open, setContextWindow } =
+  await import("../../../src/lib/conversation");
 
 /** A person, as the library would have saved one. */
 const aPerson = async () => {
@@ -104,6 +105,75 @@ describe("appending to a conversation (S2.1)", () => {
     expect(written.position).toBe(2);
     const [, second] = await entries(conversation);
     expect(second).toMatchObject({ position: 2, author: "person", parts: said });
+  });
+});
+
+describe("a notice under the system author (SL8, D34)", () => {
+  it("stores a system entry of one notice part, and reads it back as written", async () => {
+    const person = await aPerson();
+    const conversation = await open(person, "profile", null, async () => opening);
+    const said = [{ kind: "notice" as const, text: "Your profile was updated." }];
+
+    const written = await testDb.transaction((tx) => append(tx, conversation, "system", said));
+
+    expect(written).toMatchObject({ position: 2, author: "system", parts: said });
+    const [, second] = await entries(conversation);
+    expect(second).toMatchObject({ position: 2, author: "system", parts: said });
+  });
+
+  it("refuses a notice with no text, and writes nothing", async () => {
+    const person = await aPerson();
+    const conversation = await open(person, "profile", null, async () => opening);
+
+    await expect(
+      testDb.transaction((tx) =>
+        append(tx, conversation, "system", [{ kind: "notice", text: "" }] as never),
+      ),
+    ).rejects.toThrow();
+    expect(await entries(conversation)).toHaveLength(1);
+  });
+});
+
+describe("the agent's context window (SL9, D36)", () => {
+  it("has none until one is written: both columns are empty on a new conversation", async () => {
+    const person = await aPerson();
+    const conversation = await open(person, "profile", null, async () => opening);
+
+    expect(await contextWindow(conversation)).toEqual({});
+  });
+
+  it("reads back what the caller's transaction wrote, and a later write replaces it", async () => {
+    const person = await aPerson();
+    const conversation = await open(person, "profile", null, async () => opening);
+
+    await testDb.transaction((tx) => setContextWindow(tx, conversation, { cleared: 4 }));
+    expect(await contextWindow(conversation)).toEqual({ cleared: 4 });
+
+    await testDb.transaction((tx) => setContextWindow(tx, conversation, { cut: 7, cleared: 6 }));
+    expect(await contextWindow(conversation)).toEqual({ cut: 7, cleared: 6 });
+  });
+
+  it("writes nothing when the caller's transaction rolls back", async () => {
+    const person = await aPerson();
+    const conversation = await open(person, "profile", null, async () => opening);
+
+    await expect(
+      testDb.transaction(async (tx) => {
+        await setContextWindow(tx, conversation, { cut: 3 });
+        throw new Error("the step failed");
+      }),
+    ).rejects.toThrow("the step failed");
+    expect(await contextWindow(conversation)).toEqual({});
+  });
+
+  it("is the conversation's own: another conversation's window is untouched", async () => {
+    const person = await aPerson();
+    const one = await open(person, "profile", null, async () => opening);
+    const other = await open(person, "profile", "another", async () => opening);
+
+    await testDb.transaction((tx) => setContextWindow(tx, one, { cut: 2 }));
+
+    expect(await contextWindow(other)).toEqual({});
   });
 });
 

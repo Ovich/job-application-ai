@@ -1,8 +1,9 @@
-import { document } from "@app/db";
-import { eq } from "drizzle-orm";
+import { document, question } from "@app/db";
+import { asc, eq } from "drizzle-orm";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import type { ObjectKey, Storage, StoredObject } from "../../src/lib/storage";
 import { subjectAt } from "../support/providers";
-import { localStorageIn } from "../support/storage";
+import { localStorageIn, objectsHeld } from "../support/storage";
 
 /**
  * Seam D: `routes/intake`, `POST /read`, read as a stream (criteria 10, 11, 12).
@@ -105,6 +106,20 @@ const rowsOf = (userId: string) =>
 const statusesOf = async (userId: string) =>
   (await rowsOf(userId)).map((row) => [row.filename, row.status]);
 
+/**
+ * The person's questions by id and place. Read from the table, because a place is the one
+ * thing about a question the profile route does not carry — and "after the last" is a
+ * claim about places (`ID310`).
+ */
+const positionsOf = async (userId: string): Promise<[string, number][]> =>
+  (
+    await testDb
+      .select()
+      .from(question)
+      .where(eq(question.userId, userId))
+      .orderBy(asc(question.position), asc(question.id))
+  ).map((row) => [row.id, row.position]);
+
 /** The three real documents a run is driven over, which the mock has the run's case for. */
 const three = [theSet.cvFrench.filename, theSet.cvEnglish.filename, theSet.diploma.filename];
 
@@ -114,6 +129,55 @@ const three = [theSet.cvFrench.filename, theSet.cvEnglish.filename, theSet.diplo
  * text, refused before the call rather than by it (`ID157`, `ID159`).
  */
 const aPhotograph = "a-photograph-of-a-paper-cv.jpg";
+
+/** A document's name as the reading composes it and a source cites it: no extension. */
+const slug = (filename: string) => filename.slice(0, filename.lastIndexOf("."));
+
+/**
+ * One more document handed over the way a browser hands one over, and the case name the
+ * run that reads it will ask under.
+ *
+ * It goes through the upload route rather than straight into the rows, because a second
+ * reading needs a row whose object is really in storage — and since `ID309` the documents
+ * a first reading took have none left.
+ *
+ * The case is `intake.read-more` and not `intake.read` (`ID315`): every caller of this is
+ * a person who already has a profile, so the run it names is the second reading.
+ */
+const oneMore = async (cookie: string, filename: string) => {
+  const added = await app.request("/api/intake/documents", {
+    method: "POST",
+    headers: { cookie },
+    body: uploadOfFixture(filename),
+  });
+  expect(added.status).toBe(201);
+  const { id } = (await added.json()) as { id: string };
+  return { id, case: `intake.read-more:${slug(filename)}` };
+};
+
+/** What the second document said about a fact the second reading answers with. */
+const saidByTheFrenchCv = (said: string) => [{ document: slug(theSet.cvFrench.filename), said }];
+
+/**
+ * A second reading's answer, written here rather than shipped (`ID308`).
+ *
+ * The one recording the project ships for a second reading stands for the ownership CV
+ * and nothing else (`ID317`); every claim below is about a document the project ships no
+ * second reading of, so its answer is the test's own.
+ */
+const aSecondReading = (answer: {
+  items?: unknown[];
+  extends?: unknown[];
+  candidates?: unknown[];
+}) =>
+  JSON.stringify({
+    items: answer.items ?? [],
+    extends: answer.extends ?? [],
+    candidates: answer.candidates ?? [],
+  });
+
+/** The answer of a reading that found nothing the profile does not already hold. */
+const nothingNew = aSecondReading({});
 
 describe("the reading run (criterion 10, D8)", () => {
   it("marks each document reading, in order, then read, and says it is done", async () => {
@@ -313,6 +377,236 @@ describe("the reading run (criterion 10, D8)", () => {
   });
 });
 
+/**
+ * What a reading pushes into the profile conversation (SL8, D34, `ID311`): once the
+ * profile is written, the person's profile conversation, when there is one, gets one
+ * `system` entry holding a summary of what that reading changed. Read back through
+ * `GET /api/conversations/profile`, as the column reads it.
+ *
+ * The notice was one fixed sentence when a reading rewrote the profile whole; it says now
+ * which documents were read and what they added, because a reading that adds can add
+ * nothing, and a person told "your profile was updated" when it was not has been misled.
+ * It is built from the rows the write inserted and never from a second call.
+ */
+describe("the profile conversation, told of a reading (D34, ID311)", () => {
+  type Conversation = { entries: { author: string; parts: Record<string, unknown>[] }[] };
+
+  const conversationOf = async (cookie: string): Promise<Conversation> => {
+    const answer = await app.request("/api/conversations/profile", { headers: { cookie } });
+    expect(answer.status).toBe(200);
+    return (await answer.json()) as Conversation;
+  };
+
+  const systemEntriesOf = (conversation: Conversation) =>
+    conversation.entries.filter((entry) => entry.author === "system");
+
+  /** What every notice in a conversation says, in the order it was written. */
+  const noticesOf = (conversation: Conversation): string[] =>
+    systemEntriesOf(conversation).flatMap((entry) =>
+      entry.parts.filter((part) => part["kind"] === "notice").map((part) => String(part["text"])),
+    );
+
+  /**
+   * The person's English CV read, their profile conversation opened on it, and a second
+   * document handed over and waiting.
+   *
+   * A reading disposes of what it read (`ID309`), so a second reading is a second
+   * document and never the same one put back: there is no file behind a row the reading
+   * has consumed. The second run is the one with a conversation to be told about.
+   */
+  const readThenOpened = async (email: string) => {
+    const person = await signedIn(email);
+    await documentsFor(person.id, [theSet.cvEnglish.filename], storage);
+    await (await read(person.cookie)).text();
+    const opened = await conversationOf(person.cookie);
+    const second = await oneMore(person.cookie, theSet.cvFrench.filename);
+    return { person, opened, second };
+  };
+
+  /** The one new item a second reading is given to find, and the title it lands under. */
+  const aCertificate = {
+    kind: "education",
+    title: "A certificate of employment",
+    education: { institution: "HEIG-VD" },
+    sources: saidByTheFrenchCv("Certificat de travail, HEIG-VD."),
+  };
+
+  it("appends one system entry naming the documents and what they added", async () => {
+    const { person, opened, second } = await readThenOpened("notified-after-reading@example.com");
+    const cases = withCases({
+      [second.case]: { content: aSecondReading({ items: [aCertificate] }) },
+    });
+
+    try {
+      await (await read(person.cookie)).text();
+    } finally {
+      cases.dispose();
+    }
+
+    const after = await conversationOf(person.cookie);
+    expect(after.entries.slice(0, opened.entries.length)).toEqual(opened.entries);
+    expect(after.entries.slice(opened.entries.length)).toEqual([
+      expect.objectContaining({
+        author: "system",
+        parts: [
+          {
+            kind: "notice",
+            text: "Your profile was updated from your documents: 2026-08-30_cv_FR. It added A certificate of employment. Read it again before relying on it.",
+          },
+        ],
+      }),
+    ]);
+  });
+
+  /**
+   * The other half of `ID311`: what was added **to**. A line on a post the profile already
+   * holds is the commonest thing a second document carries, and a notice that named only
+   * brand new items would say nothing at all about it.
+   */
+  it("names the items it added to as well as the items it added", async () => {
+    const { person, second } = await readThenOpened("notice-names-what-it-extended@example.com");
+    const post = (await profileOf(person.cookie)).experience[0];
+    const cases = withCases({
+      [second.case]: {
+        content: aSecondReading({
+          extends: [
+            {
+              itemId: post?.id,
+              lines: [
+                {
+                  text: "Led the migration to Kubernetes.",
+                  sources: saidByTheFrenchCv("Led the migration to Kubernetes."),
+                },
+              ],
+            },
+          ],
+        }),
+      },
+    });
+
+    try {
+      await (await read(person.cookie)).text();
+    } finally {
+      cases.dispose();
+    }
+
+    expect(noticesOf(await conversationOf(person.cookie))).toEqual([
+      `Your profile was updated from your documents: 2026-08-30_cv_FR. It added to ${post?.title}. Read it again before relying on it.`,
+    ]);
+  });
+
+  it("counts the titles past ten rather than reciting them", async () => {
+    const { person, second } = await readThenOpened("notice-caps-the-titles@example.com");
+    const twelve = Array.from({ length: 12 }, (_, at) => ({
+      ...aCertificate,
+      title: `A certificate ${at + 1}`,
+    }));
+    const cases = withCases({ [second.case]: { content: aSecondReading({ items: twelve }) } });
+
+    try {
+      await (await read(person.cookie)).text();
+    } finally {
+      cases.dispose();
+    }
+
+    expect(noticesOf(await conversationOf(person.cookie))).toEqual([
+      "Your profile was updated from your documents: 2026-08-30_cv_FR. It added A certificate 1, A certificate 2, A certificate 3, A certificate 4, A certificate 5, A certificate 6, A certificate 7, A certificate 8, A certificate 9, A certificate 10; and 2 more. Read it again before relying on it.",
+    ]);
+  });
+
+  /**
+   * A reading that found nothing is a reading, and the notice says so rather than
+   * announcing an update that did not happen (`ID311`). The instruction to read the
+   * profile again stands either way: the agent cannot know which of the two it was.
+   */
+  it("says nothing new was found when the documents added nothing", async () => {
+    const { person, second } = await readThenOpened("notice-with-nothing-new@example.com");
+    const cases = withCases({ [second.case]: { content: nothingNew } });
+
+    try {
+      await (await read(person.cookie)).text();
+    } finally {
+      cases.dispose();
+    }
+
+    expect(noticesOf(await conversationOf(person.cookie))).toEqual([
+      "Your documents were read: 2026-08-30_cv_FR. Nothing new was found in them. Read it again before relying on it.",
+    ]);
+  });
+
+  it("writes nothing to a conversation that does not exist yet, and opens none", async () => {
+    const person = await signedIn("notified-with-no-conversation@example.com");
+    await documentsFor(person.id, [theSet.cvEnglish.filename], storage);
+
+    await (await read(person.cookie)).text();
+
+    // The first GET creates the conversation: its opening alone, no notice before it.
+    expect(systemEntriesOf(await conversationOf(person.cookie))).toEqual([]);
+  });
+
+  it("notifies nothing when the reading fails", async () => {
+    const { person, opened, second } = await readThenOpened("not-notified-on-failure@example.com");
+    const nothingUsable = withCases({ [second.case]: { content: "No pre generated text" } });
+    try {
+      await (await read(person.cookie)).text();
+    } finally {
+      nothingUsable.dispose();
+    }
+
+    expect(await statusesOf(person.id)).toEqual([
+      ["2026-08-30_cv_EN.pdf", "read"],
+      ["2026-08-30_cv_FR.pdf", "failed"],
+    ]);
+    expect(await conversationOf(person.cookie)).toEqual(opened);
+  });
+
+  it("still ends the reading as done when the notice cannot be written", async () => {
+    const { person, opened, second } = await readThenOpened("notice-fails@example.com");
+    const cases = withCases({ [second.case]: { content: nothingNew } });
+    const { Hono } = await import("hono");
+    const { intakeOf } = await import("../../src/routes/intake");
+    const { profileAssistant } = await import("../../src/assistants/profile");
+    const { agentOn, conversationStore } = await import("../support/agent");
+    const failing = agentOn({
+      store: {
+        ...conversationStore,
+        append: () => Promise.reject(new Error("the store refused the notice")),
+      },
+    });
+    const routes = new Hono().route("/api/intake", intakeOf(failing, profileAssistant));
+    const logged = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    try {
+      const response = await routes.request("/api/intake/read", {
+        method: "POST",
+        headers: { cookie: person.cookie },
+      });
+      const leaves = leavesOf(await response.text());
+
+      expect(leaves.at(-1)).toEqual(expect.objectContaining({ kind: "run", status: "done" }));
+      expect(await statusesOf(person.id)).toEqual([
+        ["2026-08-30_cv_EN.pdf", "read"],
+        ["2026-08-30_cv_FR.pdf", "read"],
+      ]);
+      expect(await conversationOf(person.cookie)).toEqual(opened);
+      expect(logged).toHaveBeenCalledOnce();
+    } finally {
+      cases.dispose();
+      logged.mockRestore();
+    }
+  });
+
+  it("notifies nothing on a run with nothing new to read", async () => {
+    const person = await signedIn("not-notified-on-nothing-new@example.com");
+    await documentsFor(person.id, [theSet.cvEnglish.filename], storage);
+    await (await read(person.cookie)).text();
+    const opened = await conversationOf(person.cookie);
+
+    await (await read(person.cookie)).text();
+
+    expect(await conversationOf(person.cookie)).toEqual(opened);
+  });
+});
+
 describe("resume is a read of the rows (criterion 11, US3)", () => {
   it("leaves the rows where the run got to when the reader walks away mid-stream", async () => {
     const person = await signedIn("walks-away@example.com");
@@ -370,20 +664,44 @@ describe("resume is a read of the rows (criterion 11, US3)", () => {
  * documents (`D20`).
  */
 type Item = {
+  id: string;
   kind: string;
   title: string;
   documents: number;
   entry: { label: string; qualifier: string | null } | null;
-  lines: { text: string; sources: { document: string; said: string }[] }[];
+  lines: { id: string; text: string; sources: { document: string; said: string }[] }[];
   children: Item[];
   sources: { document: string; said: string }[];
+  concerns: { text: string }[];
 };
 
 type Profile = {
   documents: number;
+  summary: Item | null;
+  identity: Item | null;
   experience: Item[];
+  projects: Item[];
   groups: Item[];
   education: Item[];
+  questions: { id: string; itemId: string; state: string }[];
+};
+
+/**
+ * Every item of a profile, of every kind and at every depth, so a claim about all of them
+ * names all of them: a group's entries are items too, and a concern can be kept on one.
+ */
+const everyItemOf = (profile: Profile): Item[] => {
+  const withItsOwn = (item: Item): Item[] => [item, ...item.children.flatMap(withItsOwn)];
+  return [
+    profile.summary,
+    profile.identity,
+    ...profile.experience,
+    ...profile.projects,
+    ...profile.groups,
+    ...profile.education,
+  ]
+    .filter((item): item is Item => item !== null)
+    .flatMap(withItsOwn);
 };
 
 const profileOf = async (cookie: string): Promise<Profile> => {
@@ -566,6 +884,464 @@ describe("an answer that cannot be used (spec, Failure modes)", () => {
       expect([...profile.experience, ...profile.groups, ...profile.education]).toEqual([]);
     } finally {
       cases.dispose();
+    }
+  });
+});
+
+/**
+ * The messages of one recorded request, as `lib/ai` put them on the wire.
+ *
+ * What a reading is asked is a claim this slice makes twice — the first prompt unchanged,
+ * and a second one shown the profile — so it is read from the request itself rather than
+ * from the module that wrote it.
+ */
+const messagesOf = (at: number): { role: string; content: string }[] =>
+  (requestsSent()[at]?.body as { messages?: { role: string; content: string }[] } | undefined)
+    ?.messages ?? [];
+
+/** A person whose English CV has been read: a profile, its questions, and nothing unread. */
+const withAProfile = async (email: string) => {
+  const person = await signedIn(email);
+  await documentsFor(person.id, [theSet.cvEnglish.filename], storage);
+  await (await read(person.cookie)).text();
+  return person;
+};
+
+/**
+ * A reading adds to a profile that already has one (`ID308`, `D38`).
+ *
+ * The whole of this slice is here: a person with nothing is read exactly as before, and a
+ * person with a profile is read by a second prompt whose answer can only add. What the
+ * person and the agent built — the ids, the lines, the concerns, the questions — is not
+ * something a reading can touch, and the shape of the answer is what makes that true
+ * rather than the care of whoever wrote the prompt.
+ *
+ * The second reading's answer is written here with `model.use` rather than taken from a
+ * shipped recording: the project ships one second reading, of the ownership CV (`ID317`),
+ * and a case for any other document would stand for a run nobody has made (`D20`). The
+ * shipped one is walked in the describe that closes this file.
+ */
+describe("a reading of a person who already has a profile (ID308, D38)", () => {
+  it("asks the prompt that creates a profile when there is none, as it always did", async () => {
+    const person = await signedIn("first-reading-unchanged@example.com");
+    await documentsFor(person.id, [theSet.cvEnglish.filename], storage);
+
+    await (await read(person.cookie)).text();
+
+    const [system, human] = messagesOf(0);
+    expect(system?.content).toBe(
+      "You read everything a job seeker has handed over, given as one document whose parts are marked <<<DOCUMENT name>>> … <<<END>>>, and you write their profile and the questions it leaves open. Answer with JSON alone, as an object with items and candidates. Each item has kind, one of summary, identity, experience, project, education, publication, language, group, entry; title; the optional subtitle, start_text and end_text as the documents wrote them; the block for its kind (experience, project, education, entry); lines; children; and sources. A source is the name of the part the fact came from and what that part said, word for word in that part's own language. A fact stated by several parts carries one source per part and no third wording of your own. Never state a figure no part states: no duration, no seniority, no total. Each candidate is a question the documents themselves cannot answer, with kind, one of scope (a fact says what was done but not what the person's part was), conflict (two parts state the same thing differently) or provenance (a term appears in a way that leaves its standing unclear); item, the exact title of the item it is about; where, the item's place said the way the profile says it; lead, the question itself in one or two sentences; and options, two to four answers, each with label, hint and the concern that answer writes, the last of which is the person's own words and carries no concern. Never ask about a fact the parts agree on and state plainly, never ask about a date a part states, and never ask what a person can be assumed to know about their own job.",
+    );
+    // The composed document alone: nothing is put in front of it for a person who has no
+    // profile to be shown.
+    expect(human?.content.startsWith("<<<DOCUMENT 2026-08-30_cv_EN>>>")).toBe(true);
+  });
+
+  /**
+   * The two readings are two steps, and the call says which one it is (`ID315`).
+   *
+   * `intake.read` creates a profile and `intake.read-more` adds to one, so the header a
+   * run carries names the step it really is. Nothing here is for a double's benefit: this
+   * asserts the name the client puts on the wire, which is the same name whatever answers
+   * it.
+   */
+  it("carries intake.read on the first reading and intake.read-more on the second", async () => {
+    const person = await withAProfile("the-two-cases@example.com");
+    const first = requestsSent().map((request) => request.headers["x-jobapp-case"]);
+    const second = await oneMore(person.cookie, theSet.cvFrench.filename);
+    forgetRequests();
+    const cases = withCases({ [second.case]: { content: nothingNew } });
+
+    try {
+      await (await read(person.cookie)).text();
+    } finally {
+      cases.dispose();
+    }
+
+    expect(first).toEqual(["intake.read:2026-08-30_cv_EN"]);
+    expect(requestsSent().map((request) => request.headers["x-jobapp-case"])).toEqual([
+      "intake.read-more:2026-08-30_cv_FR",
+    ]);
+  });
+
+  it("is shown the profile with its ids, and then only the document nobody has read", async () => {
+    const person = await withAProfile("second-reading-request@example.com");
+    const before = await profileOf(person.cookie);
+    const post = before.experience[0];
+    const second = await oneMore(person.cookie, theSet.cvFrench.filename);
+    forgetRequests();
+    const cases = withCases({ [second.case]: { content: nothingNew } });
+
+    try {
+      await (await read(person.cookie)).text();
+    } finally {
+      cases.dispose();
+    }
+
+    const [system, human] = messagesOf(0);
+    expect(system?.content).toContain("you answer with what is new in them and nothing else");
+    // The profile as `read_profile` answers it: every item by its id, so an addition can
+    // name one. Then the composed document of what is unread, and nothing else — the CV
+    // that was read is in the profile above, and its file is not there to be read again.
+    expect(human?.content.startsWith("<<<PROFILE>>>")).toBe(true);
+    expect(human?.content).toContain(`"id": "${post?.id}"`);
+    expect(human?.content).toContain("<<<DOCUMENT 2026-08-30_cv_FR>>>");
+    expect(human?.content).not.toContain("<<<DOCUMENT 2026-08-30_cv_EN>>>");
+  });
+
+  it("leaves every item, line, concern and question the person already had", async () => {
+    const person = await withAProfile("second-reading-keeps-everything@example.com");
+    const asked = (await profileOf(person.cookie)).questions[0];
+    if (asked === undefined) throw new Error("the first reading asked nothing");
+    const answered = await app.request("/api/conversations/profile/actions/answer_question", {
+      method: "POST",
+      headers: { cookie: person.cookie, "content-type": "application/json" },
+      body: JSON.stringify({ questionId: asked.id, words: "I wrote it, nobody else did" }),
+    });
+    expect(answered.status).toBe(200);
+    const before = await profileOf(person.cookie);
+    const post = before.experience[0];
+    const second = await oneMore(person.cookie, theSet.cvFrench.filename);
+    forgetRequests();
+    const cases = withCases({
+      [second.case]: {
+        content: aSecondReading({
+          items: [
+            {
+              kind: "education",
+              title: "A certificate of employment",
+              education: { institution: "HEIG-VD" },
+              sources: saidByTheFrenchCv("Certificat de travail, HEIG-VD."),
+            },
+          ],
+          extends: [
+            {
+              itemId: post?.id,
+              lines: [
+                {
+                  text: "Led the migration to Kubernetes.",
+                  sources: saidByTheFrenchCv("Led the migration to Kubernetes."),
+                },
+              ],
+            },
+          ],
+        }),
+      },
+    });
+
+    try {
+      await (await read(person.cookie)).text();
+    } finally {
+      cases.dispose();
+    }
+
+    const after = await profileOf(person.cookie);
+    for (const was of everyItemOf(before)) {
+      const now = everyItemOf(after).find((each) => each.id === was.id);
+      expect(now?.title).toBe(was.title);
+      // The lines it had, as it had them, with their ids: a new line is appended after
+      // them and no line is rewritten or renumbered.
+      expect(now?.lines.slice(0, was.lines.length)).toEqual(was.lines);
+      expect(now?.concerns).toEqual(was.concerns);
+    }
+    expect(after.questions).toEqual(before.questions);
+    // And the concern the person settled by answering is one of the concerns kept.
+    expect(everyItemOf(before).find((item) => item.id === asked.itemId)?.concerns).not.toHaveLength(
+      0,
+    );
+    // The profile was shown it, which is the only way the second prompt can know not to
+    // ask about it again (`ID310`).
+    expect(messagesOf(0)[1]?.content).toContain("I wrote it, nobody else did");
+  });
+
+  it("lands a new item after the last, a new line after the item's last, a new child after its last", async () => {
+    const person = await withAProfile("second-reading-adds@example.com");
+    const before = await profileOf(person.cookie);
+    const post = before.experience[0];
+    const group = before.groups[0];
+    if (post === undefined || group === undefined) throw new Error("the first reading wrote none");
+    const second = await oneMore(person.cookie, theSet.cvFrench.filename);
+    const cases = withCases({
+      [second.case]: {
+        content: aSecondReading({
+          items: [
+            {
+              kind: "education",
+              title: "A certificate of employment",
+              education: { institution: "HEIG-VD" },
+              sources: saidByTheFrenchCv("Certificat de travail, HEIG-VD."),
+            },
+          ],
+          extends: [
+            {
+              itemId: post.id,
+              lines: [
+                {
+                  text: "Led the migration to Kubernetes.",
+                  sources: saidByTheFrenchCv("Led the migration to Kubernetes."),
+                },
+              ],
+            },
+            {
+              itemId: group.id,
+              children: [
+                {
+                  kind: "entry",
+                  title: "Terraform",
+                  entry: { label: "Terraform" },
+                  sources: saidByTheFrenchCv("Terraform"),
+                },
+              ],
+            },
+          ],
+        }),
+      },
+    });
+
+    try {
+      await (await read(person.cookie)).text();
+    } finally {
+      cases.dispose();
+    }
+
+    const after = await profileOf(person.cookie);
+    expect(after.education.at(-1)?.title).toBe("A certificate of employment");
+    expect(after.education.at(-1)?.sources).toEqual([
+      { document: "2026-08-30_cv_FR.pdf", said: "Certificat de travail, HEIG-VD." },
+    ]);
+    const extended = after.experience.find((each) => each.id === post.id);
+    expect(extended?.lines).toHaveLength(post.lines.length + 1);
+    expect(extended?.lines.at(-1)?.text).toBe("Led the migration to Kubernetes.");
+    expect(extended?.lines.at(-1)?.sources).toEqual([
+      { document: "2026-08-30_cv_FR.pdf", said: "Led the migration to Kubernetes." },
+    ]);
+    const grown = after.groups.find((each) => each.id === group.id);
+    expect(grown?.children).toHaveLength(group.children.length + 1);
+    expect(grown?.children.at(-1)?.title).toBe("Terraform");
+  });
+
+  /**
+   * The questions take no flow of their own (`ID310`): a second reading's candidates go
+   * through the same writer, which only ever inserts, and the questions a person is
+   * already holding keep their ids, their states and their places.
+   */
+  it("adds the questions it proposes after the ones the person already has", async () => {
+    const person = await withAProfile("second-reading-questions@example.com");
+    const before = await profileOf(person.cookie);
+    const post = before.experience[0];
+    if (post === undefined) throw new Error("the first reading wrote no experience");
+    const wasAt = await positionsOf(person.id);
+    const second = await oneMore(person.cookie, theSet.cvFrench.filename);
+    const cases = withCases({
+      [second.case]: {
+        content: aSecondReading({
+          candidates: [
+            {
+              kind: "scope",
+              item: post.title,
+              where: "Experience · in 2 documents",
+              lead: "Whose work was the migration?",
+              options: [
+                { label: "Mine", hint: "I led it", concern: "Led the migration" },
+                { label: "In my own words", hint: "I will say it myself" },
+              ],
+            },
+          ],
+        }),
+      },
+    });
+
+    try {
+      await (await read(person.cookie)).text();
+    } finally {
+      cases.dispose();
+    }
+
+    const nowAt = await positionsOf(person.id);
+    // Every question that was there is still there, at the place it was; the new one is
+    // past the last of them.
+    expect(nowAt.slice(0, wasAt.length)).toEqual(wasAt);
+    expect(nowAt).toHaveLength(wasAt.length + 1);
+    expect(nowAt.at(-1)?.[1]).toBeGreaterThan(Math.max(...wasAt.map(([, at]) => at)));
+  });
+
+  it("writes nothing and deletes nothing when an extends names an item that is not theirs", async () => {
+    const other = await withAProfile("someone-elses-item@example.com");
+    const theirItem = (await profileOf(other.cookie)).experience[0];
+    const person = await withAProfile("extends-what-is-not-theirs@example.com");
+    const before = await profileOf(person.cookie);
+    const second = await oneMore(person.cookie, theSet.cvFrench.filename);
+    const cases = withCases({
+      [second.case]: {
+        content: aSecondReading({
+          extends: [
+            {
+              itemId: theirItem?.id,
+              lines: [
+                { text: "A line on a stranger's post.", sources: saidByTheFrenchCv("A line.") },
+              ],
+            },
+          ],
+        }),
+      },
+    });
+
+    try {
+      await (await read(person.cookie)).text();
+    } finally {
+      cases.dispose();
+    }
+
+    expect(await statusesOf(person.id)).toEqual([
+      ["2026-08-30_cv_EN.pdf", "read"],
+      ["2026-08-30_cv_FR.pdf", "failed"],
+    ]);
+    expect(await profileOf(person.cookie)).toEqual(before);
+    // The failed run took nothing with it: the document it could not use still has its file.
+    expect(objectsHeld(storage)).toContain(`u/${person.id}/${second.id}`);
+  });
+
+  it("is a successful reading when the documents add nothing at all", async () => {
+    const person = await withAProfile("second-reading-adds-nothing@example.com");
+    const before = await profileOf(person.cookie);
+    const second = await oneMore(person.cookie, theSet.cvFrench.filename);
+    const cases = withCases({ [second.case]: { content: nothingNew } });
+
+    try {
+      await (await read(person.cookie)).text();
+    } finally {
+      cases.dispose();
+    }
+
+    expect(await statusesOf(person.id)).toEqual([
+      ["2026-08-30_cv_EN.pdf", "read"],
+      ["2026-08-30_cv_FR.pdf", "read"],
+    ]);
+    // Read and disposed of, and the profile exactly as it was.
+    expect(objectsHeld(storage)).toEqual([]);
+    expect(await profileOf(person.cookie)).toEqual(before);
+  });
+});
+
+/**
+ * Walk 2, at the route rather than in a browser (SL11, `ID315`, `ID316`, `ID317`).
+ *
+ * Every other second reading in this file is answered by `model.use`, because its id is
+ * chosen by the test. This one is answered by the recording the project *ships*, and that
+ * is the whole claim: a file written last week names ids that did not exist when it was
+ * written, and it names the person's own because `quoting` reads them back out of the
+ * request the run just sent (`ID316`). An expression written against a guess at the JSON
+ * instead of against the real request would leave `{{post}}` standing, and the run would
+ * fail rather than write it — so this passing is what says the expressions are right.
+ */
+describe("the shipped second reading of the ownership CV (SL11)", () => {
+  it("extends the profile's own items, every id quoted out of the request it answers", async () => {
+    const person = await withAProfile("shipped-second-reading@example.com");
+    const before = await profileOf(person.cookie);
+    const second = await oneMore(person.cookie, theSet.cvOwnership.filename);
+    expect(second.case).toBe("intake.read-more:2026-09-09_cv-en_ownership-application-management");
+
+    await (await read(person.cookie)).text();
+
+    expect(await statusesOf(person.id)).toEqual([
+      ["2026-08-30_cv_EN.pdf", "read"],
+      ["2026-09-09_cv-en_ownership-application-management.pdf", "read"],
+    ]);
+    const after = await profileOf(person.cookie);
+    // Nothing the first reading wrote was replaced: every id, title, line and concern is
+    // where it was, and the additions are behind them.
+    for (const was of everyItemOf(before)) {
+      const now = everyItemOf(after).find((each) => each.id === was.id);
+      expect(now?.title).toBe(was.title);
+      expect(now?.lines.slice(0, was.lines.length)).toEqual(was.lines);
+      expect(now?.concerns).toEqual(was.concerns);
+    }
+    expect(everyItemOf(after).length).toBeGreaterThan(everyItemOf(before).length);
+    // What the ownership CV adds, in both of its kinds: an item the profile did not hold
+    // at all, and new lines on items the first reading wrote.
+    expect(after.groups.map((group) => group.title)).toContain("Operations and support");
+    const grew = everyItemOf(after).filter((now) => {
+      const was = everyItemOf(before).find((each) => each.id === now.id);
+      return was !== undefined && now.lines.length > was.lines.length;
+    });
+    expect(grew.length).toBeGreaterThan(1);
+  });
+});
+
+/**
+ * A document is an input that is consumed (`ID309`, `D38`).
+ *
+ * Read, its facts placed in the profile, its file disposed of — never before the profile
+ * that cites it is committed. What stays is the row: the name a fact cites, when it was
+ * read, and the hash that makes the same bytes handed over twice a duplicate still.
+ */
+describe("a document consumed by the reading (ID309)", () => {
+  it("deletes each read document's file and clears its key, keeping the row and what cites it", async () => {
+    const person = await signedIn("consumed-after-reading@example.com");
+    await documentsFor(person.id, [theSet.cvEnglish.filename], storage);
+    expect(objectsHeld(storage)).toHaveLength(1);
+
+    await (await read(person.cookie)).text();
+
+    const [row] = await rowsOf(person.id);
+    expect(objectsHeld(storage)).toEqual([]);
+    expect([row?.status, row?.storageKey]).toEqual(["read", null]);
+    expect(row?.readAt).not.toBeNull();
+    // The row is the name a fact cites, so the profile still says where every fact came
+    // from although the file it came from is gone.
+    const profile = await profileOf(person.cookie);
+    expect(profile.documents).toBe(1);
+    expect(profile.experience[0]?.sources[0]?.document).toBe("2026-08-30_cv_EN.pdf");
+  });
+
+  it("deletes nothing when the reading fails", async () => {
+    const person = await signedIn("nothing-consumed-on-failure@example.com");
+    await documentsFor(person.id, [theSet.cvEnglish.filename], storage);
+    const cases = withCases({
+      "intake.read:2026-08-30_cv_EN": { content: "No pre generated text" },
+    });
+
+    try {
+      await (await read(person.cookie)).text();
+    } finally {
+      cases.dispose();
+    }
+
+    const [row] = await rowsOf(person.id);
+    expect(row?.status).toBe("failed");
+    expect(row?.storageKey).not.toBeNull();
+    expect(objectsHeld(storage)).toHaveLength(1);
+  });
+
+  /**
+   * The profile is written by the time the files go, so a storage that will not delete is
+   * a thing to log and nothing else: a run that failed here would tell the person their
+   * documents could not be read, which is not what happened.
+   */
+  it("logs a file that will not go and still ends the run as done", async () => {
+    const person = await signedIn("a-file-that-will-not-go@example.com");
+    await documentsFor(person.id, [theSet.cvEnglish.filename], storage);
+    const refusing = {
+      put: (key: ObjectKey, object: StoredObject) => storage.put(key, object),
+      get: (key: ObjectKey) => storage.get(key),
+      delete: (key: ObjectKey) => Promise.reject(new Error(`the object will not delete: ${key}`)),
+    } satisfies Storage;
+    objects.storage = refusing;
+    const logged = vi.spyOn(console, "error").mockImplementation(() => undefined);
+
+    try {
+      const leaves = leavesOf(await (await read(person.cookie)).text());
+
+      expect(leaves.at(-1)).toEqual(expect.objectContaining({ kind: "run", status: "done" }));
+      const [row] = await rowsOf(person.id);
+      expect(row?.status).toBe("read");
+      expect(logged).toHaveBeenCalledOnce();
+      // The key stays on the row when the file would not go, so the object is still named
+      // by something and the account's deletion takes it.
+      expect(row?.storageKey).not.toBeNull();
+    } finally {
+      objects.storage = storage;
+      logged.mockRestore();
     }
   });
 });

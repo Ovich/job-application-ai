@@ -358,7 +358,12 @@ export type ProfileConcernSource = (typeof profileConcernSource.enumValues)[numb
  * for an assistant with no subject: without it two `null` subjects are two values, and
  * two opens racing would each write a conversation.
  */
-export const conversationAuthor = pgEnum("conversation_author", ["person", "assistant", "tool"]);
+export const conversationAuthor = pgEnum("conversation_author", [
+  "person",
+  "assistant",
+  "tool",
+  "system",
+]);
 
 export const conversation = pgTable(
   "conversation",
@@ -369,6 +374,13 @@ export const conversation = pgTable(
       .references(() => user.id, { onDelete: "cascade" }),
     assistant: text("assistant").notNull(),
     subject: text("subject"),
+    /**
+     * The agent's context window (D36, `ID304`), two entry positions: entries before
+     * `context_cut` are not sent, tool results before `context_cleared` are sent as a
+     * placeholder. Both null until the conversation first reaches the budget's trigger.
+     */
+    contextCut: integer("context_cut"),
+    contextCleared: integer("context_cleared"),
     createdAt: timestamp("created_at").notNull().defaultNow(),
   },
   (table) => [
