@@ -9,7 +9,7 @@
 # never having a schema ahead of the code that reads it.
 #
 # This pipeline no longer judges what it deployed. Checking the environment is
-# `check-dev.yml`, run by hand from the Actions tab, and the reason is what the check
+# `e2e-dev.yml`, run by hand from the Actions tab, and the reason is what the check
 # could never do rather than what it costs: it runs after the environment is already
 # updated, so a red verdict stops nothing — the deploy it grades has happened whatever it
 # says. Paying four minutes of the plan's minutes on every merge for an answer nobody was
@@ -76,13 +76,11 @@ jobs:
       # Where the development database's connection string lives. Neon issues it, a
       # person put it here, and nothing in the repository holds it (D19).
       DATABASE_SECRET: jobapp/dev/database-url
-      # The three dev client apps and what the function signs its session cookies with,
-      # one entry with a JSON key per value. App-dev.yaml resolves it while the stack is
-      # applied; this workflow reads it once more, for the deployed check, which signs a
-      # person in by writing the session itself and so needs the same secret the function
-      # verifies with (ID101). The deploy role may read this entry and the one above, and
-      # no other.
-      AUTH_SECRET: jobapp/dev/auth
+      # `jobapp/dev/auth` — the three dev client apps and the session signing secret — is
+      # deliberately absent here. App-dev.yaml resolves that entry itself while the stack
+      # is applied, so this workflow never reads it; `e2e-dev.yml` does, because signing a
+      # person in by writing the session row needs the secret the function verifies with
+      # (ID101). The deploy role may read that entry and the one above, and no other.
       # Stamped on every stack, and from there onto every resource that supports a tag.
       # A resource whose identifier AWS assigned (a distribution id, a hosted zone id)
       # can never say what it is; its tags are the only place that meaning can live, and

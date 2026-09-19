@@ -21,7 +21,7 @@
 # WHEN TO RUN IT. After a deploy whose result is in doubt; after rotating anything in
 # `jobapp/dev/auth`, since the fixture signs a person in with the secret the function
 # verifies with and a stale function fails here first; before trusting dev for a demo.
-name: check-dev
+name: e2e-dev
 
 on:
   workflow_dispatch:
@@ -29,11 +29,11 @@ on:
 # One at a time. The specs share one development environment and one of them measures
 # time: a stream watched for forty seconds beside another run's is measuring the runner.
 concurrency:
-  group: check-dev
+  group: e2e-dev
   cancel-in-progress: false
 
 jobs:
-  check-dev:
+  e2e-dev:
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     permissions:
