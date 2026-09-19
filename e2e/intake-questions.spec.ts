@@ -380,8 +380,12 @@ test("a chip clicked, words about it in the conversation, and somebody else's de
   // lands under the click throws away the menu it just opened. On a slow runner it landed
   // after the click, and the test waited its whole budget for a menu item that was never
   // coming. The shell, and its account menu, are the same on both pages.
+  //
+  // The square, not an account slot: product-flow-rework S1.1 took the AppBar off every
+  // route (D20) and the account's rows are at the foot of the left menu now. `exact`,
+  // because the panel's own "Close the menu" carries the word too.
   await theirPage.goto("/documents");
-  await theirPage.getByRole("button", { name: "Your account" }).click();
+  await theirPage.getByRole("button", { name: "Menu", exact: true }).click();
   await theirPage.getByRole("menuitem", { name: "Delete my account" }).click();
   const gate = theirPage.getByRole("dialog", { name: "Delete your account?" });
   await gate.getByRole("button", { name: "Acknowledge" }).click();
