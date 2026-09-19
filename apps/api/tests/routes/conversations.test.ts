@@ -49,6 +49,7 @@ const { cookiesSetBy, signInThrough, signedInAs } = await import("../support/sig
 const { documentsFor, theSet } = await import("../support/documents");
 const { chatModelThroughTheApp, failingMidStream, forgetRequests, requestsSent } =
   await import("../support/ai");
+const { withQuestions } = await import("../support/questions");
 
 beforeEach(() => {
   objects.storage = localStorageIn();
@@ -189,14 +190,14 @@ describe("the profile assistant's own opening, as the application is composed (I
 
   it("names the documents read, then the tail, and ends on the first waiting question's opener", async () => {
     const person = await signedIn("conversation-after-a-reading@example.com");
-    await documentsFor(
-      person.id,
-      [theSet.cvFrench.filename, theSet.cvWord2022.filename, theSet.cv2025.filename],
-      objects.storage as ReturnType<typeof localStorageIn>,
-    );
-    await (
-      await app.request("/api/intake/read", { method: "POST", headers: { cookie: person.cookie } })
-    ).text();
+    // The opening is what this case is about, and a question is what it opens on: the
+    // documents and the questions are written, and no reading is run (`S3.0`).
+    await documentsFor(person.id, [
+      theSet.cvFrench.filename,
+      theSet.cvWord2022.filename,
+      theSet.cv2025.filename,
+    ]);
+    await withQuestions(person.id);
     const profile = (await (
       await app.request("/api/intake/profile", { headers: { cookie: person.cookie } })
     ).json()) as { documents: number; questions: { itemTitle: string; state: string }[] };

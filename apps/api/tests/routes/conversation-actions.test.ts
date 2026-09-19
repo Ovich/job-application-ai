@@ -59,6 +59,7 @@ const { conversationsOf } = await import("../../src/routes/conversations");
 const { agentOn } = await import("../support/agent");
 const { profileAssistant } = await import("../../src/assistants/profile");
 const { itemNamed } = await import("../support/intake");
+const { withQuestions } = await import("../support/questions");
 
 let storage: ReturnType<typeof localStorageIn>;
 
@@ -90,16 +91,19 @@ const three = [
 const profileOf = async (cookie: string): Promise<Support.ProfileAnswer> =>
   (await (await app.request("/api/intake/profile", { headers: { cookie } })).json()) as never;
 
-/** A person whose run has left them the four questions the shipped case proposes. */
+/**
+ * A person whose run has left them the four questions the shipped case proposes.
+ *
+ * **The questions are written, not read out of documents** (`S3.0`). Nothing here is about
+ * the reading: a question is what an answer and a skip need to exist before they can be
+ * tested, so the fixture writes it directly and no run is driven. The documents are still
+ * the person's three, as rows, because a profile cites them and the assistant opens on
+ * that; their bytes are nobody's business here, so none go in.
+ */
 const asked = async (email: string) => {
   const person = await signedIn(email);
-  // The bytes go in with the rows: the reading turns each file into text itself before
-  // it asks anything, so a run over rows with no objects behind them reads nothing
-  // (`ID157`).
-  await documentsFor(person.id, three, storage);
-  await (
-    await app.request("/api/intake/read", { method: "POST", headers: { cookie: person.cookie } })
-  ).text();
+  await documentsFor(person.id, three);
+  await withQuestions(person.id);
   return { ...person, profile: await profileOf(person.cookie) };
 };
 

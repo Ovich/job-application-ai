@@ -15,10 +15,12 @@ import { localStorageIn } from "../../support/storage";
  *
  * The person under test uploads three real documents of the person's own set through the
  * intake's own route, so the object the erasure removes is an object a real upload put
- * (`D20`, the slice's criterion 9), and a reading run over two of them gives them items,
- * lines, provenance, questions and rules to be erased with. The third is left unread,
- * because a reading disposes of what it read (`ID309`): what a person still has bytes for
- * is what nobody has read yet.
+ * (`D20`, the slice's criterion 9), and the question fixture gives them the items, the
+ * provenance, the questions and — once they are answered — the rules to be erased with.
+ *
+ * **No reading is run here** (`S3.0`). What this file is about is what an erasure takes,
+ * and a reading is only one way of putting those rows there; the fixture writes them,
+ * which is both faster and one dependency fewer between an erasure and the intake.
  */
 
 const objects = vi.hoisted(() => ({ storage: undefined as unknown }));
@@ -51,6 +53,7 @@ const { cookiesSetBy, signInThrough, signedInAs } = await import("../../support/
 const { theSet, uploadOfFixture } = await import("../../support/documents");
 const { forgetRequests } = await import("../../support/ai");
 const { profileOf } = await import("../../../src/handlers/profile");
+const { withQuestions } = await import("../../support/questions");
 
 const appUrl = "http://localhost:4200";
 
@@ -79,9 +82,9 @@ const signedIn = async (email: string) => {
 const twoRealCvs = [theSet.cvFrench.filename, theSet.cvEnglish.filename] as const;
 
 /**
- * A person with everything this slice erases: three uploaded documents, two of them read
- * and one still holding its object, a reading run's items, lines and provenance, its
- * questions, and two profile concerns, each kept by an answer.
+ * A person with everything this slice erases: three uploaded documents, each still holding
+ * its object, a profile of items cited by them, the questions a reading would have left
+ * them, and two profile concerns, each kept by an answer.
  */
 const aPersonWithAProfile = async (email: string) => {
   const person = await signedIn(email);
@@ -93,9 +96,7 @@ const aPersonWithAProfile = async (email: string) => {
     });
   }
 
-  await (
-    await app.request("/api/intake/read", { method: "POST", headers: { cookie: person.cookie } })
-  ).text();
+  await withQuestions(person.id);
 
   // Two questions answered in the person's own words, each keeping one profile concern:
   // since `SL3` no concern is written on an item nobody asked about (D14), and since `SL7`
@@ -115,13 +116,13 @@ const aPersonWithAProfile = async (email: string) => {
   }
 
   /**
-   * One more document, handed over and left unread, and it is the one object this file
-   * watches.
+   * One more document, handed over after the profile was there, and it is the one object
+   * this file watches.
    *
-   * A reading consumes what it reads since `ID309`: the two CVs above have rows, and their
-   * facts, and no file at all once the run has written the profile. So the object the
-   * erasure has to take is a document nobody has read yet — which is also the state a
-   * person is in when they delete their account mid-intake.
+   * A reading consumes what it reads since `ID309`, so the object the erasure has to take
+   * is a document nobody has read yet — which is also the state a person is in when they
+   * delete their account mid-intake. This one is that document: nothing cites it, and its
+   * key is the key the cases ask the storage for.
    */
   const unread = (await (
     await app.request("/api/intake/documents", {
