@@ -116,10 +116,13 @@ describe("CurrentUser", () => {
       expect(await landingAfter("/profile")).toEqual(["/"]);
     });
 
-    it("sends a signed-in browser from / to /profile", async () => {
+    // Until product-flow-rework S1.1 a person at `/` was sent to `/profile`, because `/`
+    // was the sign-in screen and nothing else. `/` is the index now (D19), so the person
+    // stays on the address they asked for, and the sign-in screen is the branch below it.
+    it("keeps a signed-in browser on /, which is the index now", async () => {
       signedInAs({ ...stefan, providers: ["google"] });
 
-      expect(await landingAfter("/")).toEqual(["/profile"]);
+      expect(await landingAfter("/")).toEqual(["/"]);
     });
 
     it("lets a signed-out browser see the entry route", async () => {

@@ -8,10 +8,14 @@ import { itemOf, profileIs, resetIntake } from "../../support/intake";
 import { failing, reset, sentTo, signedInAs, signedOut, unreachable } from "../../support/session";
 
 /**
- * The shell at `/profile`, rendered with the AppBar in it (seam E): signed in, the bar
- * shows the initials over an empty page; Sign out asks the library's client for its
- * sign-out and the browser lands on the entry route; a reload after it asks
- * `get-session`, which answers null, and lands there too (US3).
+ * The shell at `/profile` (seam E): signed in, the menu square sits over the page and the
+ * left menu opens from it; Sign out asks the library's client for its sign-out and the
+ * browser lands on the entry route; a reload after it asks `get-session`, which answers
+ * null, and lands there too (US3).
+ *
+ * product-flow-rework S1.1 moved what the AppBar held under the square (D20). The cases
+ * below are the same ones; what changed is where a person presses to reach them, so the
+ * square is what they open and the account's rows are read inside the menu's panel.
  *
  * Reached through the router with the application's own routes (ID73), so the guard
  * that let the shell render is the real one (seam C), and the library is stood in for
@@ -53,8 +57,8 @@ describe("the shell", () => {
     const harness = await RouterTestingHarness.create();
     await harness.navigateByUrl("/profile");
     const page = () => harness.routeNativeElement;
-    const slot = () =>
-      page()?.querySelector<HTMLButtonElement>('button[aria-label="Your account"]');
+    /** The menu square: what the AppBar's account slot used to be, for these cases (D20). */
+    const slot = () => page()?.querySelector<HTMLButtonElement>('button[aria-label="Menu"]');
     const signOutItem = () =>
       Array.from(page()?.querySelectorAll("[role=menu] button") ?? []).find(
         (button) => textOf(button) === "Sign out",
@@ -114,13 +118,75 @@ describe("the shell", () => {
     };
   };
 
-  it("shows the bar with the initials, and the viewer below it", async () => {
+  it("shows the menu square and no app bar, with the viewer below them", async () => {
     const { page, slot } = await profileOpened();
     await vi.waitFor(() => expect(slot()).not.toBeNull());
 
-    expect(textOf(slot())).toBe("ST");
-    // Empty since the foundation, and this is the slice that filled it (SL3).
+    expect(slot()?.getAttribute("aria-expanded")).toBe("false");
+    expect(page()?.querySelector("app-bar")).toBeNull();
+    // Empty since the foundation, and SL3 is the slice that filled it.
     expect(page()?.querySelector("main profile-viewer")).not.toBeNull();
+  });
+
+  /**
+   * The square and the panel it opens (product-flow-rework S1.1, D20). Markup and one
+   * signal, nothing crossing the network, so the seam is crossed directly: what is asked
+   * is what a person sees and presses, and where the focus is after Escape, which is the
+   * whole of whether a keyboard can use the thing.
+   */
+  describe("the left menu", () => {
+    const menuPanel = (page: () => Element | null) =>
+      page()?.querySelector("left-menu aside") ?? null;
+
+    it("opens the menu when the square is pressed, and says so on the square", async () => {
+      const { harness, page, slot } = await profileOpened();
+      await vi.waitFor(() => expect(slot()).not.toBeNull());
+      expect(menuPanel(page)).toBeNull();
+
+      slot()?.click();
+      harness.detectChanges();
+
+      expect(menuPanel(page)).not.toBeNull();
+      expect(slot()?.getAttribute("aria-expanded")).toBe("true");
+    });
+
+    it("holds Profile, the inert Applications and Credits, and the account", async () => {
+      const { harness, page, slot } = await profileOpened();
+      await vi.waitFor(() => expect(slot()).not.toBeNull());
+
+      slot()?.click();
+      harness.detectChanges();
+
+      const panel = menuPanel(page);
+      expect(Array.from(panel?.querySelectorAll("a") ?? []).map(textOf)).toEqual([
+        "Home",
+        "Profile",
+      ]);
+      const inert = Array.from(panel?.querySelectorAll('[aria-disabled="true"]') ?? []).map(textOf);
+      expect(inert).toEqual(["Applications", "Credits CHF 12.40"]);
+      const account = panel?.querySelector("[role=menu]");
+      expect(textOf(account)).toContain("Stefan Teofanovic");
+      expect(textOf(account)).toContain("stefan@example.com");
+      expect(Array.from(account?.querySelectorAll("button") ?? []).map(textOf)).toEqual([
+        "Sign out",
+        "Delete my account",
+      ]);
+    });
+
+    it("closes on Escape and puts the focus back on the square", async () => {
+      const { harness, page, slot } = await profileOpened();
+      await vi.waitFor(() => expect(slot()).not.toBeNull());
+      slot()?.click();
+      harness.detectChanges();
+      expect(menuPanel(page)).not.toBeNull();
+
+      document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+      harness.detectChanges();
+
+      expect(menuPanel(page)).toBeNull();
+      expect(slot()?.getAttribute("aria-expanded")).toBe("false");
+      expect(document.activeElement).toBe(slot());
+    });
   });
 
   it("signs out through the library and lands on the entry route", async () => {

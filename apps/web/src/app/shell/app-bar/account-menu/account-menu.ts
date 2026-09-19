@@ -14,14 +14,15 @@ import { UiText } from "../../../ui/typography/text/text";
  * arrived; it names every linked provider in the order linked, since which one signed
  * them in is not knowable at the library's defaults (F1, D20).
  *
- * It calls nothing and owns no state: the bar opens and closes it and forwards its
- * outputs. Anchored under the slot by the bar's own positioning, without an overlay:
- * one menu of two items does not yet earn a popover component.
+ * It calls nothing, owns no state and places itself nowhere: whoever draws it says where
+ * it goes, in the `class` written on the element. That is what lets the left menu (D20)
+ * hold these very rows at the foot of its panel while the bar still anchors them under
+ * its account slot, with no second copy of them anywhere.
  */
 @Component({
   selector: "app-account-menu",
   imports: [AppProviderMark, UiBox, UiMenuItem, UiRow, UiSeparator, UiText],
-  host: { role: "menu", class: "absolute top-11 right-0 z-10 block w-[270px]" },
+  host: { role: "menu", class: "block" },
   templateUrl: "./account-menu.html",
 })
 export class AppAccountMenu {

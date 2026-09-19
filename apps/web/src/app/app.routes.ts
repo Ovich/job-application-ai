@@ -1,12 +1,31 @@
 import type { Routes } from "@angular/router";
-import { signedIn, signedOut } from "./auth/current-user";
+import { hasSession, signedIn, signedOut } from "./auth/current-user";
 
 /**
- * The application's routes (ID73): `/` is the entry route and `/profile` the shell,
- * each behind one of `auth/current-user`'s guards, so a live session skips the entry route
- * and no session leaves the shell for it. No logic on either line.
+ * The application's routes (ID73): `/`, `/profile` and `/documents`, each behind one of
+ * `auth/current-user`'s guards, so a live session sees the product and no session leaves
+ * the shell for the sign-in screen. No logic on any line.
+ *
+ * `/` is two entries and not one (product-flow-rework S1.1, D19): the index for a person,
+ * the sign-in screen for nobody. The first carries `canMatch` rather than `canActivate`,
+ * because a `canActivate` that says no ends the navigation and what is wanted here is the
+ * next entry for the same address. Order is the whole of it: the index is tried first, and
+ * with no session it does not match, so the sign-in screen below is what renders. Which
+ * also leaves the prerender (ID77) exactly what it was — nothing answers `get-session` on
+ * a build machine, so `/` is still written out of the sign-in screen.
  */
 export const routes: Routes = [
+  {
+    path: "",
+    canMatch: [hasSession],
+    loadComponent: () => import("./shell/app-shell/app-shell").then((m) => m.AppShell),
+    children: [
+      {
+        path: "",
+        loadComponent: () => import("./home/home-page/home-page").then((m) => m.HomePage),
+      },
+    ],
+  },
   {
     path: "",
     canActivate: [signedOut],

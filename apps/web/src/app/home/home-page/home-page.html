@@ -1,0 +1,66 @@
+<div uiStack gap="xl" class="mx-auto w-full max-w-[600px] px-4 pb-12 sm:px-6">
+  <div uiStack gap="xs">
+    <h1 uiText variant="figure" weight="semibold" align="center">
+      @if (firstName(); as name) {
+        Welcome back, {{ name }}
+      } @else {
+        Welcome back
+      }
+    </h1>
+    <p uiText tone="muted" align="center">Start with the offer you are applying to.</p>
+  </div>
+
+  <!-- The way to a new offer. Until offer-intake lands it is drawn and disabled, with the
+       second telling on it, rather than absent: the door is where it will be. -->
+  <div uiStack gap="md" uiBox surface="card" radius="lg" border p="lg" class="shadow-card">
+    <p uiText variant="ui" weight="semibold">A new offer</p>
+    <button
+      type="button"
+      hlmBtn
+      disabled
+      uiTooltip="Not available yet"
+      class="w-full sm:w-auto sm:self-start"
+    >
+      Start an application
+    </button>
+  </div>
+
+  <section uiStack gap="sm" aria-label="Your applications">
+    <h2 uiText variant="ui" weight="semibold" tone="muted">Your applications</h2>
+    <p
+      uiText
+      tone="muted"
+      align="center"
+      uiBox
+      radius="lg"
+      surface="card"
+      px="lg"
+      py="lg"
+      class="border border-border border-dashed"
+    >
+      No application yet
+    </p>
+  </section>
+
+  <section uiStack gap="sm" aria-label="Your profile">
+    <h2 uiText variant="ui" weight="semibold" tone="muted">Your profile</h2>
+    <a
+      href="/profile"
+      routerLink="/profile"
+      uiRow
+      justify="between"
+      uiBox
+      surface="card"
+      radius="lg"
+      border
+      px="lg"
+      py="md"
+      uiText
+      variant="ui"
+      class="no-underline hover:bg-muted"
+    >
+      <span>What every application is written from</span>
+      <span uiText variant="ui" weight="semibold" class="text-accent-foreground">Open</span>
+    </a>
+  </section>
+</div>

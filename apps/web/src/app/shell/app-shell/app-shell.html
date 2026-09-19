@@ -1,11 +1,16 @@
 <div uiStack gap="none" class="h-dvh overflow-hidden">
-  @if (user(); as user) {
-    <div class="relative">
-      <app-bar [user]="user" (signOut)="signOut()" (deleteAccount)="openDeletion()" />
-      <!-- Under the account slot, where the menu was: the bar's padding from the right, just below the slot. -->
+  <div class="relative shrink-0">
+    <!-- The top row (D20): the square where the AppBar began, and the wordmark beside it.
+         A page that wants a bar of its own draws it in the outlet below. -->
+    <div uiRow gap="none" align="stretch" class="border-border border-b bg-card">
+      <menu-button [expanded]="menuOpen()" (toggle)="toggleMenu()" />
+      <span uiRow class="min-w-0 flex-1 px-4 sm:px-6"><app-wordmark /></span>
+    </div>
+    <!-- Under the square, where the menu was: the row's padding from the left, just below it. -->
+    @if (user(); as user) {
       @if (deletion(); as open) {
         <app-delete-account
-          class="absolute top-[57px] right-4 z-10 max-w-[calc(100%-2rem)]"
+          class="absolute top-[65px] left-4 z-10 max-w-[calc(100%-2rem)]"
           [providers]="user.providers"
           [working]="open.working"
           [failed]="open.failed"
@@ -13,7 +18,16 @@
           (cancel)="closeDeletion()"
         />
       }
-    </div>
-  }
+    }
+  </div>
+
+  <left-menu
+    [open]="menuOpen()"
+    [user]="user()"
+    (close)="closeMenu()"
+    (signOut)="signOut()"
+    (deleteAccount)="openDeletion()"
+  />
+
   <main uiPage><router-outlet /></main>
 </div>

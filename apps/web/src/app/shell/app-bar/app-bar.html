@@ -65,6 +65,7 @@
     </button>
     @if (menuOpen()) {
       <app-account-menu
+        class="absolute top-11 right-0 z-10 w-[270px]"
         [user]="user()"
         (signOut)="forward(signOut)"
         (deleteAccount)="forward(deleteAccount)"
