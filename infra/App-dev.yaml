@@ -155,13 +155,31 @@ Resources:
         S3Key: !Ref ApiArtefactKey
       Environment:
         Variables:
+          # WHY A DEPLOYMENT STAMP SITS IN THE ENVIRONMENT, AND WHY REMOVING IT SILENTLY
+          # FREEZES EVERY SECRET BELOW. CloudFormation resolves a dynamic reference when
+          # the property holding it changes, and not otherwise. Every `{{resolve:...}}`
+          # in this stack lives in this one `Environment` map, whose text is identical on
+          # every deploy — so the values were resolved once, when the stack was created,
+          # and kept from then on. A rotated secret reached the function never.
+          #
+          # Proven on 2026-09-19: `jobapp/dev/auth` was rotated, a deploy of new code was
+          # applied, the function's code was replaced — and it still served the values
+          # from before the rotation. Sign-in broke against the providers, and the
+          # replaced signing secret stayed live on the environment.
+          #
+          # This binds the map to the artefact key, which is the commit SHA, so a deploy
+          # of changed code rewrites the property and every secret in it is read afresh.
+          # A deploy of unchanged code resolves nothing new, which is the no-op that key
+          # already promises: to publish a rotation, deploy a commit.
+          DEPLOYMENT: !Ref ApiArtefactKey
           # The pooled connection string of the Neon project in aws-eu-central-1, held
           # in Secrets Manager and never in this repository (D19). A dynamic
           # reference: CloudFormation reads the secret while it applies the stack, so
           # the function needs no right on Secrets Manager and makes no call to it at
           # cold start. The consequence, and it is the reason the name is written here
           # rather than passed as a parameter: a rotated secret reaches the function on
-          # the next deploy, not on the rotation.
+          # the next deploy of changed code, not on the rotation — and only because of
+          # the stamp above.
           DATABASE_URL: "{{resolve:secretsmanager:jobapp/dev/database-url:SecretString}}"
           # Where the browser reaches this environment, and so the origin each provider
           # sends it back to: the callback registered at each is
@@ -176,10 +194,11 @@ Resources:
           # One entry, `jobapp/dev/auth`, with a JSON key per value, resolved the way
           # DATABASE_URL above is: CloudFormation reads it while it applies the stack, so
           # the function needs no right on Secrets Manager and makes no call at cold
-          # start, and a rotated secret reaches the function on the next deploy rather
-          # than on the rotation. A person created the entry by hand, as the connection
-          # string was created (D19); no template here creates a secret, so nothing in
-          # this repository ever holds one.
+          # start, and a rotated secret reaches the function on the next deploy of changed
+          # code rather than on the rotation — which holds only because of the DEPLOYMENT
+          # stamp at the head of this map. A person created the entry by hand, as the
+          # connection string was created (D19); no template here creates a secret, so
+          # nothing in this repository ever holds one.
           #
           # Absent any of these, the cold start fails naming the field (ID23, and
           # apps/api/src/env.ts): a function that answered with a provider unconfigured
