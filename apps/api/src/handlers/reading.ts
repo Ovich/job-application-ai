@@ -680,18 +680,23 @@ const readingAll = (document: string): BaseMessage[] => [
 ];
 
 /**
- * What a reading is about: which reading it is, and the run's documents by name in the
- * run's order (`ID315`).
+ * What a reading is about: which reading it is, and the run's documents by name (`ID315`).
  *
  * The step is `read` for the reading that creates a profile and `read-more` for the one
  * that adds to it, because they are two steps and the reading already names its steps
  * (`ID182`). Nothing here is for anybody's benefit but the name's: what a step is called
  * is decided by what it is, and this file knows of no double that might read it.
+ *
+ * **The names are sorted, so the same documents are the same reading whichever order they
+ * were handed over in** (`ID321`). A run of *n* documents has *n!* orders and they are all
+ * one reading: the order decides which part of the composed document comes first and
+ * nothing else, since a fact cites its part by name and not by position. Unsorted, the
+ * name of a reading was a fact about the order somebody dropped their files in.
  */
 const theReadingOf = (step: "read" | "read-more", names: string[]): About => ({
   feature: "intake",
   step,
-  input: names.join("+"),
+  input: [...names].sort().join("+"),
 });
 
 /**

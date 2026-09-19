@@ -202,14 +202,35 @@ describe("the reading run (criterion 10, D8)", () => {
    * is the same one: what the run asks for is exactly what the run needs, and the header
    * says which documents it is about. What changed is that there is one of them.
    */
-  it("makes one call for the whole run, its case naming every document in order", async () => {
+  it("makes one call for the whole run, its case naming every document, sorted", async () => {
     const person = await signedIn("one-call-each@example.com");
     await documentsFor(person.id, three, storage);
 
     await (await read(person.cookie)).text();
 
     expect(requestsSent().map((request) => request.headers["x-jobapp-case"])).toEqual([
-      "intake.read:2026-08-30_cv_FR+2026-08-30_cv_EN+BS-HEIGVD-IL-Diplome",
+      "intake.read:2026-08-30_cv_EN+2026-08-30_cv_FR+BS-HEIGVD-IL-Diplome",
+    ]);
+  });
+
+  /**
+   * The same documents are the same reading, whichever order they were handed over in
+   * (`ID321`).
+   *
+   * `three` is handed over French first and this case hands the very same three over
+   * backwards; both name one reading. The order decides which part of the composed
+   * document comes first and nothing else, because a fact cites its part by name and not
+   * by position — so a run of *n* documents had *n!* names for one reading, and the
+   * project shipped two byte-identical recordings to cover two of them.
+   */
+  it("names the same reading whichever order the documents were handed over in", async () => {
+    const person = await signedIn("any-order-one-case@example.com");
+    await documentsFor(person.id, [...three].reverse(), storage);
+
+    await (await read(person.cookie)).text();
+
+    expect(requestsSent().map((request) => request.headers["x-jobapp-case"])).toEqual([
+      "intake.read:2026-08-30_cv_EN+2026-08-30_cv_FR+BS-HEIGVD-IL-Diplome",
     ]);
   });
 
@@ -299,7 +320,7 @@ describe("the reading run (criterion 10, D8)", () => {
     ]);
     // And the reading was asked about the two that became text, and only those.
     expect(requestsSent().map((request) => request.headers["x-jobapp-case"])).toEqual([
-      "intake.read:2026-08-30_cv_FR+2026-08-30_cv_EN",
+      "intake.read:2026-08-30_cv_EN+2026-08-30_cv_FR",
     ]);
   });
 
@@ -331,7 +352,7 @@ describe("the reading run (criterion 10, D8)", () => {
     // is tried before the project's own and cannot take one away (`ID295`), so the reading
     // that cannot be had is written in its place. It is not JSON, and the reading fails.
     const nothingUsable = withCases({
-      "intake.read:2026-08-30_cv_FR+2026-08-30_cv_EN": { content: "No pre generated text" },
+      "intake.read:2026-08-30_cv_EN+2026-08-30_cv_FR": { content: "No pre generated text" },
     });
     try {
       await (await read(person.cookie)).text();
@@ -827,7 +848,7 @@ describe("what one reading of the composed documents writes (criteria 3, 4, 5)",
  * resolve to a document of this run.
  */
 const twoCvs = [theSet.cvFrench.filename, theSet.cvEnglish.filename];
-const theRunsCase = "intake.read:2026-08-30_cv_FR+2026-08-30_cv_EN";
+const theRunsCase = "intake.read:2026-08-30_cv_EN+2026-08-30_cv_FR";
 
 describe("an answer that cannot be used (spec, Failure modes)", () => {
   it("writes no part of a profile when the answer carries an item nothing stands behind", async () => {

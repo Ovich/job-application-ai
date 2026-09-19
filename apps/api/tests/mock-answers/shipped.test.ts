@@ -40,21 +40,20 @@ const files = readdirSync(mockAnswers, { recursive: true, encoding: "utf8" })
 describe("the answers this project ships", () => {
   /**
    * **One intake case per run, not per document** (`ID157`, `ID158`), each named from the
-   * person's real files, by slug, in the run's order (`D20`). There is no LinkedIn export
+   * person's real files, by slug, sorted (`D20`, `ID321`). There is no LinkedIn export
    * case and no photograph case, and that is not an omission: the person's set holds
    * neither document, and a canned answer standing for no real file is what `D20` forbids.
    */
   it("holds one intake case per run of the person's real documents, and a reply per option of every recorded question", () => {
     expect(files).toEqual([
       "intake/read-more__2026-09-09_cv-en_ownership-application-management.json",
+      "intake/read__2026-08-30_cv_EN+2026-08-30_cv_FR+BS-HEIGVD-IL-Diplome.json",
       "intake/read__2026-08-30_cv_EN+2026-08-30_cv_FR.json",
       "intake/read__2026-08-30_cv_EN+2026-09-09_cv-en_ownership-application-management.json",
       "intake/read__2026-08-30_cv_EN.json",
-      "intake/read__2026-08-30_cv_FR+2026-08-30_cv_EN+BS-HEIGVD-IL-Diplome.json",
-      "intake/read__2026-08-30_cv_FR+2026-08-30_cv_EN.json",
-      "intake/read__2026-08-30_cv_FR+leCVWeb+CV-2025.json",
+      "intake/read__2026-08-30_cv_FR+CV-2025+leCVWeb.json",
       "intake/read__2026-08-30_cv_FR.json",
-      "intake/read__leCVWeb+CV-2025.json",
+      "intake/read__CV-2025+leCVWeb.json",
       "profile/charrette-a-personal-project.json",
       "profile/charrette-built-for-this-job-search.json",
       "profile/charrette-work-that-became-open-source.json",
@@ -80,13 +79,19 @@ describe("the answers this project ships", () => {
       "intake.read-more:2026-09-09_cv-en_ownership-application-management",
       "intake.read:2026-08-30_cv_EN",
       "intake.read:2026-08-30_cv_EN+2026-08-30_cv_FR",
+      "intake.read:2026-08-30_cv_EN+2026-08-30_cv_FR+BS-HEIGVD-IL-Diplome",
       "intake.read:2026-08-30_cv_EN+2026-09-09_cv-en_ownership-application-management",
       "intake.read:2026-08-30_cv_FR",
-      "intake.read:2026-08-30_cv_FR+2026-08-30_cv_EN",
-      "intake.read:2026-08-30_cv_FR+2026-08-30_cv_EN+BS-HEIGVD-IL-Diplome",
-      "intake.read:2026-08-30_cv_FR+leCVWeb+CV-2025",
-      "intake.read:leCVWeb+CV-2025",
+      "intake.read:2026-08-30_cv_FR+CV-2025+leCVWeb",
+      "intake.read:CV-2025+leCVWeb",
     ]);
+
+    // One recording per set of documents, not per order they were handed over in
+    // (`ID321`): a case names its documents sorted, so `n!` orders are one reading.
+    for (const file of files.filter((each) => each.startsWith("intake/"))) {
+      const named = (written(file).case ?? "").split(":")[1] ?? "";
+      expect(named.split("+")).toEqual([...named.split("+")].sort());
+    }
     expect(files.filter((file) => /linkedin|export|photo/i.test(file))).toEqual([]);
   });
 

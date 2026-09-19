@@ -127,9 +127,13 @@ const recorded = (stands_for: string, content: string): CaseWritten => ({
   content,
 });
 
-/** The one case a run asks for, named by every document of the run, in the run's order. */
+/**
+ * The one case a run asks for, named by every document of the run, sorted (`ID321`), as
+ * `theReadingOf` names it: the same documents are the same reading whichever order they
+ * were handed over in.
+ */
 export const caseNameFor = (documents: readonly string[]): string =>
-  `intake.read:${documents.map(slugOf).join("+")}`;
+  `intake.read:${[...documents.map(slugOf)].sort().join("+")}`;
 
 /**
  * The one case a run needs, in the shape `withCases` takes.

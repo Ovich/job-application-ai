@@ -108,7 +108,7 @@ describe("the questions a reading leaves open, over the cases the product ships 
     await (await read(person.cookie)).text();
 
     expect(requestsSent().map((request) => request.headers["x-jobapp-case"])).toEqual([
-      "intake.read:2026-08-30_cv_FR+leCVWeb+CV-2025",
+      "intake.read:2026-08-30_cv_FR+CV-2025+leCVWeb",
     ]);
   });
 
