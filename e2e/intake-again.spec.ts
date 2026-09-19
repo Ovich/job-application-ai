@@ -160,10 +160,10 @@ test("two documents handed over at once are one reading, and one profile from bo
   await page.goto("/profile");
   await expect(page.locator("profile-sheet")).toBeVisible();
 
-  // One profile out of both: a fact both CVs state carries a source apiece, which is what
-  // the sheet prints beside it.
-  await expect(
-    page.locator("[data-part=from]").filter({ hasText: "2 documents" }).first(),
-  ).toBeVisible();
+  // One profile out of both, said without counting documents: the sheet stopped printing
+  // how many a part came from (product-flow-rework `S2.2`, `H10`). What says both CVs fed
+  // this one profile is a thing only the first states drawn beside a thing only the
+  // second states.
+  await expect(page.getByText("Charrette").first()).toBeVisible();
   await expect(page.getByText("Windows Server & AD").first()).toBeVisible();
 });
