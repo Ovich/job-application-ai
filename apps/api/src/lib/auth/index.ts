@@ -7,7 +7,6 @@ import {
   itemProject,
   profileConcern,
   profileItem,
-  provenance,
   question,
 } from "@app/db";
 import { betterAuth } from "better-auth";
@@ -111,8 +110,8 @@ import { keyFor, storage } from "../storage";
  * removes the user (ID65b, ID126). Each later slot extends this one function rather
  * than inventing a deletion path of its own:
  *
- * - the documents, the profile, its items, their lines, their per-kind rows and their
- *   provenance, the rules and the questions — this slot's (`SL5`)
+ * - the documents, the profile, its items, their lines and their per-kind rows, the rules
+ *   and the questions — this slot's (`SL5`)
  * - every S3 object belonging to the person — this slot's too, and the reason the rows
  *   are erased here rather than left to the `on delete cascade` each of those tables
  *   already carries: a row deleted with its object left behind is a promise broken
@@ -161,16 +160,12 @@ const beforeDelete = async (user: { id: string }): Promise<void> => {
       .from(profileItem)
       .where(eq(profileItem.userId, user.id));
     const itemIds = items.map((item) => item.id);
-    const documentIds = documents.map((each) => each.id);
 
     // Ordered by the foreign keys and not by the register's sentence: the questions and
-    // the profile concerns point at items, the provenance at items and documents, the lines
-    // at items, and every per-kind row at the item it completes.
+    // the profile concerns point at items, the lines at items, and every per-kind row at
+    // the item it completes.
     await tx.delete(question).where(eq(question.userId, user.id));
     await tx.delete(profileConcern).where(eq(profileConcern.userId, user.id));
-    if (documentIds.length > 0) {
-      await tx.delete(provenance).where(inArray(provenance.documentId, documentIds));
-    }
     if (itemIds.length > 0) {
       await tx.delete(itemLine).where(inArray(itemLine.itemId, itemIds));
       await tx.delete(itemExperience).where(inArray(itemExperience.itemId, itemIds));

@@ -9,7 +9,6 @@ import {
   itemLine,
   itemProject,
   profileItem,
-  provenance,
 } from "@app/db";
 import { type BaseMessage, HumanMessage, SystemMessage } from "@langchain/core/messages";
 import { and, asc, eq, inArray, ne } from "drizzle-orm";
@@ -135,7 +134,7 @@ export const readDocuments = (agent: ConversationsAgent, profile: Assistant) =>
        *
        * They are held for the length of the run and not written to a table of their own,
        * because the register has none: a fact becomes a row when the reading places it,
-       * as `profile_item` with its `provenance`. A run with nothing new to read makes no
+       * as `profile_item` and its lines. A run with nothing new to read makes no
        * call at all, which is what keeps a second run free of them (`SL2`'s criterion 11).
        */
       const read: { name: string; id: string; key: ObjectKey; text: string }[] = [];
@@ -208,7 +207,7 @@ export const readDocuments = (agent: ConversationsAgent, profile: Assistant) =>
          * The reading: one composed document, one call (`ID157`, the person 2026-09-12).
          *
          * Every document this run could read is joined into a single document, each part
-         * under the name the profile's sources cite, and one call answers it. There is no
+         * under the name the answer's sources cite, and one call answers it. There is no
          * classification step and no merge: nothing branches on what kind a document is
          * (`ID158`), and nothing needs reconciling when the model saw every document at
          * once.
@@ -377,8 +376,9 @@ const quoted = z.object({ document: z.string().min(1), said: z.string().min(1) }
  *
  * A malformed answer is a failed step and never a partly written profile (spec,
  * *Failure modes*): `askFor` parses, this shape refuses, and the writer below never
- * runs. `sources` is required on every item, because an item nothing said is exactly
- * the thing this product promises not to produce.
+ * runs. `sources` is still required on every item, and still read: no row keeps it any
+ * more (`ID334`), but an item citing nothing — or citing a document this run did not read
+ * — is an answer about papers nobody handed over, and the writer refuses it.
  */
 const mergedItem: z.ZodType<MergedItem> = z.lazy(() =>
   z.object({
@@ -444,6 +444,11 @@ type Written = { added: string[]; addedTo: string[] };
  * handed over fails as a step rather than as half a profile; and every `extends`, to an
  * item of this person, so an answer naming somebody else's item — or none at all — writes
  * nothing.
+ *
+ * **The first of those two resolutions now writes nothing** (`ID334`): no row keeps what a
+ * document said. It stays a check and nothing else, because an answer that cites a document
+ * this run did not read is an answer about somebody else's papers, and that is worth
+ * refusing whether or not the quote is kept.
  *
  * Inside, nothing is deleted and nothing is updated. New items take positions after the
  * last item, new lines after the item's last line, new children after its last child, so
@@ -511,14 +516,6 @@ const writeProfile = async (
         await tx
           .insert(itemLine)
           .values({ id: lineId, itemId, text: line.text, position: from + at });
-        for (const source of line.sources) {
-          await tx.insert(provenance).values({
-            id: randomUUID(),
-            documentId: documentFor(source.document),
-            lineId,
-            said: source.said,
-          });
-        }
       }
     };
 
@@ -566,14 +563,6 @@ const writeProfile = async (
           .values({ itemId: id, label: item.entry.label, qualifier: item.entry.qualifier ?? null });
       }
       await writeLines(id, item.lines ?? [], 0);
-      for (const source of item.sources) {
-        await tx.insert(provenance).values({
-          id: randomUUID(),
-          documentId: documentFor(source.document),
-          itemId: id,
-          said: source.said,
-        });
-      }
       // A group's entries are entries and an entry has nothing under it: that is what
       // makes a group flat by construction rather than by the screen's restraint (D17).
       const children = item.kind === "entry" ? [] : (item.children ?? []);

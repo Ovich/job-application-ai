@@ -1,11 +1,9 @@
 import { randomUUID } from "node:crypto";
 import {
-  document,
   type ItemKind,
   itemEntry,
   itemExperience,
   profileItem,
-  provenance,
   type QuestionKind,
   question,
   questionOption,
@@ -29,10 +27,10 @@ import { testDb } from "./database";
  *
  * **What it writes is what a question cannot exist without.** A `question` row points at
  * a `profile_item` through a foreign key, so the item is written when the person has none
- * by that title; and the profile assistant refuses to open a conversation for a person
- * whose profile cites no document (`nothing read yet`, `ID202`), so each item it writes is
- * cited by every document the person already holds. It creates no document of its own: a
- * caller hands the documents over first, as a person does.
+ * by that title. That item is also what the profile assistant opens on: it refuses a
+ * conversation for a person with no profile at all (`nothing read yet`, `ID202`, `ID334`).
+ * It creates no document of its own: a caller hands the documents over first, as a person
+ * does, and since `ID334` nothing here ties an item to one.
  *
  * **The questions are the ones the shipped case proposes**, in its order and its wording,
  * because that is what the suites in scope were already reading back through
@@ -203,12 +201,6 @@ const written = async (
   // foreign key's cascade.
   await testDb.delete(question).where(eq(question.userId, userId));
 
-  const documents = await testDb
-    .select({ id: document.id })
-    .from(document)
-    .where(eq(document.userId, userId))
-    .orderBy(asc(document.createdAt), asc(document.id));
-
   const standing = await testDb
     .select()
     .from(profileItem)
@@ -218,7 +210,7 @@ const written = async (
   for (const item of standing) if (!idOf.has(item.title)) idOf.set(item.title, item.id);
   let position = standing.length;
 
-  /** The item a title names, written with its documents behind it when there is none. */
+  /** The item a title names, written when the person has none by that title. */
   const itemFor = async (
     kind: ItemKind,
     title: string,
@@ -233,13 +225,6 @@ const written = async (
     if (kind === "entry") await testDb.insert(itemEntry).values({ itemId: id, label: title });
     if (kind === "experience") {
       await testDb.insert(itemExperience).values({ itemId: id, organisation: "HEIG-VD" });
-    }
-    // Cited by every document the person handed over, so the profile counts them and the
-    // assistant has something to open on.
-    for (const each of documents) {
-      await testDb
-        .insert(provenance)
-        .values({ id: randomUUID(), documentId: each.id, itemId: id, said: title });
     }
     idOf.set(title, id);
     return id;

@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { ObjectKey, Storage } from "../../../src/lib/storage";
 import { subjectAt } from "../../support/providers";
@@ -16,7 +17,9 @@ import { localStorageIn } from "../../support/storage";
  * The person under test uploads three real documents of the person's own set through the
  * intake's own route, so the object the erasure removes is an object a real upload put
  * (`D20`, the slice's criterion 9), and the question fixture gives them the items, the
- * provenance, the questions and — once they are answered — the rules to be erased with.
+ * questions and — once they are answered — the rules to be erased with. One line is
+ * written on an item here, so the claim that the lines go is made over a row that existed:
+ * `provenance` was the other row hanging off an item and it is gone with `ID334`.
  *
  * **No reading is run here** (`S3.0`). What this file is about is what an erasure takes,
  * and a reading is only one way of putting those rows there; the fixture writes them,
@@ -43,8 +46,7 @@ vi.mock("../../../src/lib/ai", async (importOriginal) => {
 });
 
 const { testDb } = await import("../../support/database");
-const { document, itemLine, profileConcern, profileItem, provenance, question } =
-  await import("@app/db");
+const { document, itemLine, profileConcern, profileItem, question } = await import("@app/db");
 const { eq } = await import("drizzle-orm");
 const { app } = await import("../../../src/app");
 const { auth } = await import("../../../src/lib/auth");
@@ -97,6 +99,17 @@ const aPersonWithAProfile = async (email: string) => {
   }
 
   await withQuestions(person.id);
+
+  // One line on one of the person's items, so "the lines go" is a claim about a row that
+  // was there. Nothing in this file's fixtures writes one otherwise.
+  const [anItem] = await testDb
+    .select({ id: profileItem.id })
+    .from(profileItem)
+    .where(eq(profileItem.userId, person.id));
+  if (anItem === undefined) throw new Error(`the fixture for ${email} wrote no profile item`);
+  await testDb
+    .insert(itemLine)
+    .values({ id: randomUUID(), itemId: anItem.id, text: "A line of their profile.", position: 0 });
 
   // Two questions answered in the person's own words, each keeping one profile concern:
   // since `SL3` no concern is written on an item nobody asked about (D14), and since `SL7`
@@ -157,21 +170,16 @@ const whatIsLeftOf = async (person: { id: string; keys: ObjectKey[] }) => ({
   ).length,
 });
 
-/** The lines and the provenance, which hang off items rather than off the person. */
+/** The lines, which hang off items rather than off the person. */
 const traceOf = async (person: { id: string }) => {
   const items = await testDb.select().from(profileItem).where(eq(profileItem.userId, person.id));
   const ids = new Set(items.map((item) => item.id));
   const lines = (await testDb.select().from(itemLine)).filter((line) => ids.has(line.itemId));
-  const documents = await testDb.select().from(document).where(eq(document.userId, person.id));
-  const theirs = new Set(documents.map((each) => each.id));
-  const said = (await testDb.select().from(provenance)).filter((each) =>
-    theirs.has(each.documentId),
-  );
-  return { lines: lines.length, provenance: said.length };
+  return { lines: lines.length };
 };
 
 describe("the erasure, through the library's own delete-user (criterion 9)", () => {
-  it("takes the documents, their objects, the items, the lines, the provenance, the rules and the questions", async () => {
+  it("takes the documents, their objects, the items, the lines, the rules and the questions", async () => {
     const person = await aPersonWithAProfile("erased@example.com");
 
     const before = await whatIsLeftOf(person);
@@ -181,7 +189,7 @@ describe("the erasure, through the library's own delete-user (criterion 9)", () 
     expect(before.items).toBeGreaterThan(0);
     expect(before.questions).toBeGreaterThan(0);
     expect(before.rules).toBe(2);
-    expect(trace.provenance).toBeGreaterThan(0);
+    expect(trace.lines).toBeGreaterThan(0);
 
     const answer = await deleteAccount(person.cookie);
     expect(answer.status).toBe(200);
@@ -193,7 +201,7 @@ describe("the erasure, through the library's own delete-user (criterion 9)", () 
       rules: 0,
       objects: 0,
     });
-    expect(await traceOf(person)).toEqual({ lines: 0, provenance: 0 });
+    expect(await traceOf(person)).toEqual({ lines: 0 });
     expect(await profileOf(person.id)).toMatchObject({ questions: [], experience: [] });
   }, 120_000);
 

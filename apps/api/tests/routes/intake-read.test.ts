@@ -701,16 +701,14 @@ type Item = {
   id: string;
   kind: string;
   title: string;
-  documents: number;
   entry: { label: string; qualifier: string | null } | null;
-  lines: { id: string; text: string; sources: { document: string; said: string }[] }[];
+  lines: { id: string; text: string }[];
   children: Item[];
-  sources: { document: string; said: string }[];
   concerns: { text: string }[];
 };
 
 type Profile = {
-  documents: number;
+  readOn: string | null;
   summary: Item | null;
   identity: Item | null;
   experience: Item[];
@@ -746,60 +744,33 @@ const profileOf = async (cookie: string): Promise<Profile> => {
 describe("what one reading of the composed documents writes (criteria 3, 4, 5)", () => {
   /**
    * The claim is not how many posts the CVs state — they state eight, and the profile
-   * carries eight. It is that a post **both** documents state is one item citing both,
-   * each in its own language, rather than two items or one wording of the reading's own.
+   * carries eight. It is that a post **both** documents state is **one** item rather than
+   * two, one per language.
+   *
+   * It used to be made by finding the item two documents were kept against; no fact cites
+   * a document any more (`ID334`), so it is made against the post itself, named as the
+   * profile names it.
    */
-  it("gives a post both CVs state one item and a source apiece", async () => {
+  it("gives a post both CVs state one item and not two", async () => {
     const person = await signedIn("one-month-two-languages@example.com");
     await documentsFor(person.id, [theSet.cvFrench.filename, theSet.cvEnglish.filename], storage);
 
     await (await read(person.cookie)).text();
     const profile = await profileOf(person.cookie);
 
-    const shared = profile.experience.filter((post) => post.documents === 2);
-    expect(shared).toHaveLength(1);
-    expect(shared[0]?.title).toBe("R&D Collaborator in Software Engineering");
-    // Each provenance row carries its own document's wording, in its own language: the
-    // reading translated nothing and summarised nothing (S3.2's done-when). Which row
-    // comes first is the reading's order and nothing a person sees, so the claim is
-    // about the pair rather than its sequence.
+    // Both CVs state this post, one in French and one in English, and neither wording of
+    // it is a second row: the French title is nowhere in the profile.
     expect(
-      [...(shared[0]?.sources ?? [])].sort((a, b) => a.document.localeCompare(b.document)),
-    ).toEqual([
-      {
-        document: "2026-08-30_cv_EN.pdf",
-        said: "R&D Collaborator in Software Engineering - HEIG-VD - University of Applied Sciences, Yverdon-les-Bains, Switzerland (Hybrid), Aug 2022 - Aug 2026.",
-      },
-      {
-        document: "2026-08-30_cv_FR.pdf",
-        said: "Collaborateur R&D en genie logiciel, HEIG-VD, Yverdon-les-Bains, aout 2022 - aout 2026.",
-      },
-    ]);
+      profile.experience.filter(
+        (post) => post.title === "R&D Collaborator in Software Engineering",
+      ),
+    ).toHaveLength(1);
+    expect(profile.experience.map((post) => post.title)).not.toContain(
+      "Collaborateur R&D en genie logiciel",
+    );
   });
 
-  it("keeps what a document said against the line it produced, word for word", async () => {
-    const person = await signedIn("verbatim-against-the-fact@example.com");
-    await documentsFor(person.id, [theSet.cvFrench.filename, theSet.cvEnglish.filename], storage);
-
-    await (await read(person.cookie)).text();
-    const profile = await profileOf(person.cookie);
-    const post = profile.experience.find((each) => each.lines.length > 0);
-    const lines = post?.lines ?? [];
-
-    // The claim is that a line's provenance is the document's own sentence and not a
-    // summary of it — so every line of every post says, word for word, what it carries,
-    // and cites the document it came from.
-    expect(lines.length).toBeGreaterThan(0);
-    for (const line of lines) {
-      expect(line.sources.length).toBeGreaterThan(0);
-      for (const source of line.sources) {
-        expect(source.said).toBe(line.text);
-        expect(source.document).toMatch(/2026-08-30_cv_(EN|FR)\.pdf/);
-      }
-    }
-  });
-
-  it("records both wordings of one post against the one item and writes no third", async () => {
+  it("gives one item and one title for a post the two documents state differently", async () => {
     const person = await signedIn("two-documents-disagree@example.com");
     await documentsFor(person.id, [theSet.cvWord2022.filename, theSet.cv2025.filename], storage);
 
@@ -808,13 +779,8 @@ describe("what one reading of the composed documents writes (criteria 3, 4, 5)",
     const post = profile.experience[0];
 
     expect(profile.experience).toHaveLength(1);
-    // Both, in the documents' own words. The reading picked no winner and invented no
-    // sentence of its own: what it chose as the title is one of the two the documents
-    // state, and everything either of them said is still there to be shown.
-    expect(post?.sources.map((source) => source.said)).toEqual([
-      "Assistant HES a la HEIG-VD, Yverdon-les-Bains, depuis 2022.",
-      "R&D Collaborator in Software Engineering at HEIG-VD, Yverdon-les-Bains, since 2022.",
-    ]);
+    // The reading picked no winner and invented no sentence of its own: the title it wrote
+    // is one of the two the documents state, and not a third wording.
     expect(["Assistant HES", "R&D Collaborator in Software Engineering"]).toContain(post?.title);
   });
 
@@ -842,6 +808,36 @@ describe("what one reading of the composed documents writes (criteria 3, 4, 5)",
       const chip = `${entry.title} ${entry.entry?.label} ${entry.entry?.qualifier ?? ""}`;
       expect(chip).not.toMatch(/\b(19|20)\d{2}\b/);
       expect(chip).not.toMatch(/\b\d+\s*(year|years|yr|yrs|month|months)\b/i);
+    }
+  });
+
+  /**
+   * A run writes no `provenance` row (`ID334`, `S4.1`).
+   *
+   * The table is gone, so the claim is made where a person would have seen it: the answer
+   * the reading's own route wrote, read back through `GET /profile`, carries no quote and
+   * no count on any item or any line, at any depth. The answer the reader gave still
+   * cites its documents — the writer reads those citations and refuses an answer whose
+   * source it cannot resolve — and keeps none of them.
+   */
+  it("keeps nothing of what a document said: no source and no count on any row", async () => {
+    const person = await signedIn("a-run-writes-no-provenance@example.com");
+    await documentsFor(person.id, [theSet.cvFrench.filename, theSet.cvEnglish.filename], storage);
+
+    await (await read(person.cookie)).text();
+    const profile = await profileOf(person.cookie);
+
+    // A real profile was written, so the claim cannot pass on an empty answer.
+    expect(everyItemOf(profile).length).toBeGreaterThan(20);
+    expect(everyItemOf(profile).some((item) => item.lines.length > 0)).toBe(true);
+    expect(Object.keys(profile)).not.toContain("documents");
+    for (const item of everyItemOf(profile)) {
+      expect(Object.keys(item)).not.toContain("sources");
+      expect(Object.keys(item)).not.toContain("documents");
+      for (const line of item.lines) {
+        expect(Object.keys(line)).not.toContain("sources");
+        expect(Object.keys(line)).not.toContain("documents");
+      }
     }
   });
 });
@@ -885,8 +881,7 @@ describe("an answer that cannot be used (spec, Failure modes)", () => {
         ["2026-08-30_cv_EN.pdf", "failed"],
       ]);
       const profile = await profileOf(person.cookie);
-      expect(profile.documents).toBe(0);
-      expect([...profile.experience, ...profile.groups, ...profile.education]).toEqual([]);
+      expect(everyItemOf(profile)).toEqual([]);
     } finally {
       cases.dispose();
     }
@@ -914,8 +909,7 @@ describe("an answer that cannot be used (spec, Failure modes)", () => {
         ["2026-08-30_cv_EN.pdf", "failed"],
       ]);
       const profile = await profileOf(person.cookie);
-      expect(profile.documents).toBe(0);
-      expect([...profile.experience, ...profile.groups, ...profile.education]).toEqual([]);
+      expect(everyItemOf(profile)).toEqual([]);
     } finally {
       cases.dispose();
     }
@@ -959,8 +953,7 @@ describe("an answer that cannot be used (spec, Failure modes)", () => {
         ["2026-08-30_cv_EN.pdf", "failed"],
       ]);
       const profile = await profileOf(person.cookie);
-      expect(profile.documents).toBe(0);
-      expect([...profile.experience, ...profile.groups, ...profile.education]).toEqual([]);
+      expect(everyItemOf(profile)).toEqual([]);
     } finally {
       cases.dispose();
     }
@@ -1353,15 +1346,9 @@ describe("a reading of a person who already has a profile (ID308, D38)", () => {
 
     const after = await profileOf(person.cookie);
     expect(after.education.at(-1)?.title).toBe("A certificate of employment");
-    expect(after.education.at(-1)?.sources).toEqual([
-      { document: "2026-08-30_cv_FR.pdf", said: "Certificat de travail, HEIG-VD." },
-    ]);
     const extended = after.experience.find((each) => each.id === post.id);
     expect(extended?.lines).toHaveLength(post.lines.length + 1);
     expect(extended?.lines.at(-1)?.text).toBe("Led the migration to Kubernetes.");
-    expect(extended?.lines.at(-1)?.sources).toEqual([
-      { document: "2026-08-30_cv_FR.pdf", said: "Led the migration to Kubernetes." },
-    ]);
     const grown = after.groups.find((each) => each.id === group.id);
     expect(grown?.children).toHaveLength(group.children.length + 1);
     expect(grown?.children.at(-1)?.title).toBe("Terraform");
@@ -1419,9 +1406,14 @@ describe("a reading of a person who already has a profile (ID308, D38)", () => {
       ["2026-08-30_cv_EN.pdf", "read"],
       ["2026-08-30_cv_FR.pdf", "read"],
     ]);
-    // Read and disposed of, and the profile exactly as it was.
+    // Read and disposed of, and the profile exactly as it was — but for `readOn`, which
+    // is when this person's documents were last read, and a reading did just happen
+    // (`ID334`: it used to be the last read of a document some fact cited, and no fact
+    // cites one any more).
     expect(objectsHeld(storage)).toEqual([]);
-    expect(await profileOf(person.cookie)).toEqual(before);
+    const after = await profileOf(person.cookie);
+    expect({ ...after, readOn: null }).toEqual({ ...before, readOn: null });
+    expect(Date.parse(after.readOn ?? "")).toBeGreaterThan(Date.parse(before.readOn ?? ""));
   });
 });
 
@@ -1474,11 +1466,11 @@ describe("the shipped second reading of the ownership CV (SL11)", () => {
  * A document is an input that is consumed (`ID309`, `D38`).
  *
  * Read, its facts placed in the profile, its file disposed of — never before the profile
- * that cites it is committed. What stays is the row: the name a fact cites, when it was
- * read, and the hash that makes the same bytes handed over twice a duplicate still.
+ * is committed. What stays is the row: when it was read, and the hash that makes the same
+ * bytes handed over twice a duplicate still.
  */
 describe("a document consumed by the reading (ID309)", () => {
-  it("deletes each read document's file and clears its key, keeping the row and what cites it", async () => {
+  it("deletes each read document's file and clears its key, keeping the row", async () => {
     const person = await signedIn("consumed-after-reading@example.com");
     await documentsFor(person.id, [theSet.cvEnglish.filename], storage);
     expect(objectsHeld(storage)).toHaveLength(1);
@@ -1489,11 +1481,10 @@ describe("a document consumed by the reading (ID309)", () => {
     expect(objectsHeld(storage)).toEqual([]);
     expect([row?.status, row?.storageKey]).toEqual(["read", null]);
     expect(row?.readAt).not.toBeNull();
-    // The row is the name a fact cites, so the profile still says where every fact came
-    // from although the file it came from is gone.
+    // The profile the run wrote is there although the file it was written from is gone.
     const profile = await profileOf(person.cookie);
-    expect(profile.documents).toBe(1);
-    expect(profile.experience[0]?.sources[0]?.document).toBe("2026-08-30_cv_EN.pdf");
+    expect(profile.experience.length).toBeGreaterThan(0);
+    expect(profile.readOn).not.toBeNull();
   });
 
   it("deletes nothing when the reading fails", async () => {
