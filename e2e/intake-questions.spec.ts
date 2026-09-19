@@ -10,6 +10,14 @@ import {
 import { deletedThroughApp, forget, type Person, signedIn, type Where } from "./support/session";
 
 /**
+ * **Out of collection since product-flow-rework `S2.1`, and owed to `profile-assistant`.**
+ * Both cases below walk the intake's asking, which stops existing: the assistant left
+ * `/profile` (`ID331`), so there is nothing on that page to ask, answer or skip. The file
+ * is **not deleted** — it is the walk `profile-assistant` will need the day the column
+ * comes back (`ID330`) — and it is not skipped either: it is simply named by no project in
+ * `playwright.config.ts`. Whoever rebuilds that slot points it at the screen it has and
+ * names it there again.
+ *
  * The person's path through the questions, walked for real (criterion 11, `US5`, `US6`,
  * `US7`).
  *
