@@ -32,3 +32,9 @@ Read against Angular 22's style guide, https://angular.dev/style-guide.
 7. **MUST build the conversation agent in one place, the composition root (`apps/api/src/app.ts`), and hand it to what uses it.** Only that binding knows which model, store, transaction and header name the agent is made of; a handler calls `agent.run(...)` and an assistant contributes a definition, and neither imports `lib/ai`, `lib/db` or a LangChain package to reach a model.
 
 8. **MUST keep `apps/api/src/lib/agent` extractable as a library, as rule 6 keeps the mock: `index.ts` is its only entry, and nothing under it imports from the application, reads the environment, or names this product.** Its surface is the `ConversationAgent` class (`run`, `steps`) and the types a definition is written against; the model, the store and the transaction are options the binding passes. `apps/api/tests/lib/agent/boundary.test.ts` holds it.
+
+## Infrastructure and the pipeline (`infra`, `.github/workflows`)
+
+9. **MUST mask a secret read in a workflow value by value, never the whole entry.** `::add-mask::` takes one line: given a multi-line entry it masks the first and prints the rest. `.github/workflows/e2e-dev.yml` does it right.
+
+10. **MUST keep `DEPLOYMENT: !Ref ApiArtefactKey` in the Api function's `Environment` (`infra/App-dev.yaml`).** CloudFormation re-resolves `{{resolve:secretsmanager:…}}` only when its property changes, so without the stamp a rotated secret never reaches the function.
