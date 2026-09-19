@@ -1,0 +1,25 @@
+<button
+  #square
+  type="button"
+  class="grid min-h-14 w-14 shrink-0 place-items-center self-stretch border-border border-r bg-card text-foreground hover:bg-muted sm:min-h-16 sm:w-16"
+  aria-label="Menu"
+  [attr.aria-expanded]="expanded()"
+  (click)="toggle.emit()"
+>
+  <svg
+    width="20"
+    height="20"
+    viewBox="0 0 20 20"
+    fill="none"
+    stroke="currentColor"
+    stroke-width="2"
+    stroke-linecap="round"
+    aria-hidden="true"
+  >
+    @if (expanded()) {
+      <path d="M5 5l10 10M15 5 5 15" />
+    } @else {
+      <path d="M3 5h14M3 10h14M3 15h14" />
+    }
+  </svg>
+</button>

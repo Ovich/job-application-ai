@@ -10,6 +10,14 @@ import {
 import { deletedThroughApp, forget, type Person, signedIn, type Where } from "./support/session";
 
 /**
+ * **Out of collection since product-flow-rework `S2.1`, and owed to `profile-assistant`.**
+ * Both cases below walk the intake's asking, which stops existing: the assistant left
+ * `/profile` (`ID331`), so there is nothing on that page to ask, answer or skip. The file
+ * is **not deleted** — it is the walk `profile-assistant` will need the day the column
+ * comes back (`ID330`) — and it is not skipped either: it is simply named by no project in
+ * `playwright.config.ts`. Whoever rebuilds that slot points it at the screen it has and
+ * names it there again.
+ *
  * The person's path through the questions, walked for real (criterion 11, `US5`, `US6`,
  * `US7`).
  *
@@ -380,8 +388,12 @@ test("a chip clicked, words about it in the conversation, and somebody else's de
   // lands under the click throws away the menu it just opened. On a slow runner it landed
   // after the click, and the test waited its whole budget for a menu item that was never
   // coming. The shell, and its account menu, are the same on both pages.
+  //
+  // The square, not an account slot: product-flow-rework S1.1 took the AppBar off every
+  // route (D20) and the account's rows are at the foot of the left menu now. `exact`,
+  // because the panel's own "Close the menu" carries the word too.
   await theirPage.goto("/documents");
-  await theirPage.getByRole("button", { name: "Your account" }).click();
+  await theirPage.getByRole("button", { name: "Menu", exact: true }).click();
   await theirPage.getByRole("menuitem", { name: "Delete my account" }).click();
   const gate = theirPage.getByRole("dialog", { name: "Delete your account?" });
   await gate.getByRole("button", { name: "Acknowledge" }).click();

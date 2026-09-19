@@ -100,10 +100,17 @@ test("the profile shows everything that was read, and each region lights alone",
   );
   await expect(page.getByText("more", { exact: false })).toHaveCount(0);
 
-  // The bar says what it was read from, and the count is the interface's own.
-  await expect(page.locator("profile-bar")).toContainText(
-    `From ${answered.documents} documents, read today`,
-  );
+  // The bar says when it was read, as a date, and no count of documents anywhere on it
+  // (product-flow-rework `S2.1`, `H10`, `ID331`).
+  const today = new Date().toLocaleDateString("en-GB", { day: "numeric", month: "long" });
+  await expect(page.locator("profile-bar")).toContainText(`Read ${today}`);
+  await expect(page.locator("profile-bar")).not.toContainText(`${answered.documents} document`);
+
+  // And nowhere else either: the sheet stopped saying how many documents a part came
+  // from (product-flow-rework `S2.2`, `H10`, `ID334`), so no region of the page counts
+  // documents at all.
+  await expect(page.getByText(/\d+ documents?\b/)).toHaveCount(0);
+  await expect(page.locator("[data-part=from]")).toHaveCount(0);
 
   /**
    * The hover, in a browser that has the stylesheet (criterion 10). Regions nest and
@@ -123,7 +130,17 @@ test("the profile shows everything that was read, and each region lights alone",
   await context.close();
 });
 
-test("below 1024 px the profile is one column, and the bar switches it", async ({ browser }) => {
+/**
+ * One column, and nothing asking, at every width (product-flow-rework `S2.1`, `ID331`).
+ *
+ * It used to be the other way round: below 1024 px the page showed one of its two columns
+ * at a time and the bar carried the toggle between them. There is one column now, so what
+ * is walked is that the assistant is in the DOM at none of the mockup's three viewports —
+ * not hidden by a breakpoint, absent — and that no control offers to switch to it.
+ */
+test("the profile is one column at 390, 768 and 1280, with no assistant in the DOM", async ({
+  browser,
+}) => {
   // The wait below reads documents through the paced double and carries a timeout of
   // its own. A test may not outlive its own budget, so the budget has to be the
   // larger of the two: at Playwright's default 30s the wait was cut off at half its
@@ -142,15 +159,25 @@ test("below 1024 px the profile is one column, and the bar switches it", async (
     timeout: 30_000,
   });
 
-  // The mockup's narrow viewport (criterion 7, the phone at 390).
-  await page.setViewportSize({ width: 390, height: 844 });
-  await page.goto("/profile");
+  // The mockup's three viewports: the phone, the tablet and the laptop.
+  for (const width of [390, 768, 1280]) {
+    await page.setViewportSize({ width, height: 844 });
+    await page.goto("/profile");
 
-  await expect(page.locator("profile-sheet")).toBeVisible();
-  await page.getByRole("button", { name: "Back to the chat" }).click();
-  await expect(page.locator("profile-sheet")).toBeHidden();
-  await page.getByRole("button", { name: "See my profile" }).click();
-  await expect(page.locator("profile-sheet")).toBeVisible();
+    await expect(page.locator("profile-sheet")).toBeVisible();
+    await expect(page.locator("profile-assistant")).toHaveCount(0);
+    await expect(page.locator("scope-tool")).toHaveCount(0);
+    await expect(page.locator('[aria-label="Assistant"]')).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "Back to the chat" })).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "See my profile" })).toHaveCount(0);
+
+    // The window does not scroll; the sheet scrolls alone (the mockup's own acceptance).
+    expect(
+      await page.evaluate(
+        () => document.documentElement.scrollHeight <= document.documentElement.clientHeight,
+      ),
+    ).toBe(true);
+  }
 
   await context.close();
 });

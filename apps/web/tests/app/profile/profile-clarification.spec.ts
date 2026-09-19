@@ -20,6 +20,14 @@ import {
 import { reset, signedInAs } from "../../support/session";
 
 /**
+ * **Out of collection since product-flow-rework `S2.1`, and owed to `profile-assistant`.**
+ * Every case below mounts `/profile` and reads the tool the assistant opened on a region.
+ * The assistant left the intake (`ID331`), so none of them has a subject at that route any
+ * more — but they are the walks `profile-assistant` will want the day the column comes
+ * back (`ID330`), so they stay in the tree, named in `apps/web/angular.json`'s `exclude`,
+ * rather than being deleted or skipped. Whoever rebuilds that slot rewrites them against
+ * the seam it has and puts the file back in collection.
+ *
  * Seam C: the viewer rendered, `ProfileAssistant` with `ProfileSheet` (`SL5`, criteria
  * 1, 2, 3, 4, 5, 7 and 8).
  *
@@ -64,9 +72,7 @@ const aProfile = (questions: Question[] = []): Profile => ({
         location: "Yverdon-les-Bains",
         arrangement: null,
       },
-      lines: [
-        { id: "line-migration", text: "Ran the migration programme", documents: 1, sources: [] },
-      ],
+      lines: [{ id: "line-migration", text: "Ran the migration programme" }],
       children: [
         itemOf({
           id: "project-opendidac",

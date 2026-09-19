@@ -15,18 +15,6 @@
     variant="secondary"
     size="sm"
     type="button"
-    class="lg:hidden"
-    data-action="toggle-view"
-    (click)="toggleView.emit()"
-  >
-    {{ view() === "sheet" ? "Back to the chat" : "See my profile" }}
-  </button>
-
-  <button
-    hlmBtn
-    variant="secondary"
-    size="sm"
-    type="button"
     class="ms-auto lg:ms-0"
     (click)="addDocuments.emit()"
   >

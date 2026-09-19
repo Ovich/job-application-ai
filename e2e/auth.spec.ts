@@ -181,8 +181,12 @@ test.describe("two people on two browsers", () => {
         // to the drop zone (the person, 2026-09-12), and a page that redirects under a
         // click loses the menu this step is about. The shell — and its account menu —
         // is the same on both.
+        //
+        // The square, not an account slot: product-flow-rework S1.1 took the AppBar off
+        // every route (D20) and the account's rows are at the foot of the left menu now.
+        // `exact`, because the panel's own "Close the menu" carries the word too.
         await page.goto("/documents");
-        await page.getByRole("button", { name: "Your account" }).click();
+        await page.getByRole("button", { name: "Menu", exact: true }).click();
         const menu = page.getByRole("menu");
         await expect(menu).toContainText(who.email);
         await expect(menu).not.toContainText(other.email);

@@ -57,8 +57,15 @@ export default defineConfig({
       // database nothing but the app may write to.
       // `intake-again` joins at SL11 and is the local project's alone: it walks a second
       // reading over a profile that already exists, and dev is one shared database.
+      //
+      // `intake-questions` left both projects at product-flow-rework S2.1 (ID331), and
+      // `conversation-screen` — the two screen cases lifted whole out of `conversation` —
+      // is named by neither: both walk the assistant column on `/profile`, which that
+      // slice takes off the page. They stay in the tree, out of collection, as the walks
+      // `profile-assistant` will want the day the column comes back (ID330). Whoever
+      // rebuilds that slot names them here again.
       testMatch:
-        /(health-stream|auth|entry-route|intake|intake-again|intake-questions|profile|conversation|dev-sql)\.spec\.ts$/,
+        /(health-stream|auth|entry-route|intake|intake-again|profile|conversation|dev-sql)\.spec\.ts$/,
       // A trace of a walk that failed, and of no walk that passed. `intake-again`'s second
       // reading has failed four times in this pipeline and passed every time it was asked
       // to explain itself on a laptop, so the page snapshot it leaves is all anyone has
@@ -97,13 +104,16 @@ export default defineConfig({
       //
       // `conversation` is the first product spec it collects (agent-consolidation SL6,
       // ID178). From that plan's SL9 (ID224, ID225) it walks the screens as the local
-      // project does: `intake`, `intake-questions` and `conversation`'s screen cases drop
-      // the fixture documents into dev's storage and dev's function reads them from the
-      // recorded readings it bundles, so the reason they stayed local (ID138) is gone. A
-      // spec that drops documents deletes its people through the account deletion route,
-      // so the stored objects go with them. `profile` stays local; `dev-sql` never runs here.
-      testMatch:
-        /(health(-stream)?|auth|entry-route|conversation|intake|intake-questions)\.spec\.ts$/,
+      // project does: `intake` drops the fixture documents into dev's storage and dev's
+      // function reads them from the recorded readings it bundles, so the reason it stayed
+      // local (ID138) is gone. A spec that drops documents deletes its people through the
+      // account deletion route, so the stored objects go with them. `profile` stays local;
+      // `dev-sql` never runs here.
+      //
+      // `intake-questions` left this project at product-flow-rework S2.1 (ID331), with
+      // `conversation`'s two screen cases: the assistant column they walk is off
+      // `/profile`. The local project's comment says where they went and why.
+      testMatch: /(health(-stream)?|auth|entry-route|conversation|intake)\.spec\.ts$/,
       // Nothing recorded, named rather than left to the defaults (agent-consolidation SL9,
       // ID231): a trace carries the signed session cookie and every request's body, and a
       // video or a screenshot what a person's screens on dev showed.
