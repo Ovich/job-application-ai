@@ -1,5 +1,5 @@
-import { document, question } from "@app/db";
-import { asc, eq } from "drizzle-orm";
+import { document, question, questionOption } from "@app/db";
+import { eq, inArray } from "drizzle-orm";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ObjectKey, Storage, StoredObject } from "../../src/lib/storage";
 import { subjectAt } from "../support/providers";
@@ -53,6 +53,7 @@ const { app } = await import("../../src/app");
 const { cookiesSetBy, signInThrough, signedInAs } = await import("../support/sign-in");
 const { documentsFor, theSet, uploadOfFixture } = await import("../support/documents");
 const { forgetRequests, requestsSent, withCases } = await import("../support/ai");
+const { withQuestions } = await import("../support/questions");
 
 let storage: ReturnType<typeof localStorageIn>;
 
@@ -107,18 +108,30 @@ const statusesOf = async (userId: string) =>
   (await rowsOf(userId)).map((row) => [row.filename, row.status]);
 
 /**
- * The person's questions by id and place. Read from the table, because a place is the one
- * thing about a question the profile route does not carry — and "after the last" is a
- * claim about places (`ID310`).
+ * What the person holds in `question` and `question_option`, counted in the tables
+ * themselves (`ID333`).
+ *
+ * The one claim this file makes about them is that a reading writes neither, and a claim
+ * about rows that are not there cannot be read back through a route: `GET /profile`
+ * answers with the questions it would show, which is already none when five were written
+ * and none of them asked. So the tables are counted, and only for this.
  */
-const positionsOf = async (userId: string): Promise<[string, number][]> =>
-  (
-    await testDb
-      .select()
-      .from(question)
-      .where(eq(question.userId, userId))
-      .orderBy(asc(question.position), asc(question.id))
-  ).map((row) => [row.id, row.position]);
+const questionRowsOf = async (userId: string): Promise<{ questions: number; options: number }> => {
+  const questions = await testDb.select().from(question).where(eq(question.userId, userId));
+  const options =
+    questions.length === 0
+      ? []
+      : await testDb
+          .select()
+          .from(questionOption)
+          .where(
+            inArray(
+              questionOption.questionId,
+              questions.map((row) => row.id),
+            ),
+          );
+  return { questions: questions.length, options: options.length };
+};
 
 /** The three real documents a run is driven over, which the mock has the run's case for. */
 const three = [theSet.cvFrench.filename, theSet.cvEnglish.filename, theSet.diploma.filename];
@@ -688,16 +701,14 @@ type Item = {
   id: string;
   kind: string;
   title: string;
-  documents: number;
   entry: { label: string; qualifier: string | null } | null;
-  lines: { id: string; text: string; sources: { document: string; said: string }[] }[];
+  lines: { id: string; text: string }[];
   children: Item[];
-  sources: { document: string; said: string }[];
   concerns: { text: string }[];
 };
 
 type Profile = {
-  documents: number;
+  readOn: string | null;
   summary: Item | null;
   identity: Item | null;
   experience: Item[];
@@ -733,60 +744,33 @@ const profileOf = async (cookie: string): Promise<Profile> => {
 describe("what one reading of the composed documents writes (criteria 3, 4, 5)", () => {
   /**
    * The claim is not how many posts the CVs state — they state eight, and the profile
-   * carries eight. It is that a post **both** documents state is one item citing both,
-   * each in its own language, rather than two items or one wording of the reading's own.
+   * carries eight. It is that a post **both** documents state is **one** item rather than
+   * two, one per language.
+   *
+   * It used to be made by finding the item two documents were kept against; no fact cites
+   * a document any more (`ID334`), so it is made against the post itself, named as the
+   * profile names it.
    */
-  it("gives a post both CVs state one item and a source apiece", async () => {
+  it("gives a post both CVs state one item and not two", async () => {
     const person = await signedIn("one-month-two-languages@example.com");
     await documentsFor(person.id, [theSet.cvFrench.filename, theSet.cvEnglish.filename], storage);
 
     await (await read(person.cookie)).text();
     const profile = await profileOf(person.cookie);
 
-    const shared = profile.experience.filter((post) => post.documents === 2);
-    expect(shared).toHaveLength(1);
-    expect(shared[0]?.title).toBe("R&D Collaborator in Software Engineering");
-    // Each provenance row carries its own document's wording, in its own language: the
-    // reading translated nothing and summarised nothing (S3.2's done-when). Which row
-    // comes first is the reading's order and nothing a person sees, so the claim is
-    // about the pair rather than its sequence.
+    // Both CVs state this post, one in French and one in English, and neither wording of
+    // it is a second row: the French title is nowhere in the profile.
     expect(
-      [...(shared[0]?.sources ?? [])].sort((a, b) => a.document.localeCompare(b.document)),
-    ).toEqual([
-      {
-        document: "2026-08-30_cv_EN.pdf",
-        said: "R&D Collaborator in Software Engineering - HEIG-VD - University of Applied Sciences, Yverdon-les-Bains, Switzerland (Hybrid), Aug 2022 - Aug 2026.",
-      },
-      {
-        document: "2026-08-30_cv_FR.pdf",
-        said: "Collaborateur R&D en genie logiciel, HEIG-VD, Yverdon-les-Bains, aout 2022 - aout 2026.",
-      },
-    ]);
+      profile.experience.filter(
+        (post) => post.title === "R&D Collaborator in Software Engineering",
+      ),
+    ).toHaveLength(1);
+    expect(profile.experience.map((post) => post.title)).not.toContain(
+      "Collaborateur R&D en genie logiciel",
+    );
   });
 
-  it("keeps what a document said against the line it produced, word for word", async () => {
-    const person = await signedIn("verbatim-against-the-fact@example.com");
-    await documentsFor(person.id, [theSet.cvFrench.filename, theSet.cvEnglish.filename], storage);
-
-    await (await read(person.cookie)).text();
-    const profile = await profileOf(person.cookie);
-    const post = profile.experience.find((each) => each.lines.length > 0);
-    const lines = post?.lines ?? [];
-
-    // The claim is that a line's provenance is the document's own sentence and not a
-    // summary of it — so every line of every post says, word for word, what it carries,
-    // and cites the document it came from.
-    expect(lines.length).toBeGreaterThan(0);
-    for (const line of lines) {
-      expect(line.sources.length).toBeGreaterThan(0);
-      for (const source of line.sources) {
-        expect(source.said).toBe(line.text);
-        expect(source.document).toMatch(/2026-08-30_cv_(EN|FR)\.pdf/);
-      }
-    }
-  });
-
-  it("records both wordings of one post against the one item and writes no third", async () => {
+  it("gives one item and one title for a post the two documents state differently", async () => {
     const person = await signedIn("two-documents-disagree@example.com");
     await documentsFor(person.id, [theSet.cvWord2022.filename, theSet.cv2025.filename], storage);
 
@@ -795,13 +779,8 @@ describe("what one reading of the composed documents writes (criteria 3, 4, 5)",
     const post = profile.experience[0];
 
     expect(profile.experience).toHaveLength(1);
-    // Both, in the documents' own words. The reading picked no winner and invented no
-    // sentence of its own: what it chose as the title is one of the two the documents
-    // state, and everything either of them said is still there to be shown.
-    expect(post?.sources.map((source) => source.said)).toEqual([
-      "Assistant HES a la HEIG-VD, Yverdon-les-Bains, depuis 2022.",
-      "R&D Collaborator in Software Engineering at HEIG-VD, Yverdon-les-Bains, since 2022.",
-    ]);
+    // The reading picked no winner and invented no sentence of its own: the title it wrote
+    // is one of the two the documents state, and not a third wording.
     expect(["Assistant HES", "R&D Collaborator in Software Engineering"]).toContain(post?.title);
   });
 
@@ -829,6 +808,36 @@ describe("what one reading of the composed documents writes (criteria 3, 4, 5)",
       const chip = `${entry.title} ${entry.entry?.label} ${entry.entry?.qualifier ?? ""}`;
       expect(chip).not.toMatch(/\b(19|20)\d{2}\b/);
       expect(chip).not.toMatch(/\b\d+\s*(year|years|yr|yrs|month|months)\b/i);
+    }
+  });
+
+  /**
+   * A run writes no `provenance` row (`ID334`, `S4.1`).
+   *
+   * The table is gone, so the claim is made where a person would have seen it: the answer
+   * the reading's own route wrote, read back through `GET /profile`, carries no quote and
+   * no count on any item or any line, at any depth. The answer the reader gave still
+   * cites its documents — the writer reads those citations and refuses an answer whose
+   * source it cannot resolve — and keeps none of them.
+   */
+  it("keeps nothing of what a document said: no source and no count on any row", async () => {
+    const person = await signedIn("a-run-writes-no-provenance@example.com");
+    await documentsFor(person.id, [theSet.cvFrench.filename, theSet.cvEnglish.filename], storage);
+
+    await (await read(person.cookie)).text();
+    const profile = await profileOf(person.cookie);
+
+    // A real profile was written, so the claim cannot pass on an empty answer.
+    expect(everyItemOf(profile).length).toBeGreaterThan(20);
+    expect(everyItemOf(profile).some((item) => item.lines.length > 0)).toBe(true);
+    expect(Object.keys(profile)).not.toContain("documents");
+    for (const item of everyItemOf(profile)) {
+      expect(Object.keys(item)).not.toContain("sources");
+      expect(Object.keys(item)).not.toContain("documents");
+      for (const line of item.lines) {
+        expect(Object.keys(line)).not.toContain("sources");
+        expect(Object.keys(line)).not.toContain("documents");
+      }
     }
   });
 });
@@ -872,8 +881,7 @@ describe("an answer that cannot be used (spec, Failure modes)", () => {
         ["2026-08-30_cv_EN.pdf", "failed"],
       ]);
       const profile = await profileOf(person.cookie);
-      expect(profile.documents).toBe(0);
-      expect([...profile.experience, ...profile.groups, ...profile.education]).toEqual([]);
+      expect(everyItemOf(profile)).toEqual([]);
     } finally {
       cases.dispose();
     }
@@ -901,11 +909,175 @@ describe("an answer that cannot be used (spec, Failure modes)", () => {
         ["2026-08-30_cv_EN.pdf", "failed"],
       ]);
       const profile = await profileOf(person.cookie);
-      expect(profile.documents).toBe(0);
-      expect([...profile.experience, ...profile.groups, ...profile.education]).toEqual([]);
+      expect(everyItemOf(profile)).toEqual([]);
     } finally {
       cases.dispose();
     }
+  });
+
+  /**
+   * The third way to be unusable, and the one that outlived what it was written for
+   * (moved here from `intake-questions` by `S3.1`).
+   *
+   * A reading writes no question any more, but the candidates an answer carries are still
+   * read and still held to their shape, because every shipped recording answers with them
+   * and the corpus is adapted where the reading's output is settled. So a candidate the
+   * boundary refuses is still a reading the boundary refuses: **nothing at all is
+   * written**, and that costs the person nothing but a second press.
+   */
+  it("writes no part of a profile when the candidates half of the answer is malformed", async () => {
+    const person = await signedIn("malformed-candidates@example.com");
+    await documentsFor(person.id, twoCvs, storage);
+    const cases = withCases({
+      [theRunsCase]: {
+        stands_for: "a reading whose candidates are not candidates at all",
+        content: JSON.stringify({
+          items: [
+            {
+              kind: "identity",
+              title: "Somebody",
+              sources: [{ document: "2026-08-30_cv_EN", said: "Somebody" }],
+            },
+          ],
+          // A candidate with no lead, no where and no options: refused at the boundary.
+          candidates: [{ kind: "scope", item: "Somebody" }],
+        }),
+      },
+    });
+
+    try {
+      await (await read(person.cookie)).text();
+
+      expect(await statusesOf(person.id)).toEqual([
+        ["2026-08-30_cv_FR.pdf", "failed"],
+        ["2026-08-30_cv_EN.pdf", "failed"],
+      ]);
+      const profile = await profileOf(person.cookie);
+      expect(everyItemOf(profile)).toEqual([]);
+    } finally {
+      cases.dispose();
+    }
+  });
+
+  /**
+   * The reading retries once and no more (spec, *Failure modes*), moved here from
+   * `intake-questions` by `S3.1` with the suite it was written in: it is a claim about
+   * the run's one call, which this file is about, and never about the questions.
+   */
+  it("retries the run's one call once before giving up", async () => {
+    const person = await signedIn("read-retried-once@example.com");
+    await documentsFor(person.id, twoCvs, storage);
+
+    await (await read(person.cookie)).text();
+
+    expect(
+      requestsSent().filter((sent) => sent.headers["x-jobapp-case"] === theRunsCase),
+    ).toHaveLength(1);
+
+    // And when it fails, it is asked twice and no more.
+    forgetRequests();
+    const other = await signedIn("read-retried-twice@example.com");
+    await documentsFor(other.id, twoCvs, storage);
+    const nothingUsable = withCases({ [theRunsCase]: { content: "No pre generated text" } });
+    try {
+      await (await read(other.cookie)).text();
+    } finally {
+      nothingUsable.dispose();
+    }
+
+    expect(
+      requestsSent().filter((sent) => sent.headers["x-jobapp-case"] === theRunsCase),
+    ).toHaveLength(2);
+  });
+});
+
+/**
+ * A reading writes no question (`ID333`, this slice).
+ *
+ * The run used to end by writing the questions its answer proposed; it ends at the
+ * profile now. `question`, `question_option` and `profile_concern` stay, and every action
+ * of the profile assistant that reads them is untouched — what changed is who writes
+ * them, and for the length of this plan nothing does. They come back in the slot that
+ * reshapes a question for a match against an offer.
+ */
+describe("a reading writes no question (ID333)", () => {
+  it("writes no question and no option for a first reading, whatever its answer proposes", async () => {
+    const person = await signedIn("first-reading-writes-no-question@example.com");
+    await documentsFor(person.id, three, storage);
+
+    await (await read(person.cookie)).text();
+
+    // The shipped case for these three documents proposes four candidates, and the run
+    // takes none of them: not five, not one, none.
+    expect(await questionRowsOf(person.id)).toEqual({ questions: 0, options: 0 });
+    expect((await profileOf(person.cookie)).questions).toEqual([]);
+    // And the profile itself was written: this is a run that worked.
+    expect(everyItemOf(await profileOf(person.cookie)).length).toBeGreaterThan(0);
+  });
+
+  it("writes no question for a second reading either", async () => {
+    const person = await withAProfile("second-reading-writes-no-question@example.com");
+    const post = (await profileOf(person.cookie)).experience[0];
+    if (post === undefined) throw new Error("the first reading wrote no experience");
+    const second = await oneMore(person.cookie, theSet.cvFrench.filename);
+    const cases = withCases({
+      [second.case]: {
+        content: aSecondReading({
+          candidates: [
+            {
+              kind: "scope",
+              item: post.title,
+              where: "Experience · in 2 documents",
+              lead: "Whose work was the migration?",
+              options: [
+                { label: "Mine", hint: "I led it", concern: "Led the migration" },
+                { label: "In my own words", hint: "I will say it myself" },
+              ],
+            },
+          ],
+        }),
+      },
+    });
+
+    try {
+      await (await read(person.cookie)).text();
+    } finally {
+      cases.dispose();
+    }
+
+    // The documents were read — a proposal nothing writes is not a failed reading.
+    expect(await statusesOf(person.id)).toEqual([
+      ["2026-08-30_cv_EN.pdf", "read"],
+      ["2026-08-30_cv_FR.pdf", "read"],
+    ]);
+    expect(await questionRowsOf(person.id)).toEqual({ questions: 0, options: 0 });
+  });
+
+  /**
+   * The tables stay, and a fourth kind is still impossible at rest: the column is an enum
+   * of exactly three values and PostgreSQL itself refuses a fourth. PGlite is PostgreSQL,
+   * so this is the same refusal the deployed cluster makes.
+   *
+   * Moved here from `intake-questions` by `S3.1`. Its subject is the schema this plan
+   * keeps, not the writing it removes, so it outlives that suite.
+   */
+  it("keeps the question tables, and the database still refuses a fourth kind", async () => {
+    const { sql } = await import("drizzle-orm");
+
+    await expect(testDb.execute(sql`select count(*) from question`)).resolves.toBeDefined();
+    await expect(testDb.execute(sql`select count(*) from question_option`)).resolves.toBeDefined();
+    await expect(testDb.execute(sql`select count(*) from profile_concern`)).resolves.toBeDefined();
+    await expect(testDb.execute(sql`select 'scope'::question_kind`)).resolves.toBeDefined();
+
+    // Drizzle wraps the driver's error, so the whole chain is read and not the top
+    // message, as `isDuplicate` reads one in the handlers for the same reason.
+    const thrown: unknown = await testDb
+      .execute(sql`select 'date'::question_kind`)
+      .then(() => null)
+      .catch((why: unknown) => why);
+    const said: string[] = [];
+    for (let cause = thrown; cause instanceof Error; cause = cause.cause) said.push(cause.message);
+    expect(said.join(" ")).toMatch(/invalid input value for enum question_kind/i);
   });
 });
 
@@ -1010,10 +1182,17 @@ describe("a reading of a person who already has a profile (ID308, D38)", () => {
     expect(human?.content).not.toContain("<<<DOCUMENT 2026-08-30_cv_EN>>>");
   });
 
+  /**
+   * The questions and the concern this case needs are written by the suite's own fixture
+   * (`S3.0`) and no longer by the reading (`S3.1`, `ID333`). They are the precondition
+   * here and not the subject: what is asserted is that a second reading leaves them —
+   * and everything else the person was holding — exactly where they were.
+   */
   it("leaves every item, line, concern and question the person already had", async () => {
     const person = await withAProfile("second-reading-keeps-everything@example.com");
+    await withQuestions(person.id);
     const asked = (await profileOf(person.cookie)).questions[0];
-    if (asked === undefined) throw new Error("the first reading asked nothing");
+    if (asked === undefined) throw new Error("the fixture wrote no question");
     const answered = await app.request("/api/conversations/profile/actions/answer_question", {
       method: "POST",
       headers: { cookie: person.cookie, "content-type": "application/json" },
@@ -1070,9 +1249,49 @@ describe("a reading of a person who already has a profile (ID308, D38)", () => {
     expect(everyItemOf(before).find((item) => item.id === asked.itemId)?.concerns).not.toHaveLength(
       0,
     );
-    // The profile was shown it, which is the only way the second prompt can know not to
-    // ask about it again (`ID310`).
-    expect(messagesOf(0)[1]?.content).toContain("I wrote it, nobody else did");
+  });
+
+  /**
+   * The second reading is shown no concern (`ID333`, this slice).
+   *
+   * The profile it is given used to carry what the person had settled, so the prompt
+   * could tell it not to ask about those again. Nothing a reading does produces a concern
+   * any more and a reading asks nothing, so carrying them would be handing a model the
+   * person's own words for no purpose it has. They stay on the profile, where the
+   * assistant reads them.
+   */
+  it("shows the second reading nothing the person has settled, and asks it for no question", async () => {
+    const person = await withAProfile("second-reading-without-concerns@example.com");
+    await withQuestions(person.id);
+    const asked = (await profileOf(person.cookie)).questions[0];
+    if (asked === undefined) throw new Error("the fixture wrote no question");
+    const answered = await app.request("/api/conversations/profile/actions/answer_question", {
+      method: "POST",
+      headers: { cookie: person.cookie, "content-type": "application/json" },
+      body: JSON.stringify({ questionId: asked.id, words: "I wrote it, nobody else did" }),
+    });
+    expect(answered.status).toBe(200);
+    // The concern is really there: the claim below is about what the request carries, not
+    // about a profile that happens to hold nothing.
+    const kept = everyItemOf(await profileOf(person.cookie)).flatMap((item) => item.concerns);
+    expect(
+      kept.filter((concern) => concern.text.includes("I wrote it, nobody else did")),
+    ).not.toEqual([]);
+
+    const second = await oneMore(person.cookie, theSet.cvFrench.filename);
+    forgetRequests();
+    const cases = withCases({ [second.case]: { content: nothingNew } });
+    try {
+      await (await read(person.cookie)).text();
+    } finally {
+      cases.dispose();
+    }
+
+    const [system, human] = messagesOf(0);
+    expect(human?.content).not.toContain("I wrote it, nobody else did");
+    expect(human?.content).not.toContain("concern");
+    // And the prompt neither mentions a concern nor asks for a question of any kind.
+    expect(system?.content).not.toMatch(/concern|candidate|question/i);
   });
 
   it("lands a new item after the last, a new line after the item's last, a new child after its last", async () => {
@@ -1127,63 +1346,12 @@ describe("a reading of a person who already has a profile (ID308, D38)", () => {
 
     const after = await profileOf(person.cookie);
     expect(after.education.at(-1)?.title).toBe("A certificate of employment");
-    expect(after.education.at(-1)?.sources).toEqual([
-      { document: "2026-08-30_cv_FR.pdf", said: "Certificat de travail, HEIG-VD." },
-    ]);
     const extended = after.experience.find((each) => each.id === post.id);
     expect(extended?.lines).toHaveLength(post.lines.length + 1);
     expect(extended?.lines.at(-1)?.text).toBe("Led the migration to Kubernetes.");
-    expect(extended?.lines.at(-1)?.sources).toEqual([
-      { document: "2026-08-30_cv_FR.pdf", said: "Led the migration to Kubernetes." },
-    ]);
     const grown = after.groups.find((each) => each.id === group.id);
     expect(grown?.children).toHaveLength(group.children.length + 1);
     expect(grown?.children.at(-1)?.title).toBe("Terraform");
-  });
-
-  /**
-   * The questions take no flow of their own (`ID310`): a second reading's candidates go
-   * through the same writer, which only ever inserts, and the questions a person is
-   * already holding keep their ids, their states and their places.
-   */
-  it("adds the questions it proposes after the ones the person already has", async () => {
-    const person = await withAProfile("second-reading-questions@example.com");
-    const before = await profileOf(person.cookie);
-    const post = before.experience[0];
-    if (post === undefined) throw new Error("the first reading wrote no experience");
-    const wasAt = await positionsOf(person.id);
-    const second = await oneMore(person.cookie, theSet.cvFrench.filename);
-    const cases = withCases({
-      [second.case]: {
-        content: aSecondReading({
-          candidates: [
-            {
-              kind: "scope",
-              item: post.title,
-              where: "Experience · in 2 documents",
-              lead: "Whose work was the migration?",
-              options: [
-                { label: "Mine", hint: "I led it", concern: "Led the migration" },
-                { label: "In my own words", hint: "I will say it myself" },
-              ],
-            },
-          ],
-        }),
-      },
-    });
-
-    try {
-      await (await read(person.cookie)).text();
-    } finally {
-      cases.dispose();
-    }
-
-    const nowAt = await positionsOf(person.id);
-    // Every question that was there is still there, at the place it was; the new one is
-    // past the last of them.
-    expect(nowAt.slice(0, wasAt.length)).toEqual(wasAt);
-    expect(nowAt).toHaveLength(wasAt.length + 1);
-    expect(nowAt.at(-1)?.[1]).toBeGreaterThan(Math.max(...wasAt.map(([, at]) => at)));
   });
 
   it("writes nothing and deletes nothing when an extends names an item that is not theirs", async () => {
@@ -1238,9 +1406,14 @@ describe("a reading of a person who already has a profile (ID308, D38)", () => {
       ["2026-08-30_cv_EN.pdf", "read"],
       ["2026-08-30_cv_FR.pdf", "read"],
     ]);
-    // Read and disposed of, and the profile exactly as it was.
+    // Read and disposed of, and the profile exactly as it was — but for `readOn`, which
+    // is when this person's documents were last read, and a reading did just happen
+    // (`ID334`: it used to be the last read of a document some fact cited, and no fact
+    // cites one any more).
     expect(objectsHeld(storage)).toEqual([]);
-    expect(await profileOf(person.cookie)).toEqual(before);
+    const after = await profileOf(person.cookie);
+    expect({ ...after, readOn: null }).toEqual({ ...before, readOn: null });
+    expect(Date.parse(after.readOn ?? "")).toBeGreaterThan(Date.parse(before.readOn ?? ""));
   });
 });
 
@@ -1293,11 +1466,11 @@ describe("the shipped second reading of the ownership CV (SL11)", () => {
  * A document is an input that is consumed (`ID309`, `D38`).
  *
  * Read, its facts placed in the profile, its file disposed of — never before the profile
- * that cites it is committed. What stays is the row: the name a fact cites, when it was
- * read, and the hash that makes the same bytes handed over twice a duplicate still.
+ * is committed. What stays is the row: when it was read, and the hash that makes the same
+ * bytes handed over twice a duplicate still.
  */
 describe("a document consumed by the reading (ID309)", () => {
-  it("deletes each read document's file and clears its key, keeping the row and what cites it", async () => {
+  it("deletes each read document's file and clears its key, keeping the row", async () => {
     const person = await signedIn("consumed-after-reading@example.com");
     await documentsFor(person.id, [theSet.cvEnglish.filename], storage);
     expect(objectsHeld(storage)).toHaveLength(1);
@@ -1308,11 +1481,10 @@ describe("a document consumed by the reading (ID309)", () => {
     expect(objectsHeld(storage)).toEqual([]);
     expect([row?.status, row?.storageKey]).toEqual(["read", null]);
     expect(row?.readAt).not.toBeNull();
-    // The row is the name a fact cites, so the profile still says where every fact came
-    // from although the file it came from is gone.
+    // The profile the run wrote is there although the file it was written from is gone.
     const profile = await profileOf(person.cookie);
-    expect(profile.documents).toBe(1);
-    expect(profile.experience[0]?.sources[0]?.document).toBe("2026-08-30_cv_EN.pdf");
+    expect(profile.experience.length).toBeGreaterThan(0);
+    expect(profile.readOn).not.toBeNull();
   });
 
   it("deletes nothing when the reading fails", async () => {

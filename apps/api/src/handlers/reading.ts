@@ -9,11 +9,6 @@ import {
   itemLine,
   itemProject,
   profileItem,
-  provenance,
-  type QuestionKind,
-  question,
-  questionKind,
-  questionOption,
 } from "@app/db";
 import { type BaseMessage, HumanMessage, SystemMessage } from "@langchain/core/messages";
 import { and, asc, eq, inArray, ne } from "drizzle-orm";
@@ -25,7 +20,7 @@ import type { Assistant, ConversationsAgent } from "../lib/assistant";
 import { existing } from "../lib/conversation";
 import { db } from "../lib/db";
 import { slugOf } from "../lib/documents";
-import { type ItemRead, itemsOf } from "../lib/profile-edit";
+import { type ItemShape, itemsOf } from "../lib/profile-edit";
 import { asking, refused } from "../lib/session";
 import { type ObjectKey, storage } from "../lib/storage";
 import { createEnvelope } from "../lib/stream";
@@ -139,7 +134,7 @@ export const readDocuments = (agent: ConversationsAgent, profile: Assistant) =>
        *
        * They are held for the length of the run and not written to a table of their own,
        * because the register has none: a fact becomes a row when the reading places it,
-       * as `profile_item` with its `provenance`. A run with nothing new to read makes no
+       * as `profile_item` and its lines. A run with nothing new to read makes no
        * call at all, which is what keeps a second run free of them (`SL2`'s criterion 11).
        */
       const read: { name: string; id: string; key: ObjectKey; text: string }[] = [];
@@ -212,7 +207,7 @@ export const readDocuments = (agent: ConversationsAgent, profile: Assistant) =>
          * The reading: one composed document, one call (`ID157`, the person 2026-09-12).
          *
          * Every document this run could read is joined into a single document, each part
-         * under the name the profile's sources cite, and one call answers it. There is no
+         * under the name the answer's sources cite, and one call answers it. There is no
          * classification step and no merge: nothing branches on what kind a document is
          * (`ID158`), and nothing needs reconciling when the model saw every document at
          * once.
@@ -234,8 +229,14 @@ export const readDocuments = (agent: ConversationsAgent, profile: Assistant) =>
             const text = composed(read.map(({ name, text }) => ({ name, text })));
             // The profile as `read_profile` answers it, which is what the second prompt is
             // shown (`ID308`): a read in a transaction of its own, because that is the one
-            // shape `itemsOf` takes and this read writes nothing.
-            const standing = await db.transaction((tx) => itemsOf(tx, person.id));
+            // shape `itemsOf` takes and this read writes nothing. The concerns it carries
+            // are dropped here and never shown to a reading (`ID333`): nothing a reading
+            // writes produces one any more, and what the assistant keeps on an item is the
+            // assistant's business. `itemsOf` still answers with them, because the
+            // assistant reads the profile through it.
+            const standing = (await db.transaction((tx) => itemsOf(tx, person.id))).map(
+              ({ concerns: _kept, ...item }) => item,
+            );
             const answered =
               standing.length === 0
                 ? await retriedOnce(() =>
@@ -265,7 +266,6 @@ export const readDocuments = (agent: ConversationsAgent, profile: Assistant) =>
             for (const part of read) {
               await envelope.send({ kind: "document", id: part.id, status: "read", reason: null });
             }
-            await writeQuestions(person.id, { candidates: answered.candidates });
             // The profile is committed and the rows say `read`, so the inputs can go
             // (`ID309`). The row stays — it is the name a fact cites — and only the file
             // and the key that reaches it are disposed of.
@@ -376,8 +376,9 @@ const quoted = z.object({ document: z.string().min(1), said: z.string().min(1) }
  *
  * A malformed answer is a failed step and never a partly written profile (spec,
  * *Failure modes*): `askFor` parses, this shape refuses, and the writer below never
- * runs. `sources` is required on every item, because an item nothing said is exactly
- * the thing this product promises not to produce.
+ * runs. `sources` is still required on every item, and still read: no row keeps it any
+ * more (`ID334`), but an item citing nothing — or citing a document this run did not read
+ * — is an answer about papers nobody handed over, and the writer refuses it.
  */
 const mergedItem: z.ZodType<MergedItem> = z.lazy(() =>
   z.object({
@@ -443,6 +444,11 @@ type Written = { added: string[]; addedTo: string[] };
  * handed over fails as a step rather than as half a profile; and every `extends`, to an
  * item of this person, so an answer naming somebody else's item — or none at all — writes
  * nothing.
+ *
+ * **The first of those two resolutions now writes nothing** (`ID334`): no row keeps what a
+ * document said. It stays a check and nothing else, because an answer that cites a document
+ * this run did not read is an answer about somebody else's papers, and that is worth
+ * refusing whether or not the quote is kept.
  *
  * Inside, nothing is deleted and nothing is updated. New items take positions after the
  * last item, new lines after the item's last line, new children after its last child, so
@@ -510,14 +516,6 @@ const writeProfile = async (
         await tx
           .insert(itemLine)
           .values({ id: lineId, itemId, text: line.text, position: from + at });
-        for (const source of line.sources) {
-          await tx.insert(provenance).values({
-            id: randomUUID(),
-            documentId: documentFor(source.document),
-            lineId,
-            said: source.said,
-          });
-        }
       }
     };
 
@@ -565,14 +563,6 @@ const writeProfile = async (
           .values({ itemId: id, label: item.entry.label, qualifier: item.entry.qualifier ?? null });
       }
       await writeLines(id, item.lines ?? [], 0);
-      for (const source of item.sources) {
-        await tx.insert(provenance).values({
-          id: randomUUID(),
-          documentId: documentFor(source.document),
-          itemId: id,
-          said: source.said,
-        });
-      }
       // A group's entries are entries and an entry has nothing under it: that is what
       // makes a group flat by construction rather than by the screen's restraint (D17).
       const children = item.kind === "entry" ? [] : (item.children ?? []);
@@ -617,24 +607,17 @@ const writeProfile = async (
 };
 
 /**
- * The fourth step: what the documents could not say (`S4.1`, the spec's *The questions*).
+ * What a reading may still propose, and what nothing does with it any more (`ID333`).
  *
- * **The cap lives here and nowhere else** (`D19`, `ID122`, `F1`). It is applied when the
- * run writes the questions, not when a screen reads them: the first five are written
- * `asked = true` and the rest `asked = false` against their items. A route that wrote
- * eleven and showed five would leave six questions that look asked and are not. The
- * number is a value in one place so that tuning it on the first real intakes is one
- * edit; it is not configuration, because that would be a setting nobody owns.
- */
-const atMostFive = 5;
-
-/**
- * What the reader may propose, and what it must answer with.
+ * **A reading writes no question.** The run ends at the profile: `question`,
+ * `question_option` and `profile_concern` stay, and the assistant keeps every action that
+ * reads them, but nothing in an intake writes one — the questions come back as the
+ * profile assistant's, shaped for a match against an offer, in the slot that owns them.
  *
- * **The kind is a string here and an enum in the database**, and the difference is the
- * whole of criterion 1. A candidate of a fourth kind is a proposal this step declines —
- * dropped, never stored — and not a malformed answer that fails the step; what makes a
- * fourth kind impossible is the column, which PostgreSQL refuses a value outside.
+ * The shape stays here because the answers this project ships were recorded when a reading
+ * proposed candidates, and they still answer with them. An answer that carries them is
+ * read and validated as it always was, and then ignored; the corpus is adapted where the
+ * reading's output is settled, not here.
  *
  * Four answers at most, the design language's cap for an exclusive choice and the spec's
  * cap on a question. Two at least, because one answer is not a question.
@@ -656,8 +639,6 @@ const candidate = z.object({
     .max(4),
 });
 
-const proposal = z.object({ candidates: z.array(candidate) });
-
 /**
  * What the reading is asked: one composed document, one answer (`ID157`, `ID158`).
  *
@@ -671,6 +652,12 @@ const proposal = z.object({ candidates: z.array(candidate) });
  * reading over all of them makes it a claim. So the answer names, for every fact, the
  * part it came from and the words that part used, and `writeProfile` refuses a citation
  * naming a part this run did not read.
+ *
+ * **It still asks for the candidates nothing writes** (`ID333`, `S3.1`). What an answer
+ * proposes is read, validated and then dropped, and this prompt is left exactly as every
+ * shipped first reading was recorded against it: it is the corpus's own prompt, and the
+ * two are adapted together at the join where the reading's output is settled. The second
+ * reading's prompt is this slice's to change, and asks for no candidate at all.
  */
 const readingAll = (document: string): BaseMessage[] => [
   new SystemMessage(
@@ -700,11 +687,12 @@ const theReadingOf = (step: "read" | "read-more", names: string[]): About => ({
 });
 
 /**
- * What the reading answers: the profile, and the questions it leaves open, together.
+ * What the reading answers: the profile, and the candidates nothing writes (`ID333`).
  *
- * One shape for one call. A malformed half is a malformed answer — there is no partly
- * written profile with unasked questions beside it, because neither is written until
- * both have been read.
+ * One shape for one call. A malformed half is a malformed answer — the candidates are
+ * read and held to their shape although no row comes of them, because the answer is one
+ * answer, and a recording that half-fails is a recording to fix rather than a reading to
+ * half-write.
  *
  * Exported so the answers this project ships can be held to the very shape a run holds a
  * model to: a recording that would fail the run must fail the suite first.
@@ -727,10 +715,16 @@ export const reading = z.object({
  * **The answer can only add**, and nothing in its shape can do anything else: a new item,
  * or new lines and new children on an item named by its id. What "the same item" is stays
  * the model's call; this is what bounds what that call can cost.
+ *
+ * **It is shown no concern, and it is asked for no question** (`ID333`). A reading writes
+ * neither, so a prompt that carried the concerns the person settled would be asking a
+ * model to respect something nothing in an intake produces any more, and asking for
+ * candidates would be asking for an answer nothing reads. What the assistant keeps on an
+ * item stays the assistant's, and the questions come back in the slot that owns them.
  */
-const readingMore = (profile: ItemRead[], document: string): BaseMessage[] => [
+const readingMore = (profile: ItemShape[], document: string): BaseMessage[] => [
   new SystemMessage(
-    "You read the new documents a job seeker has handed over, given as one document whose parts are marked <<<DOCUMENT name>>> … <<<END>>>, against the profile they already have, and you answer with what is new in them and nothing else. The profile comes first, as JSON, marked <<<PROFILE>>> … <<<END>>>: each item with its id, its kind, its title, its dates, its lines with their ids, the items under it, and the concerns the person has settled about it. Answer with JSON alone, as an object with items, extends and candidates. items are facts the profile does not have at all, each with kind, one of summary, identity, experience, project, education, publication, language, group, entry; title; the optional subtitle, start_text and end_text as the documents wrote them; the block for its kind (experience, project, education, entry); lines; children; and sources. extends are additions to items the profile already has, each with itemId, that item's id exactly as the profile gives it, and lines, new lines for it, and children, new items under it; every line and every child carries its own sources. A document that restates something the profile already has gives nothing at all: a new achievement on a post the profile has is a new line on that post, and a new skill is a new child of the group that holds the others. You can only add. Nothing you answer moves, rewrites or removes anything the profile holds, and there is no field for it: what the person settled stays as it is. A source is the name of the part the fact came from and what that part said, word for word in that part's own language. A fact stated by several parts carries one source per part and no third wording of your own. Never state a figure no part states: no duration, no seniority, no total. Each candidate is a question the documents themselves cannot answer, with kind, one of scope (a fact says what was done but not what the person's part was), conflict (two parts state the same thing differently) or provenance (a term appears in a way that leaves its standing unclear); item, the exact title of the item it is about; where, the item's place said the way the profile says it; lead, the question itself in one or two sentences; and options, two to four answers, each with label, hint and the concern that answer writes, the last of which is the person's own words and carries no concern. Never ask about a fact the parts agree on and state plainly, never ask about a date a part states, and never ask what a person can be assumed to know about their own job.",
+    "You read the new documents a job seeker has handed over, given as one document whose parts are marked <<<DOCUMENT name>>> … <<<END>>>, against the profile they already have, and you answer with what is new in them and nothing else. The profile comes first, as JSON, marked <<<PROFILE>>> … <<<END>>>: each item with its id, its kind, its title, its dates, its lines with their ids, and the items under it. Answer with JSON alone, as an object with items and extends. items are facts the profile does not have at all, each with kind, one of summary, identity, experience, project, education, publication, language, group, entry; title; the optional subtitle, start_text and end_text as the documents wrote them; the block for its kind (experience, project, education, entry); lines; children; and sources. extends are additions to items the profile already has, each with itemId, that item's id exactly as the profile gives it, and lines, new lines for it, and children, new items under it; every line and every child carries its own sources. A document that restates something the profile already has gives nothing at all: a new achievement on a post the profile has is a new line on that post, and a new skill is a new child of the group that holds the others. You can only add. Nothing you answer moves, rewrites or removes anything the profile holds, and there is no field for it: what is already there stays exactly as it is. A source is the name of the part the fact came from and what that part said, word for word in that part's own language. A fact stated by several parts carries one source per part and no third wording of your own. Never state a figure no part states: no duration, no seniority, no total.",
   ),
   new HumanMessage(`<<<PROFILE>>>\n${JSON.stringify(profile, null, 2)}\n<<<END>>>\n\n${document}`),
 ];
@@ -759,109 +753,4 @@ const retriedOnce = async <T>(call: () => Promise<T>): Promise<T> => {
   } catch {
     return call();
   }
-};
-
-/**
- * The questions written, whole or not at all.
- *
- * Three things are refused before anything is written, and each one is a claim:
- *
- * **A kind that is not one of the three is dropped.** The spec says "three kinds, and
- * nothing else", and a fourth is a proposal this step declines rather than an answer it
- * refuses.
- *
- * **A candidate whose item is not in the profile is dropped.** A question never points
- * at nothing, and a later correction that removes an item takes its question with it
- * through the foreign key's `on delete cascade`.
- *
- * **A candidate about a fact the documents agree on and state plainly is dropped**
- * (`US5`, criterion 3). Two or more documents that stated a fact in the very same words
- * have agreed about it and stated it plainly, so there is nothing there only the person
- * knows, and asking would be quizzing them about their own CV. This is the run's rule
- * and not the reader's: a reader that proposes such a question is refused here.
- *
- * **It only ever inserts, and a second reading takes the positions after the last**
- * (`ID310`). The questions a person is already holding — waiting, answered or put aside —
- * are untouched: this step has no flow of its own, and nothing here restricts a candidate
- * to what the same reading added.
- */
-const writeQuestions = async (userId: string, asked: z.infer<typeof proposal>): Promise<void> => {
-  const items = await db
-    .select()
-    .from(profileItem)
-    .where(eq(profileItem.userId, userId))
-    .orderBy(asc(profileItem.position), asc(profileItem.id));
-
-  /** The item a title names. The first of a repeated title wins, as the profile orders. */
-  const idOf = new Map<string, string>();
-  for (const item of items) if (!idOf.has(item.title)) idOf.set(item.title, item.id);
-
-  const quotes = await db
-    .select({
-      itemId: provenance.itemId,
-      said: provenance.said,
-      documentId: provenance.documentId,
-    })
-    .from(provenance)
-    .innerJoin(document, eq(provenance.documentId, document.id))
-    .where(eq(document.userId, userId));
-
-  const wordingsOf = new Map<string, Set<string>>();
-  const documentsOf = new Map<string, Set<string>>();
-  for (const quote of quotes) {
-    if (quote.itemId === null) continue;
-    wordingsOf.set(quote.itemId, (wordingsOf.get(quote.itemId) ?? new Set()).add(quote.said));
-    documentsOf.set(
-      quote.itemId,
-      (documentsOf.get(quote.itemId) ?? new Set()).add(quote.documentId),
-    );
-  }
-
-  const agreedPlainly = (itemId: string): boolean =>
-    (documentsOf.get(itemId)?.size ?? 0) >= 2 && (wordingsOf.get(itemId)?.size ?? 0) === 1;
-
-  const kinds = new Set<string>(questionKind.enumValues);
-  const keep = asked.candidates.flatMap((proposed) => {
-    if (!kinds.has(proposed.kind)) return [];
-    const itemId = idOf.get(proposed.item);
-    if (itemId === undefined) return [];
-    if (agreedPlainly(itemId)) return [];
-    return [{ ...proposed, kind: proposed.kind as QuestionKind, itemId }];
-  });
-  if (keep.length === 0) return;
-
-  const standing = await db
-    .select({ position: question.position })
-    .from(question)
-    .where(eq(question.userId, userId));
-  const afterTheLast = standing.reduce((last, row) => Math.max(last, row.position), -1) + 1;
-
-  await db.transaction(async (tx) => {
-    for (const [at, proposed] of keep.entries()) {
-      const id = randomUUID();
-      await tx.insert(question).values({
-        id,
-        userId,
-        itemId: proposed.itemId,
-        kind: proposed.kind,
-        asked: at < atMostFive,
-        where: proposed.where,
-        lead: proposed.lead,
-        state: "waiting",
-        position: afterTheLast + at,
-      });
-      for (const [position, option] of proposed.options.entries()) {
-        await tx.insert(questionOption).values({
-          id: randomUUID(),
-          questionId: id,
-          position,
-          label: option.label,
-          hint: option.hint,
-          // The last row is always the person's own words, so it carries no concern of its
-          // own whatever the reader proposed for it.
-          concern: position === proposed.options.length - 1 ? null : (option.concern ?? null),
-        });
-      }
-    }
-  });
 };

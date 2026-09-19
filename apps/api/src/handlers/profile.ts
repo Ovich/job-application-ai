@@ -11,7 +11,6 @@ import {
   type ProfileItem,
   profileConcern,
   profileItem,
-  provenance,
   type QuestionKind,
   type QuestionState,
   question,
@@ -30,21 +29,18 @@ const factory = createFactory();
  * **One payload, deliberately not paged** (`F4`). Exhaustiveness is the screen's whole
  * contract, so a page size would be the first fold, and a real profile is a few hundred
  * rows. What comes back is the rows as the tables hold them, reshaped by nothing: the
- * spine's columns, the per-kind block for the item's own kind, its lines, its children,
- * and what each document said about it, verbatim.
+ * spine's columns, the per-kind block for the item's own kind, its lines and its children.
  *
- * **Every count here is a count of rows.** `documents` beside an item is
- * `count(distinct document_id)` over that item's provenance, which is what makes
- * "4 documents" a fact about the database rather than a number somebody stored (`F3`).
- * Nothing is derived from a date and no arithmetic is done anywhere below.
+ * **Where a fact came from is not on this wire** (`ID334`). The quote behind each fact, and
+ * the counts of documents that stood beside it, are gone: a profile is what it says it is,
+ * and what a document said about it is the conversation's to answer. `readOn` stays, and
+ * is the latest `read_at` of the person's own documents — a fact about rows, like every
+ * other value below, derived from no date arithmetic.
  *
  * Filtered by the session's user like every route here, and a person with nothing read
  * is answered an empty profile rather than a 404: having no profile yet is not the same
  * thing as there being no such address (spec, *Failure modes*).
  */
-
-/** What one document said about one fact, and which document said it. */
-type Source = { document: string; said: string };
 
 /**
  * One profile concern on the wire. `supersededBy` is carried, not hidden, because what
@@ -80,7 +76,6 @@ export type ProfileItemAnswer = {
   subtitle: string | null;
   startText: string | null;
   endText: string | null;
-  documents: number;
   experience: {
     organisation: string;
     organisationNote: string | null;
@@ -95,9 +90,8 @@ export type ProfileItemAnswer = {
     note: string | null;
   } | null;
   entry: { label: string; qualifier: string | null } | null;
-  lines: { id: string; text: string; documents: number; sources: Source[] }[];
+  lines: { id: string; text: string }[];
   children: ProfileItemAnswer[];
-  sources: Source[];
   /** What the person said about this item, newest first. Nothing is ever removed. */
   concerns: ProfileConcernAnswer[];
   /** The one concern nothing has superseded: what the builder reads before writing. */
@@ -109,7 +103,6 @@ export type ProfileItemAnswer = {
 /** The whole profile, in the panels the sheet draws, so the sheet composes nothing. */
 export type ProfileAnswer = {
   name: string | null;
-  documents: number;
   readOn: string | null;
   summary: ProfileItemAnswer | null;
   identity: ProfileItemAnswer | null;
@@ -126,7 +119,6 @@ export type ProfileAnswer = {
 /** An empty profile: a person who has read nothing yet, and not an error. */
 const noProfileYet: ProfileAnswer = {
   name: null,
-  documents: 0,
   readOn: null,
   summary: null,
   identity: null,
@@ -148,58 +140,54 @@ export const profileOf = async (userId: string): Promise<ProfileAnswer> => {
   if (items.length === 0) return noProfileYet;
 
   const ids = items.map((item) => item.id);
-  const [experiences, projects, educations, entries, lines, quotes, questions, options, concerns] =
-    await Promise.all([
-      db.select().from(itemExperience).where(inArray(itemExperience.itemId, ids)),
-      db.select().from(itemProject).where(inArray(itemProject.itemId, ids)),
-      db.select().from(itemEducation).where(inArray(itemEducation.itemId, ids)),
-      db.select().from(itemEntry).where(inArray(itemEntry.itemId, ids)),
-      db
-        .select()
-        .from(itemLine)
-        .where(inArray(itemLine.itemId, ids))
-        .orderBy(asc(itemLine.position), asc(itemLine.id)),
-      // The documents in the order the person handed them over, so two documents that
-      // said the same thing are quoted in a stable order and never in the order a hash
-      // happened to produce.
-      db
-        .select({
-          itemId: provenance.itemId,
-          lineId: provenance.lineId,
-          said: provenance.said,
-          filename: document.filename,
-          readAt: document.readAt,
-          documentId: document.id,
-        })
-        .from(provenance)
-        .innerJoin(document, eq(provenance.documentId, document.id))
-        .where(eq(document.userId, userId))
-        .orderBy(asc(document.createdAt), asc(document.id), asc(provenance.id)),
-      // The questions in the order they are asked, and the concerns newest first, so the
-      // current one is the head of the list as well as the row nothing has superseded.
-      db
-        .select()
-        .from(question)
-        .where(eq(question.userId, userId))
-        .orderBy(asc(question.position), asc(question.id)),
-      db
-        .select({
-          id: questionOption.id,
-          questionId: questionOption.questionId,
-          label: questionOption.label,
-          hint: questionOption.hint,
-          concern: questionOption.concern,
-        })
-        .from(questionOption)
-        .innerJoin(question, eq(questionOption.questionId, question.id))
-        .where(eq(question.userId, userId))
-        .orderBy(asc(questionOption.position), asc(questionOption.id)),
-      db
-        .select()
-        .from(profileConcern)
-        .where(eq(profileConcern.userId, userId))
-        .orderBy(desc(profileConcern.createdAt), desc(profileConcern.id)),
-    ]);
+  const [
+    experiences,
+    projects,
+    educations,
+    entries,
+    lines,
+    readings,
+    questions,
+    options,
+    concerns,
+  ] = await Promise.all([
+    db.select().from(itemExperience).where(inArray(itemExperience.itemId, ids)),
+    db.select().from(itemProject).where(inArray(itemProject.itemId, ids)),
+    db.select().from(itemEducation).where(inArray(itemEducation.itemId, ids)),
+    db.select().from(itemEntry).where(inArray(itemEntry.itemId, ids)),
+    db
+      .select()
+      .from(itemLine)
+      .where(inArray(itemLine.itemId, ids))
+      .orderBy(asc(itemLine.position), asc(itemLine.id)),
+    // When this person's documents were read, so the sheet can say when the profile it
+    // draws was last made. A document handed over and not yet read has none.
+    db.select({ readAt: document.readAt }).from(document).where(eq(document.userId, userId)),
+    // The questions in the order they are asked, and the concerns newest first, so the
+    // current one is the head of the list as well as the row nothing has superseded.
+    db
+      .select()
+      .from(question)
+      .where(eq(question.userId, userId))
+      .orderBy(asc(question.position), asc(question.id)),
+    db
+      .select({
+        id: questionOption.id,
+        questionId: questionOption.questionId,
+        label: questionOption.label,
+        hint: questionOption.hint,
+        concern: questionOption.concern,
+      })
+      .from(questionOption)
+      .innerJoin(question, eq(questionOption.questionId, question.id))
+      .where(eq(question.userId, userId))
+      .orderBy(asc(questionOption.position), asc(questionOption.id)),
+    db
+      .select()
+      .from(profileConcern)
+      .where(eq(profileConcern.userId, userId))
+      .orderBy(desc(profileConcern.createdAt), desc(profileConcern.id)),
+  ]);
 
   const by = <T extends { itemId: string }>(rows: T[]): Map<string, T> =>
     new Map(rows.map((row) => [row.itemId, row]));
@@ -208,33 +196,19 @@ export const profileOf = async (userId: string): Promise<ProfileAnswer> => {
   const educationOf = by(educations);
   const entryOf = by(entries);
 
-  /** What each item and each line was told, by which document, and by how many. */
-  const saidOf = { item: new Map<string, Source[]>(), line: new Map<string, Source[]>() };
-  const countOf = { item: new Map<string, Set<string>>(), line: new Map<string, Set<string>>() };
-  const documentsUsed = new Set<string>();
+  /** The last time anything of this person's was read, or nothing if nothing has been. */
   let readOn: Date | null = null;
-  for (const quote of quotes) {
-    const against = quote.itemId === null ? "line" : "item";
-    const key = quote.itemId ?? quote.lineId ?? "";
-    saidOf[against].set(key, [
-      ...(saidOf[against].get(key) ?? []),
-      { document: quote.filename, said: quote.said },
-    ]);
-    countOf[against].set(key, (countOf[against].get(key) ?? new Set()).add(quote.documentId));
-    documentsUsed.add(quote.documentId);
-    if (quote.readAt !== null && (readOn === null || quote.readAt > readOn)) readOn = quote.readAt;
+  for (const reading of readings) {
+    if (reading.readAt !== null && (readOn === null || reading.readAt > readOn)) {
+      readOn = reading.readAt;
+    }
   }
 
   const linesOf = new Map<string, ProfileItemAnswer["lines"]>();
   for (const line of lines) {
     linesOf.set(line.itemId, [
       ...(linesOf.get(line.itemId) ?? []),
-      {
-        id: line.id,
-        text: line.text,
-        documents: countOf.line.get(line.id)?.size ?? 0,
-        sources: saidOf.line.get(line.id) ?? [],
-      },
+      { id: line.id, text: line.text },
     ]);
   }
 
@@ -289,7 +263,6 @@ export const profileOf = async (userId: string): Promise<ProfileAnswer> => {
       subtitle: item.subtitle,
       startText: item.startText,
       endText: item.endText,
-      documents: countOf.item.get(item.id)?.size ?? 0,
       experience:
         experience === undefined
           ? null
@@ -315,7 +288,6 @@ export const profileOf = async (userId: string): Promise<ProfileAnswer> => {
       entry: entry === undefined ? null : { label: entry.label, qualifier: entry.qualifier },
       lines: linesOf.get(item.id) ?? [],
       children: items.filter((each) => each.parentId === item.id).map(asAnswer),
-      sources: saidOf.item.get(item.id) ?? [],
       concerns: concernsOf.get(item.id) ?? [],
       // The item's current concern is the one row nothing has superseded, which is a fact
       // about the rows rather than the newest of them (`ID121`).
@@ -329,7 +301,6 @@ export const profileOf = async (userId: string): Promise<ProfileAnswer> => {
 
   return {
     name: of("identity")[0]?.title ?? null,
-    documents: documentsUsed.size,
     readOn: readOn === null ? null : readOn.toISOString(),
     summary: of("summary")[0] ?? null,
     identity: of("identity")[0] ?? null,

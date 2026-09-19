@@ -3,7 +3,6 @@ import * as schema from "@app/db";
 import {
   document as documentRows,
   profileItem as profileItemRows,
-  provenance as provenanceRows,
   session as sessionRows,
   user as userRows,
 } from "@app/db";
@@ -240,13 +239,13 @@ export const deletedThroughApp = async (
 };
 
 /**
- * What a reading leaves, written for `who` at that address (`ID212`): one document, one
- * profile item, and the provenance citing the document from the item, so the profile
- * assistant's opening counts one cited document and a conversation can be opened.
+ * What a reading leaves, written for `who` at that address (`ID212`): one document and one
+ * profile item, so the profile assistant's opening finds a profile and a conversation can
+ * be opened.
  *
  * The deployed suite cannot read a document (`ID138`), and the assistant opens only on a
- * profile that cites one (`ID202`), so the rows are written as the reading would have
- * written them. The document is a typed LinkedIn address, the one source with no storage
+ * person who has a profile (`ID202`, `ID334`), so the rows are written as the reading would
+ * have written them. The document is a typed LinkedIn address, the one source with no storage
  * key, so deleting the account never reaches a bucket. Nothing is cleaned up here:
  * `forget` deletes the user, and the schema's cascade takes these rows with it.
  */
@@ -267,7 +266,6 @@ export const givenAReading = async (who: Person, at: Where = "local"): Promise<v
   }
   const address = "https://www.linkedin.com/in/end-to-end";
   const documentId = randomUUID();
-  const itemId = randomUUID();
   await db.insert(documentRows).values({
     id: documentId,
     userId: person.id,
@@ -279,17 +277,11 @@ export const givenAReading = async (who: Person, at: Where = "local"): Promise<v
     readAt: new Date(),
   });
   await db.insert(profileItemRows).values({
-    id: itemId,
+    id: randomUUID(),
     userId: person.id,
     kind: "summary",
     title: "Platform engineer",
     position: 1,
-  });
-  await db.insert(provenanceRows).values({
-    id: randomUUID(),
-    documentId,
-    itemId,
-    said: "Platform engineer",
   });
 };
 

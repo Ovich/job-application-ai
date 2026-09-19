@@ -49,6 +49,7 @@ const { cookiesSetBy, signInThrough, signedInAs } = await import("../support/sig
 const { documentsFor, theSet } = await import("../support/documents");
 const { chatModelThroughTheApp, failingMidStream, forgetRequests, requestsSent } =
   await import("../support/ai");
+const { withQuestions } = await import("../support/questions");
 
 beforeEach(() => {
   objects.storage = localStorageIn();
@@ -187,21 +188,20 @@ describe("the profile assistant's own opening, as the application is composed (I
   const textsOf = (answer: Answer) =>
     (answer.entries[0]?.parts ?? []).map((part) => ({ ...part }) as Record<string, unknown>);
 
-  it("names the documents read, then the tail, and ends on the first waiting question's opener", async () => {
+  it("says what it read and wrote, then the tail, and ends on the first waiting question's opener", async () => {
     const person = await signedIn("conversation-after-a-reading@example.com");
-    await documentsFor(
-      person.id,
-      [theSet.cvFrench.filename, theSet.cvWord2022.filename, theSet.cv2025.filename],
-      objects.storage as ReturnType<typeof localStorageIn>,
-    );
-    await (
-      await app.request("/api/intake/read", { method: "POST", headers: { cookie: person.cookie } })
-    ).text();
+    // The opening is what this case is about, and a question is what it opens on: the
+    // documents and the questions are written, and no reading is run (`S3.0`).
+    await documentsFor(person.id, [
+      theSet.cvFrench.filename,
+      theSet.cvWord2022.filename,
+      theSet.cv2025.filename,
+    ]);
+    await withQuestions(person.id);
     const profile = (await (
       await app.request("/api/intake/profile", { headers: { cookie: person.cookie } })
-    ).json()) as { documents: number; questions: { itemTitle: string; state: string }[] };
+    ).json()) as { questions: { itemTitle: string; state: string }[] };
     const first = profile.questions.find((question) => question.state === "waiting");
-    expect(profile.documents).toBeGreaterThan(0);
     expect(first).toBeDefined();
 
     const response = await app.request("/api/conversations/profile", {
@@ -211,9 +211,11 @@ describe("the profile assistant's own opening, as the application is composed (I
 
     expect(response.status).toBe(200);
     expect(parts).toEqual([
+      // It counts nothing and promises no source (`ID334`): the three documents this
+      // person handed over are nowhere in the sentence.
       {
         kind: "text",
-        text: `I read your ${profile.documents} documents. Every fact on the right carries the document it came from, and I wrote nothing that is not in them.`,
+        text: "I read your documents and wrote your profile from them, and nothing else.",
         scripted: true,
       },
       {
@@ -231,6 +233,11 @@ describe("the profile assistant's own opening, as the application is composed (I
  * no assistant during the profile intake"*). Before a reading has made a profile there is
  * no conversation to open, and nothing is stored that was never true: the first `GET`
  * after the reading is the one that creates it, with the true opening.
+ *
+ * **What "before a reading" means is that the person has no profile** (`ID334`). The guard
+ * used to count the documents the profile cited; nothing cites one any more, so it counts
+ * the person's items. This case walks that boundary as a person does: documents handed
+ * over and a reading run between the refusals and the answer.
  */
 describe("before any reading (S3.0, ID202)", () => {
   it("answers 409 and creates nothing, twice, so the first GET after a reading writes the true opening", async () => {
@@ -259,7 +266,7 @@ describe("before any reading (S3.0, ID202)", () => {
     expect(after.status).toBe(200);
     expect(body.entries).toHaveLength(1);
     expect(body.entries[0]?.parts[0]?.text).toBe(
-      "I read your 1 document. Every fact on the right carries the document it came from, and I wrote nothing that is not in them.",
+      "I read your documents and wrote your profile from them, and nothing else.",
     );
   });
 });
