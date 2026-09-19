@@ -23,10 +23,6 @@
       >
         <span class="flex flex-wrap items-baseline gap-2.5">
           <span uiText variant="ui">{{ summary.title }}</span>
-          <profile-review-flag [review]="summary.question" [concern]="summary.concern" />
-          <span data-part="from" uiText variant="caption" tone="muted" class="ms-auto">{{
-            from(summary.documents)
-          }}</span>
         </span>
       </div>
     </section>
@@ -44,10 +40,6 @@
       >
         <span class="flex flex-wrap items-baseline gap-2.5">
           <b uiText variant="ui" weight="semibold">{{ identity.title }}</b>
-          <profile-review-flag [review]="identity.question" [concern]="identity.concern" />
-          <span data-part="from" uiText variant="caption" tone="muted" class="ms-auto">{{
-            from(identity.documents)
-          }}</span>
         </span>
         @if (detail(identity); as under) {
           <span uiText variant="caption" tone="muted">{{ under }}</span>
@@ -75,10 +67,6 @@
           <span class="flex flex-wrap items-baseline gap-2.5">
             <b uiText variant="ui" weight="semibold">{{ post.title }}</b>
             <span uiText variant="caption" tone="muted">{{ dates(post) }}</span>
-            <profile-review-flag [review]="post.question" [concern]="post.concern" />
-            <span data-part="from" uiText variant="caption" tone="muted" class="ms-auto">{{
-              from(post.documents)
-            }}</span>
           </span>
           @if (detail(post); as under) {
             <span uiText variant="caption" tone="muted">{{ under }}</span>
@@ -116,10 +104,6 @@
                   >
                     <b uiText variant="caption" weight="semibold">{{ project.title }}</b>
                     <span uiText variant="caption" tone="muted">{{ dates(project) }}</span>
-                    <profile-review-flag [review]="project.question" [concern]="project.concern" />
-                    <span data-part="from" uiText variant="caption" tone="muted" class="ms-auto">{{
-                      from(project.documents)
-                    }}</span>
                     @if (detail(project); as under) {
                       <span uiText variant="caption" tone="muted" class="basis-full">{{
                         under
@@ -134,11 +118,8 @@
                             [profileRegion]="{ kind: 'item', id: chip.id }"
                             [selected]="selected() === chip.id"
                             (select)="chosen($event)"
-                            >{{ chip.title
-                            }}<profile-review-flag
-                              [review]="chip.question"
-                              [concern]="chip.concern"
-                          /></span>
+                            >{{ chip.title }}</span
+                          >
                         }
                       </div>
                     }
@@ -157,9 +138,8 @@
                   [profileRegion]="{ kind: 'item', id: chip.id }"
                   [selected]="selected() === chip.id"
                   (select)="chosen($event)"
-                  >{{ chip.title
-                  }}<profile-review-flag [review]="chip.question" [concern]="chip.concern"
-                /></span>
+                  >{{ chip.title }}</span
+                >
               }
             </div>
           }
@@ -187,10 +167,6 @@
           <span class="flex flex-wrap items-baseline gap-2.5">
             <b uiText variant="ui" weight="semibold">{{ project.title }}</b>
             <span uiText variant="caption" tone="muted">{{ dates(project) }}</span>
-            <profile-review-flag [review]="project.question" [concern]="project.concern" />
-            <span data-part="from" uiText variant="caption" tone="muted" class="ms-auto">{{
-              from(project.documents)
-            }}</span>
           </span>
           @if (detail(project); as under) {
             <span uiText variant="caption" tone="muted">{{ under }}</span>
@@ -204,9 +180,8 @@
                   [profileRegion]="{ kind: 'item', id: chip.id }"
                   [selected]="selected() === chip.id"
                   (select)="chosen($event)"
-                  >{{ chip.title
-                  }}<profile-review-flag [review]="chip.question" [concern]="chip.concern"
-                /></span>
+                  >{{ chip.title }}</span
+                >
               }
             </div>
           }
@@ -229,9 +204,6 @@
           <span class="flex flex-wrap items-baseline gap-2.5">
             <b uiText variant="ui" weight="semibold">{{ group.title }}</b>
             <span uiText variant="caption" tone="muted">{{ group.children.length }}</span>
-            <span data-part="from" uiText variant="caption" tone="muted" class="ms-auto">{{
-              from(group.documents)
-            }}</span>
           </span>
           <div class="mt-1 flex flex-wrap gap-1.5">
             @for (chip of group.children; track chip.id) {
@@ -241,9 +213,8 @@
                 [profileRegion]="{ kind: 'item', id: chip.id }"
                 [selected]="selected() === chip.id"
                 (select)="chosen($event)"
-                >{{ chip.title
-                }}<profile-review-flag [review]="chip.question" [concern]="chip.concern"
-              /></span>
+                >{{ chip.title }}</span
+              >
             }
           </div>
         </div>
@@ -276,10 +247,6 @@
           <span class="flex flex-wrap items-baseline gap-2.5">
             <b uiText variant="ui" weight="semibold">{{ item.title }}</b>
             <span uiText variant="caption" tone="muted">{{ dates(item) }}</span>
-            <profile-review-flag [review]="item.question" [concern]="item.concern" />
-            <span data-part="from" uiText variant="caption" tone="muted" class="ms-auto">{{
-              from(item.documents)
-            }}</span>
           </span>
           @if (detail(item); as under) {
             <span uiText variant="caption" tone="muted">{{ under }}</span>
@@ -293,9 +260,8 @@
                   [profileRegion]="{ kind: 'item', id: chip.id }"
                   [selected]="selected() === chip.id"
                   (select)="chosen($event)"
-                  >{{ chip.title
-                  }}<profile-review-flag [review]="chip.question" [concern]="chip.concern"
-                /></span>
+                  >{{ chip.title }}</span
+                >
               }
             </div>
           }
