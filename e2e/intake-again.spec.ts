@@ -5,17 +5,23 @@ import { forget, type Person, signedIn, type Where } from "./support/session";
 /**
  * The second reading, walked for real (SL11, `ID308`, `ID315`, `ID316`).
  *
- * A person hands over one CV and gets a profile. They answer a question about it. Then
- * they follow the one link the profile has to their documents, hand over a second CV,
- * press Read, and watch the profile grow: everything the first reading wrote is still
- * there with the same id, what the second document adds is beside it, and what they
- * settled is untouched.
+ * A person hands over one CV and gets a profile. Then they follow the one way the profile
+ * has back to their documents, hand over a second CV, press Read, and watch the profile
+ * grow: everything the first reading wrote is still there with the same id, and what the
+ * second document adds is beside it.
  *
- * This is the walk that could not be made before this slice. The two readings asked for
+ * This is the walk that could not be made before that slice. The two readings asked for
  * the same recorded case, so the second one was answered with a first reading's profile
  * and inserted it all again; and a recording could not name an item's id, because an id
  * is a `randomUUID` that does not exist until the profile is written. Both are why the
- * claim below — same ids, new lines, kept concerns — is worth walking in a browser.
+ * claim below — same ids, new lines — is worth walking in a browser.
+ *
+ * It used to answer a question between the two readings and check the concern survived,
+ * and to read the second reading's own notice in the conversation. Product-flow-rework
+ * `S2.1` took the assistant off this page (`ID331`): there is nothing here that asks and
+ * nothing that says a reading landed but the profile itself, which is what it watches now.
+ * What a second reading does to a concern already settled is owed to `profile-assistant`,
+ * along with the notice, and `intake-questions.spec.ts` is parked holding that walk.
  *
  * The local project alone. The recordings and the fixtures are here, but a run against
  * the development environment would write a second profile into a shared database for no
@@ -51,7 +57,7 @@ test.afterAll(async ({}, testInfo) => {
   await forget(addressOf(testInfo.project.name));
 });
 
-test("a second reading adds to the profile, and loses nothing the person settled", async ({
+test("a second reading adds to the profile, and replaces nothing the first one wrote", async ({
   browser,
 }, testInfo) => {
   // Two readings through the paced double, each with a wait of its own: a test may not
@@ -74,9 +80,6 @@ test("a second reading adds to the profile, and loses nothing the person settled
 
   await page.goto("/profile");
   await expect(page.locator("profile-sheet")).toBeVisible();
-  await expect(page.locator("profile-assistant")).toHaveAttribute("data-guide", "done", {
-    timeout: 30_000,
-  });
 
   /** Every item and line the first reading wrote, by the id the page draws it under. */
   const idsBefore = await page
@@ -87,16 +90,6 @@ test("a second reading adds to the profile, and loses nothing the person settled
     .locator("[data-row=line]")
     .evaluateAll((rows) => rows.map((row) => row.textContent?.trim() ?? ""));
   expect(linesBefore.length).toBeGreaterThan(0);
-
-  // One question answered, so the second reading has something of the person's to lose.
-  const count = page.locator("[data-part=count]");
-  await expect(page.locator("scope-tool")).toBeVisible();
-  const picked = page.locator("[data-action=alt]").first();
-  const concern = (await picked.getAttribute("data-concern")) ?? "";
-  expect(concern).not.toBe("");
-  await picked.click();
-  await page.locator("[data-part=send]").click();
-  await expect(count).toHaveText(/^1 of \d+ answered$/);
 
   // The way back to the documents is on the profile itself: `Add documents` opens the drop
   // zone over the page the person is reading (`ID160`, D15), which is the same
@@ -116,13 +109,9 @@ test("a second reading adds to the profile, and loses nothing the person settled
 
   await page.goto("/profile");
   await expect(page.locator("profile-sheet")).toBeVisible();
-  // A returning visit performs nothing — the column lands what is stored at once and
-  // writes no `data-guide` — so what says the second reading has landed is the reading's
-  // own notice in the conversation, naming the document it read (`ID311`).
-  await expect(page.locator("profile-assistant")).toContainText(
-    "2026-09-09_cv-en_ownership-application-management",
-    { timeout: 30_000 },
-  );
+  // What says the second reading has landed is the profile itself growing: there is no
+  // conversation on this page to carry the reading's notice any more (`ID331`), so the
+  // page is polled until it draws more regions than the first reading wrote.
   await expect
     .poll(() => page.locator("[data-region][data-id]").count(), { timeout: 30_000 })
     .toBeGreaterThan(idsBefore.length);
@@ -148,13 +137,6 @@ test("a second reading adds to the profile, and loses nothing the person settled
       exact: false,
     }),
   ).toBeVisible();
-
-  // What the person settled is where they left it, and so is the question they answered.
-  await expect(page.locator("[data-part=concern]").filter({ hasText: concern })).toHaveCount(1);
-  await expect(count).toHaveText(/^1 of \d+ answered$/);
-
-  // And what that notice says the reading did: it added to items the profile already had.
-  await expect(page.locator("profile-assistant")).toContainText("added to");
 });
 
 test("two documents handed over at once are one reading, and one profile from both", async ({
@@ -178,10 +160,10 @@ test("two documents handed over at once are one reading, and one profile from bo
   await page.goto("/profile");
   await expect(page.locator("profile-sheet")).toBeVisible();
 
-  // One profile out of both: a fact both CVs state carries a source apiece, which is what
-  // the sheet prints beside it.
-  await expect(
-    page.locator("[data-part=from]").filter({ hasText: "2 documents" }).first(),
-  ).toBeVisible();
+  // One profile out of both, said without counting documents: the sheet stopped printing
+  // how many a part came from (product-flow-rework `S2.2`, `H10`). What says both CVs fed
+  // this one profile is a thing only the first states drawn beside a thing only the
+  // second states.
+  await expect(page.getByText("Charrette").first()).toBeVisible();
   await expect(page.getByText("Windows Server & AD").first()).toBeVisible();
 });

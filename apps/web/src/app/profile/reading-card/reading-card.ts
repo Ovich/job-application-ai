@@ -3,8 +3,9 @@ import { UiText } from "../../ui/typography/text/text";
 
 /**
  * The three figures in the assistant's first message (the mockup's `ReadingCard`):
- * documents read, facts each carrying its source, and the things only the person knows,
- * which counts down as questions are answered or skipped.
+ * documents read, facts, and the things only the person knows, which counts down as
+ * questions are answered or skipped. Where a fact came from is said nowhere: no figure
+ * promises a source (product-flow-rework `H10`).
  *
  * **A figure the reading cannot honestly give is not drawn** (`F4`). Whether a count of
  * facts can be shown honestly is the spec's own open question; when the profile cannot

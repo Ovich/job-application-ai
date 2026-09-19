@@ -1,6 +1,7 @@
 import { readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import { expect, test } from "@playwright/test";
+import { forget, signedIn } from "./support/session";
 
 /**
  * The indexable door (US6, ID63): the entry route as a crawler receives it, with no
@@ -70,6 +71,52 @@ test.describe("the entry route with JavaScript disabled", () => {
       );
     }
     await expect(page.locator('meta[name="twitter:card"]')).toHaveAttribute("content", twitterCard);
+  });
+});
+
+/**
+ * What `/` is once the browser has its JavaScript back (product-flow-rework S1.1, D19).
+ * The one address is two routes now — the index for a person, the sign-in screen for
+ * nobody — and which of them renders is decided by a guard that asks the library, so this
+ * is the seam a browser has to be driven across: nothing short of a real session answers
+ * it.
+ *
+ * The signed-in case is the local project's alone, for the reason `profile` is: signing a
+ * person in deployed writes them into the one shared development database.
+ */
+test.describe("/ with a session and without", () => {
+  const who = { name: "Stefan Teofanovic", email: "entry-route-index@example.com" };
+
+  test.afterAll(async () => {
+    await forget();
+  });
+
+  test("renders the index for a signed-in person, with the menu square over it", async ({
+    browser,
+  }, testInfo) => {
+    test.skip(
+      testInfo.project.name === "deployed",
+      "signing a person in writes them into the one shared development database",
+    );
+    const context = await signedIn(browser, who);
+    const page = await context.newPage();
+
+    await page.goto("/");
+
+    await expect(page.getByRole("heading", { level: 1 })).toHaveText("Welcome back, Stefan");
+    await expect(page.getByRole("button", { name: "Start an application" })).toBeVisible();
+    await expect(page.getByText("No application yet")).toBeVisible();
+    await expect(page.getByRole("button", { name: "Menu" })).toBeVisible();
+    expect(new URL(page.url()).pathname).toBe("/");
+
+    await context.close();
+  });
+
+  test("renders the sign-in screen for a browser with no session", async ({ page }) => {
+    await page.goto("/");
+
+    await expect(page.locator("h1")).toHaveText(heading);
+    await expect(page.getByRole("button", { name: "Menu" })).toHaveCount(0);
   });
 });
 

@@ -2,12 +2,18 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { subjectAt } from "../support/providers";
 
 /**
- * Seam A: `routes/intake`, `GET /profile` (criteria 2, 6, 8, 9).
+ * Seam A: `routes/intake`, `GET /profile` (criteria 2, 6, 8).
  *
  * Behind the seam: PostgreSQL itself, in this process on PGlite, migrated from the
- * project's own migration files — so the enum and the `one_fact` check constraint of
- * criterion 1 are really enforced here. A person and their profile are planted through
- * `tests/support/profile.ts` and everything asserted comes back through the route.
+ * project's own migration files — so the item kind enum of criterion 1 is really enforced
+ * here. A person and their profile are planted through `tests/support/profile.ts` and
+ * everything asserted comes back through the route.
+ *
+ * **Criterion 9, "nothing inferred", was read here and no longer can be** (`ID334`). It
+ * was checked by looking for a figure in a row's own words that none of the documents
+ * behind that row quoted, and no row keeps what a document said any more. Its two cases
+ * are retired with the field they read; what the reading may state is the reader's own
+ * instruction, held in `intake-read`.
  *
  * Not past it: the rows themselves. What was written is read back through this route,
  * because the route that writes a profile is the route that reads it (the plan's *How
@@ -43,21 +49,16 @@ type Answered = {
   subtitle: string | null;
   startText: string | null;
   endText: string | null;
-  documents: number;
   experience: Record<string, string | null> | null;
   project: Record<string, string | null> | null;
   education: Record<string, string | null> | null;
   entry: Record<string, string | null> | null;
-  lines: { id: string; text: string; documents: number; sources: Source[] }[];
+  lines: { id: string; text: string }[];
   children: Answered[];
-  sources: Source[];
 };
-
-type Source = { document: string; said: string };
 
 type Profile = {
   name: string | null;
-  documents: number;
   readOn: string | null;
   summary: Answered | null;
   identity: Answered | null;
@@ -94,43 +95,6 @@ const everyItem = (profile: Profile): Answered[] => {
   return found;
 };
 
-/**
- * The figures a row carries that no document it cites ever stated (criterion 9, `D16`).
- *
- * Every run of digits in a row's own words is looked for in what that row's documents
- * said. A number that is in neither is a number somebody's arithmetic put there, and
- * this is the list of them: empty is the claim, and the second case below proves the
- * check can actually fail.
- */
-const figuresNobodyStated = (profile: Profile): string[] => {
-  const unstated: string[] = [];
-  for (const item of everyItem(profile)) {
-    const quoted = item.sources.map((source) => source.said).join(" ");
-    const words = [
-      item.title,
-      item.subtitle,
-      item.startText,
-      item.endText,
-      ...Object.values(item.experience ?? {}),
-      ...Object.values(item.project ?? {}),
-      ...Object.values(item.education ?? {}),
-      ...Object.values(item.entry ?? {}),
-    ].filter((each): each is string => typeof each === "string");
-    for (const said of words) {
-      for (const figure of said.match(/\d+/g) ?? []) {
-        if (!quoted.includes(figure)) unstated.push(`${item.title}: ${figure} in "${said}"`);
-      }
-    }
-    for (const line of item.lines) {
-      const said = line.sources.map((source) => source.said).join(" ");
-      for (const figure of line.text.match(/\d+/g) ?? []) {
-        if (!said.includes(figure)) unstated.push(`${item.title}, a line: ${figure}`);
-      }
-    }
-  }
-  return unstated;
-};
-
 /** The twelve groups of the mockup, in its order, each with entries of its own. */
 const twelveGroups = [
   "Domains",
@@ -154,18 +118,11 @@ const aProfile = async (userId: string) => {
       {
         kind: "summary",
         title: "Software Engineer & IT Project Manager",
-        from: [
-          {
-            document: "2026-08-30_cv_EN.pdf",
-            said: "Software Engineer & IT Project Manager specializing in full-stack web development.",
-          },
-        ],
       },
       {
         kind: "identity",
         title: "Stefan Teofanovic",
         subtitle: "Montreux, Switzerland",
-        from: [{ document: "2026-08-30_cv_EN.pdf", said: "Stefan Teofanovic, Montreux" }],
       },
       {
         kind: "experience",
@@ -180,30 +137,12 @@ const aProfile = async (userId: string) => {
         lines: [
           {
             text: "Academic Assistant for TWEB, PRG1 and DOP courses.",
-            from: [
-              {
-                document: "2026-08-30_cv_EN.pdf",
-                said: "Academic Assistant for TWEB, PRG1 and DOP courses.",
-              },
-            ],
           },
           {
             text: "Responsible for practical lab support on the DevOps course.",
-            from: [
-              {
-                document: "2026-08-30_cv_EN.pdf",
-                said: "Responsible for practical lab support on the DevOps course.",
-              },
-            ],
           },
           {
             text: "Design and maintenance of educational platforms.",
-            from: [
-              {
-                document: "2026-08-30_cv_FR.pdf",
-                said: "Conception et maintenance de plateformes pedagogiques.",
-              },
-            ],
           },
         ],
         children: [
@@ -214,22 +153,6 @@ const aProfile = async (userId: string) => {
               description: "An educational platform for exercises and exams.",
               datesText: "since 2022",
             },
-            from: [
-              {
-                document: "2026-08-30_cv_EN.pdf",
-                said: "Opendidac, an educational platform, since 2022.",
-              },
-            ],
-          },
-        ],
-        from: [
-          {
-            document: "2026-08-30_cv_FR.pdf",
-            said: "Collaborateur R&D en genie logiciel, HEIG-VD, Aug 2022 - Aug 2026.",
-          },
-          {
-            document: "2026-08-30_cv_EN.pdf",
-            said: "R&D Collaborator in Software Engineering, HEIG-VD, Aug 2022 - Aug 2026.",
           },
         ],
       },
@@ -237,12 +160,6 @@ const aProfile = async (userId: string) => {
         kind: "project",
         title: "Autonomous-Trader",
         project: { description: "An autonomous paper-trading loop.", datesText: "Feb - Dec 2024" },
-        from: [
-          {
-            document: "2026-08-30_cv_EN.pdf",
-            said: "Autonomous-Trader, Feb - Dec 2024, an autonomous paper-trading loop.",
-          },
-        ],
       },
       ...twelveGroups.map((title, at) => ({
         kind: "group" as const,
@@ -252,13 +169,11 @@ const aProfile = async (userId: string) => {
             kind: "entry" as const,
             title: `${title} thing one`,
             entry: { label: `${title} thing one` },
-            from: [{ document: "2026-08-30_cv_EN.pdf", said: `${title}: ${title} thing one` }],
           },
           {
             kind: "entry" as const,
             title: `${title} thing two`,
             entry: { label: `${title} thing two` },
-            from: [{ document: "2026-08-30_cv_FR.pdf", said: `${title}: ${title} thing two` }],
           },
         ].slice(0, at === 0 ? 1 : 2),
       })),
@@ -268,28 +183,15 @@ const aProfile = async (userId: string) => {
         startText: "2018",
         endText: "2022",
         education: { institution: "HEIG-VD", location: "Yverdon-les-Bains, Switzerland" },
-        from: [
-          {
-            document: "2026-08-30_cv_EN.pdf",
-            said: "Bachelor of Applied Science (BASc), Software Engineering, HEIG-VD, 2018 - 2022.",
-          },
-        ],
       },
       {
         kind: "publication",
         title: "Designing a Data-Driven Survey System",
         subtitle: "ACM CHI 2024",
-        from: [
-          {
-            document: "2026-08-30_cv_EN.pdf",
-            said: "Designing a Data-Driven Survey System, ACM CHI 2024.",
-          },
-        ],
       },
       {
         kind: "language",
         title: "French, English, Serbian",
-        from: [{ document: "2026-08-30_cv_FR.pdf", said: "Francais, anglais, serbe." }],
       },
     ],
   });
@@ -300,7 +202,7 @@ beforeEach(() => {
 });
 
 describe("the profile, read back whole (criterion 2)", () => {
-  it("answers an experience with its lines in order, its project under it and both its sources", async () => {
+  it("answers an experience with its lines in order and its project under it", async () => {
     const person = await signedIn("profile-read-back@example.com");
     await aProfile(person.id);
 
@@ -317,12 +219,6 @@ describe("the profile, read back whole (criterion 2)", () => {
     expect(post?.children.map((child) => [child.kind, child.title])).toEqual([
       ["project", "Opendidac"],
     ]);
-    expect(post?.sources.map((source) => source.said)).toEqual([
-      "Collaborateur R&D en genie logiciel, HEIG-VD, Aug 2022 - Aug 2026.",
-      "R&D Collaborator in Software Engineering, HEIG-VD, Aug 2022 - Aug 2026.",
-    ]);
-    // The count a person is shown beside an item: how many documents said it.
-    expect(post?.documents).toBe(2);
   });
 
   it("keeps a personal project out of the posts and under its own name", async () => {
@@ -366,36 +262,6 @@ describe("the groups are flat (criterion 8, D17)", () => {
   });
 });
 
-describe("nothing inferred (criterion 9, D16)", () => {
-  it("carries no figure in any row that the documents behind that row never stated", async () => {
-    const person = await signedIn("nothing-inferred@example.com");
-    await aProfile(person.id);
-
-    expect(figuresNobodyStated(await profileOf(person.cookie))).toEqual([]);
-  });
-
-  it("fails on one: a row whose words hold a year no document of its own quotes", async () => {
-    const person = await signedIn("one-inferred-figure@example.com");
-    await plantProfile(person.id, {
-      documents: ["2026-08-30_cv_EN.pdf"],
-      items: [
-        {
-          kind: "project",
-          title: "Opendidac",
-          // The mockup's own "4 years (since 2022)": "since 2022" is a document's
-          // statement and "4 years" is arithmetic on today's date (F2).
-          project: { description: "An educational platform.", datesText: "4 years (since 2022)" },
-          from: [{ document: "2026-08-30_cv_EN.pdf", said: "Opendidac, since 2022." }],
-        },
-      ],
-    });
-
-    expect(figuresNobodyStated(await profileOf(person.cookie))).toEqual([
-      'Opendidac: 4 in "4 years (since 2022)"',
-    ]);
-  });
-});
-
 describe("one person's profile and nobody else's (criterion 6, ID118)", () => {
   it("answers this person's items and none of another person's", async () => {
     const mine = await signedIn("mine-alone@example.com");
@@ -408,7 +274,6 @@ describe("one person's profile and nobody else's (criterion 6, ID118)", () => {
           kind: "experience",
           title: "Somebody else's post",
           experience: { organisation: "Elsewhere" },
-          from: [{ document: "CV-2025.pdf", said: "Somebody else's post at Elsewhere." }],
         },
       ],
     });
@@ -444,6 +309,41 @@ describe("a person with nothing read yet (criterion 8, the empty branch)", () =>
       ...profile.groups,
       ...profile.education,
     ]).toEqual([]);
-    expect(profile.documents).toBe(0);
+  });
+});
+
+describe("where a fact came from is not on this wire (`ID334`)", () => {
+  /** Every key of an item and of its lines, at every depth, as JSON carries them. */
+  const keysOf = (profile: Profile): string[] => {
+    const keys = new Set<string>();
+    for (const item of everyItem(profile)) {
+      for (const key of Object.keys(item)) keys.add(key);
+      for (const line of item.lines) for (const key of Object.keys(line)) keys.add(`lines.${key}`);
+    }
+    return [...keys];
+  };
+
+  it("carries no sources on an item or on a line", async () => {
+    const person = await signedIn("no-sources-on-the-wire@example.com");
+    await aProfile(person.id);
+
+    const profile = await profileOf(person.cookie);
+
+    // The profile is read whole first, so an empty answer cannot make this claim pass.
+    expect(everyItem(profile).length).toBeGreaterThan(20);
+    expect(profile.experience[0]?.lines.length).toBeGreaterThan(0);
+    expect(keysOf(profile)).not.toContain("sources");
+    expect(keysOf(profile)).not.toContain("lines.sources");
+  });
+
+  it("carries no document count beside the profile, an item or a line", async () => {
+    const person = await signedIn("no-document-count@example.com");
+    await aProfile(person.id);
+
+    const profile = await profileOf(person.cookie);
+
+    expect(Object.keys(profile)).not.toContain("documents");
+    expect(keysOf(profile)).not.toContain("documents");
+    expect(keysOf(profile)).not.toContain("lines.documents");
   });
 });

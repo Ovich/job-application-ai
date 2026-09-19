@@ -1,37 +1,9 @@
 <!--
   `-mt-10` undoes the shell's own opening step: the profile's bar sits directly under the
-  AppBar in the mockup, where every other signed-in page opens with air above it. Forty
+  top row in the mockup, where every other signed-in page opens with air above it. Forty
   pixels, not twenty-four: `uiPage` opens with `pt-6`, and `<router-outlet>` is an element
   of its own, so the column's `gap-4` falls between the outlet and this page as well.
 -->
-<div [attr.data-view]="view()" [class]="gridClass()">
-  <!-- No assistant during the profile intake (ID202): the column exists once a reading has. -->
-  @if (read()) {
-    <section aria-label="Assistant" [class]="assistantClass()">
-      <profile-assistant
-        [questions]="questions()"
-        [on]="pressed()"
-        [dismissed]="dismissed()"
-        [returning]="returning()"
-        [reading]="reading()"
-        (activate)="activated.set($event)"
-        (closed)="closed.set(closed() + 1)"
-        (decided)="decided.set($event)"
-      />
-    </section>
-  }
-
-  <profile-viewer
-    [view]="view()"
-    [activated]="activated()"
-    [closed]="closed()"
-    [decided]="decided()"
-    (questions)="questions.set($event)"
-    (pressed)="pressed.set($event)"
-    (dismissed)="dismissed.set($event)"
-    (read)="read.set($event)"
-    (returning)="returning.set($event)"
-    (reading)="reading.set($event)"
-    (toggleView)="toggleView()"
-  />
+<div class="-mt-10 flex h-full min-h-0 flex-1 flex-col overflow-hidden">
+  <profile-viewer />
 </div>

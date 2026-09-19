@@ -2,19 +2,17 @@
 import { randomUUID } from "node:crypto";
 import {
   aboutPart,
-  document,
   itemLine,
   type ProfileConcernKind,
   type ProfileConcernSource,
   profileConcern,
   profileItem,
-  provenance,
   question,
   questionAnsweredPart,
   questionOption,
   questionSkippedPart,
 } from "@app/db";
-import { and, asc, countDistinct, eq, isNull, ne } from "drizzle-orm";
+import { and, asc, count, eq, isNull, ne } from "drizzle-orm";
 import { z } from "zod";
 import { type AgentAction, type Assistant, NotYet, Refused } from "../../lib/assistant";
 import type { Transaction } from "../../lib/conversation";
@@ -39,8 +37,15 @@ import prompt from "./prompt.md" with { type: "text" };
 export const openerFor = (asked: { where: string; first: boolean }): string =>
   `${asked.first ? "First" : "Next"}, ${asked.where}.`;
 
-const sentence = (documents: number): string =>
-  `I read your ${documents} document${documents === 1 ? "" : "s"}. Every fact on the right carries the document it came from, and I wrote nothing that is not in them.`;
+/**
+ * What the assistant opens with, said once and stored (`ID164`, `ID200`).
+ *
+ * It counts nothing and promises no source (`ID334`): the quote behind each fact is not
+ * kept any more, so a sentence that said how many documents stood behind the profile, or
+ * that every fact on the right carries the document it came from, would be a promise
+ * nothing on the screen can keep.
+ */
+const sentence = "I read your documents and wrote your profile from them, and nothing else.";
 
 const tail =
   "Some facts say what you did but not what your part was, or two documents disagree. I ask only those. Everything else I could tell from your documents.";
@@ -262,19 +267,24 @@ export const profileAssistant: Assistant = {
   },
   /**
    * Entry 1: the sentence, the tail, and the first waiting question's opener as its last
-   * part (`ID189`). The documents counted are the ones the profile cites, which is the
-   * count the profile's own answer gives.
+   * part (`ID189`).
+   *
+   * **What "nothing read yet" now means is that the person has no profile** (`ID334`). The
+   * guard used to count the documents the profile cited, and nothing cites a document any
+   * more. Of the two bases left — the person's documents or their profile items — the items
+   * are the honest one: a document handed over is not a profile, and the reading can still
+   * be running or have failed, so opening on a document row would have the assistant say it
+   * read and wrote something that is not there. An item exists only because a reading wrote
+   * it, which is exactly what the old count stood for.
    */
   opening: async (tx, person) => {
-    const [cited] = await tx
-      .select({ documents: countDistinct(provenance.documentId) })
-      .from(provenance)
-      .innerJoin(document, eq(provenance.documentId, document.id))
-      .where(eq(document.userId, person));
-    const documents = cited?.documents ?? 0;
+    const [written] = await tx
+      .select({ items: count(profileItem.id) })
+      .from(profileItem)
+      .where(eq(profileItem.userId, person));
     // No assistant during the profile intake (`ID202`): before a reading there is no
     // conversation, so nothing is stored that was never true.
-    if (documents === 0) throw new NotYet("nothing read yet");
+    if ((written?.items ?? 0) === 0) throw new NotYet("nothing read yet");
 
     const asked = await tx
       .select({ title: profileItem.title, state: question.state })
@@ -286,7 +296,7 @@ export const profileAssistant: Assistant = {
     const moved = asked.some((each) => each.state !== "waiting");
 
     return [
-      scripted(sentence(documents)),
+      scripted(sentence),
       scripted(tail),
       ...(waiting === undefined
         ? []

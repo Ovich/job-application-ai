@@ -1,5 +1,5 @@
 import { Injectable, inject, signal } from "@angular/core";
-import { type CanActivateFn, Router, type UrlTree } from "@angular/router";
+import { type CanActivateFn, type CanMatchFn, Router, type UrlTree } from "@angular/router";
 import { authClient } from "./auth-client";
 import { isProvider, type SignedIn } from "./session";
 
@@ -69,7 +69,21 @@ export class CurrentUser {
     return (await this.refreshOrNone()) === null ? this.router.createUrlTree(["/"]) : true;
   }
 
-  /** `/`'s guard: the entry route renders with no session, and a person goes to `/profile`. */
+  /**
+   * `/`'s index branch (D19): `/` renders the index for a person, and for no session the
+   * branch does not match at all, so the route table falls through to the sign-in screen
+   * written below it. A `canMatch` and not a `canActivate`, because one address now has
+   * two entries and only a match that can fail lets the second one be tried.
+   */
+  public async admitsIndex(): Promise<boolean> {
+    return (await this.refreshOrNone()) !== null;
+  }
+
+  /**
+   * `/`'s sign-in branch: it renders with no session. A person never reaches it, since
+   * the index branch above it matched first; the redirect stays as the answer for a
+   * browser that somehow gets here with a live session.
+   */
   public async admitSignedOut(): Promise<true | UrlTree> {
     return (await this.refreshOrNone()) === null ? true : this.router.createUrlTree(["/profile"]);
   }
@@ -137,3 +151,6 @@ export const signedIn: CanActivateFn = () => inject(CurrentUser).admitSignedIn()
 
 /** A live session: `/profile`. Otherwise the route renders. */
 export const signedOut: CanActivateFn = () => inject(CurrentUser).admitSignedOut();
+
+/** A live session: `/` is the index. No session: this branch is not the one, try the next. */
+export const hasSession: CanMatchFn = () => inject(CurrentUser).admitsIndex();

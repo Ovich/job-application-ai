@@ -7,15 +7,12 @@ import type { RegionRef } from "../../../src/app/profile/profile-region/profile-
 import { ProfileSheet } from "../../../src/app/profile/profile-sheet/profile-sheet";
 import { ProfileViewer } from "../../../src/app/profile/profile-viewer/profile-viewer";
 import {
-  conversationIs,
   documentsAre,
   emptyProfile,
-  entryOf,
   intakeRequests,
   itemOf,
   type Profile,
   profileIs,
-  questionOf,
   resetIntake,
   rowOf,
 } from "../../support/intake";
@@ -71,14 +68,12 @@ const aFullProfile = (): Profile => ({
     id: "summary",
     kind: "summary",
     title: "Software Engineer and IT Project Manager.",
-    documents: 4,
   }),
   identity: itemOf({
     id: "identity",
     kind: "identity",
     title: "Stefan Teofanovic",
     subtitle: "Montreux, Switzerland",
-    documents: 4,
   }),
   experience: [
     itemOf({
@@ -87,7 +82,6 @@ const aFullProfile = (): Profile => ({
       title: "R&D Collaborator in Software Engineering",
       startText: "Aug 2022",
       endText: "Aug 2026",
-      documents: 4,
       experience: {
         organisation: "HEIG-VD",
         organisationNote: null,
@@ -98,23 +92,18 @@ const aFullProfile = (): Profile => ({
         {
           id: "line-1",
           text: "Academic Assistant for the TWEB course.",
-          documents: 2,
-          sources: [],
         },
         {
           id: "line-2",
           text: "Practical lab support on the DevOps course.",
-          documents: 1,
-          sources: [],
         },
-        { id: "line-3", text: "Design and maintenance of platforms.", documents: 1, sources: [] },
+        { id: "line-3", text: "Design and maintenance of platforms." },
       ],
       children: [
         itemOf({
           id: "project-opendidac",
           kind: "project",
           title: "Opendidac",
-          documents: 3,
           project: { description: "An educational platform.", datesText: "since 2022" },
           children: [chip("chip-nextjs", "Next.js")],
         }),
@@ -122,7 +111,6 @@ const aFullProfile = (): Profile => ({
           id: "project-eval",
           kind: "project",
           title: "Eval",
-          documents: 1,
           project: { description: "A grading platform.", datesText: null },
         }),
       ],
@@ -133,14 +121,13 @@ const aFullProfile = (): Profile => ({
       title: "IT Project Manager",
       startText: "2007",
       endText: "2016",
-      documents: 2,
       experience: {
         organisation: "Altran",
         organisationNote: null,
         location: "Lausanne",
         arrangement: null,
       },
-      lines: [{ id: "line-4", text: "Led the migration programme.", documents: 1, sources: [] }],
+      lines: [{ id: "line-4", text: "Led the migration programme." }],
     }),
   ],
   projects: [
@@ -148,14 +135,12 @@ const aFullProfile = (): Profile => ({
       id: "personal-trader",
       kind: "project",
       title: "Autonomous-Trader",
-      documents: 2,
       project: { description: "A paper-trading loop.", datesText: "Feb - Dec 2024" },
     }),
     itemOf({
       id: "personal-grader",
       kind: "project",
       title: "Lab Grader",
-      documents: 1,
       project: { description: "Skills for grading student labs.", datesText: null },
     }),
   ],
@@ -164,7 +149,6 @@ const aFullProfile = (): Profile => ({
       id: "group-languages",
       kind: "group",
       title: "Programming languages",
-      documents: 4,
       children: [
         chip("chip-js", "JavaScript"),
         chip("chip-ts", "TypeScript"),
@@ -175,14 +159,12 @@ const aFullProfile = (): Profile => ({
       id: "group-devops",
       kind: "group",
       title: "DevOps and cloud",
-      documents: 3,
       children: [chip("chip-docker", "Docker"), chip("chip-k8s", "Kubernetes")],
     }),
     itemOf({
       id: "group-tools",
       kind: "group",
       title: "Tools",
-      documents: 2,
       children: [chip("chip-git", "Git"), chip("chip-figma", "Figma")],
     }),
   ],
@@ -193,7 +175,6 @@ const aFullProfile = (): Profile => ({
       title: "Bachelor of Applied Science (BASc), Software Engineering",
       startText: "2018",
       endText: "2022",
-      documents: 4,
       education: {
         institution: "HEIG-VD",
         location: "Yverdon-les-Bains",
@@ -206,7 +187,6 @@ const aFullProfile = (): Profile => ({
       kind: "education",
       title: "CFC, Informatics",
       startText: "2008",
-      documents: 3,
       education: {
         institution: "Ecole des Arches",
         location: "Lausanne",
@@ -219,12 +199,11 @@ const aFullProfile = (): Profile => ({
       kind: "publication",
       title: "Designing a Data-Driven Survey System",
       subtitle: "ACM CHI 2024",
-      documents: 2,
     }),
     // One row per language, as the merge writes them (the slice's *The modules*).
-    itemOf({ id: "language-fr", kind: "language", title: "French", documents: 3 }),
-    itemOf({ id: "language-en", kind: "language", title: "English", documents: 3 }),
-    itemOf({ id: "language-sr", kind: "language", title: "Serbian", documents: 2 }),
+    itemOf({ id: "language-fr", kind: "language", title: "French" }),
+    itemOf({ id: "language-en", kind: "language", title: "English" }),
+    itemOf({ id: "language-sr", kind: "language", title: "Serbian" }),
   ],
 });
 
@@ -270,27 +249,39 @@ describe("the viewer draws the bar and the sheet (criterion 7)", () => {
     expect(order).toEqual(["profile-bar", "profile-sheet"]);
   });
 
-  it("says who the profile is and how many documents it was read from", async () => {
-    profileIs(aFullProfile());
+  /**
+   * The bar says a date and never a count (product-flow-rework `H10`, `ID331`). It used
+   * to say "From 5 documents, read today"; how many documents a profile was built from is
+   * bookkeeping, and a person reading their profile is not doing any.
+   */
+  it("says who the profile is and the day it was read, with no count of documents", async () => {
+    profileIs({ ...aFullProfile(), readOn: new Date("2026-09-14T09:30:00.000Z").toISOString() });
     const { page } = await opened();
 
-    expect(textOf(page()?.querySelector("profile-bar"))).toContain("Stefan Teofanovic");
-    expect(textOf(page()?.querySelector("profile-bar"))).toContain("From 5 documents, read today");
+    const bar = textOf(page()?.querySelector("profile-bar"));
+    expect(bar).toContain("Stefan Teofanovic");
+    expect(bar).toContain("Read 14 September");
+    expect(bar).not.toMatch(/\d+ documents?/);
   });
 
-  it("shows one column at a time below 1024 px, and the toggle in the bar switches it", async () => {
+  it("offers the two things a person does next, and nothing that switches a column", async () => {
     profileIs(aFullProfile());
-    const { page, buttonSaying, eventually } = await opened();
-    const viewer = () => page()?.querySelector("[data-view]");
+    const { buttonSaying } = await opened();
 
-    // The sheet is what the viewer opens on: the profile is what a person came for.
-    expect(viewer()?.getAttribute("data-view")).toBe("sheet");
+    expect(buttonSaying("Add documents")).not.toBeUndefined();
+    expect(buttonSaying("Start an application")).not.toBeUndefined();
+    expect(buttonSaying("Back to the chat")).toBeUndefined();
+    expect(buttonSaying("See my profile")).toBeUndefined();
+  });
 
-    buttonSaying("Back to the chat")?.click();
-    await eventually(() => expect(viewer()?.getAttribute("data-view")).toBe("chat"));
+  /** `ID332`: the door is the index's until `offer-intake` builds one, and it is bound. */
+  it("takes a person to the index when they start an application", async () => {
+    profileIs(aFullProfile());
+    const { buttonSaying, eventually } = await opened();
 
-    buttonSaying("See my profile")?.click();
-    await eventually(() => expect(viewer()?.getAttribute("data-view")).toBe("sheet"));
+    buttonSaying("Start an application")?.click();
+
+    await eventually(() => expect(TestBed.inject(Router).url).toBe("/"));
   });
 });
 
@@ -353,12 +344,17 @@ describe("the sheet is exhaustive (criterion 8, US4)", () => {
     );
   });
 
-  it("says beside each item how many documents it came from", async () => {
+  /**
+   * The other half of `H10`: the bar stopped counting documents in `S2.1` and the sheet
+   * stops here. It used to say `4 documents` beside every row.
+   */
+  it("says beside no item how many documents it came from", async () => {
     profileIs(aFullProfile());
-    const { all } = await opened();
+    const { all, page } = await opened();
 
-    const post = all("[data-row=post]")[0];
-    expect(textOf(post?.querySelector("[data-part=from]"))).toBe("4 documents");
+    expect(all("[data-row=post]").length).toBeGreaterThan(0);
+    expect(all("[data-part=from]").length).toBe(0);
+    expect(textOf(page())).not.toMatch(/\d+ documents?\b/);
   });
 });
 
@@ -375,8 +371,8 @@ describe("nothing inferred (criterion 9, D16)", () => {
     expect(rows.length).toBeGreaterThan(0);
     for (const row of rows) {
       for (const figure of piecesOf(row).join(" ").match(/\d+/g) ?? []) {
-        // A source count is a count of rows and is drawn from `documents`, so it is
-        // answered too; anything else has to be a document's own word.
+        // Every figure left in a row is a document's own word: no row counts documents
+        // any more (`H10`).
         expect(answered).toContain(figure);
       }
     }
@@ -443,204 +439,26 @@ describe("every item, line, project and chip is a region (criterion 10)", () => 
   });
 });
 
-describe("the assistant's conversation (agent-consolidation SL2, S2.3)", () => {
-  it("opens the profile's conversation and draws what it holds", async () => {
-    profileIs(aFullProfile());
-    conversationIs([
-      entryOf(1, [
-        { kind: "text", text: "Words only the stored conversation holds.", scripted: true },
-      ]),
-    ]);
-    const { page, eventually } = await opened();
-
-    await eventually(() =>
-      expect(textOf(page()?.querySelector("profile-assistant"))).toContain(
-        "Words only the stored conversation holds.",
-      ),
-    );
-    expect(intakeRequests()).toContainEqual({
-      method: "GET",
-      address: "/api/conversations/profile",
-    });
-  });
-});
-
-describe("a stored edit in the assistant's conversation (agent-consolidation SL4, S4.6, ID185)", () => {
-  it("draws the edit's before and after, and no placeholder for its call or its result", async () => {
-    const item = {
-      id: "item-nexplore",
-      kind: "experience",
-      title: "Platform engineer",
-      subtitle: null,
-      startText: null,
-      endText: null,
-      block: {
-        organisation: "Nexplore",
-        organisationNote: null,
-        location: null,
-        arrangement: null,
-      },
-      lines: [{ id: "line-2", text: "Designed and shipped the platform." }],
-      children: [],
-    };
-    profileIs(aFullProfile());
-    conversationIs([
-      entryOf(1, [{ kind: "text", text: "I read your 5 documents.", scripted: true }]),
-      entryOf(2, [{ kind: "text", text: "Shorten the second line." }], "person"),
-      entryOf(3, [
-        { kind: "text", text: "I will shorten it." },
-        { kind: "tool_use", id: "call_1", name: "edit_profile", input: {} },
-      ]),
-      entryOf(
-        4,
-        [
-          {
-            kind: "tool_result",
-            id: "call_1",
-            name: "edit_profile",
-            before: item,
-            after: { ...item, lines: [{ id: "line-2", text: "Shipped the platform." }] },
-          },
-        ],
-        "tool",
-      ),
-    ]);
-    const { page, eventually } = await opened();
-
-    await eventually(() =>
-      expect(textOf(page()?.querySelector("profile-assistant [data-part=now]"))).toBe(
-        "Shipped the platform.",
-      ),
-    );
-    expect(textOf(page()?.querySelector("profile-assistant [data-part=was]"))).toBe(
-      "Designed and shipped the platform.",
-    );
-    expect(textOf(page()?.querySelector("profile-assistant"))).not.toContain(
-      "This part cannot be shown here.",
-    );
-  });
-});
-
 /**
- * The person's tool use, in the history (agent-consolidation `S7.3`, spec `H26`, `ID191`):
- * an answer or a skip is drawn on the person's side by the part the profile screen
- * provides, and the conversation is read again once one is written.
+ * The observer and the listeners the reveal set up go with the viewer (`ID248`).
+ *
+ * The region used to be lifted by the assistant activating a question's tool; there is no
+ * assistant to activate one (`ID331`), so the press that lifts it here is a person's own,
+ * which is the one path left and always was the same path (`ID215`).
  */
-describe("the person's tool use in the conversation (agent-consolidation SL7, S7.3)", () => {
-  const kubernetes = questionOf({
-    id: "q1",
-    itemId: "chip-k8s",
-    itemTitle: "Kubernetes",
-    lead: "Which was it?",
-  });
-  const asked = {
-    lead: kubernetes.lead,
-    where: kubernetes.where,
-    options: kubernetes.options.map(({ id, label, hint }) => ({ id, label, hint })),
-  };
-  const opening = entryOf(1, [{ kind: "text", text: "I read your 5 documents.", scripted: true }]);
-
-  /** The person's side of the conversation, as a person reads it. */
-  const personSide = (page: () => HTMLElement | null) =>
-    Array.from(page()?.querySelectorAll("profile-assistant [data-msg=person]") ?? []).map((each) =>
-      textOf(each),
-    );
-
-  it("draws a stored answer on the person's side: the option picked and the words", async () => {
-    profileIs({ ...aFullProfile(), questions: [{ ...kubernetes, state: "answered" }] });
-    conversationIs([
-      opening,
-      entryOf(
-        2,
-        [
-          {
-            kind: "question_answered",
-            ...asked,
-            picked: "q1-2",
-            words: "three clusters, one on bare metal",
-          },
-        ],
-        "person",
-      ),
-    ]);
-    const { page, eventually } = await opened();
-
-    await eventually(() =>
-      expect(personSide(page)).toEqual([expect.stringContaining("Ran services on it")]),
-    );
-    expect(personSide(page)[0]).toContain("three clusters, one on bare metal");
-    expect(textOf(page()?.querySelector("profile-assistant"))).not.toContain(
-      "This part cannot be shown here.",
-    );
-  });
-
-  it("draws a stored skip on the person's side as a line saying it was skipped", async () => {
-    profileIs({ ...aFullProfile(), questions: [{ ...kubernetes, state: "skipped" }] });
-    conversationIs([opening, entryOf(2, [{ kind: "question_skipped", ...asked }], "person")]);
-    const { page, eventually } = await opened();
-
-    await eventually(() => expect(personSide(page)).toHaveLength(1));
-    expect(personSide(page)[0]).toMatch(/skipped/i);
-    expect(personSide(page)[0]).toContain("Which was it?");
-    expect(textOf(page()?.querySelector("profile-assistant"))).not.toContain(
-      "This part cannot be shown here.",
-    );
-  });
-
-  it("draws the pick on the person's side after an answer, from the entry the action answered (D9)", async () => {
-    profileIs({ ...aFullProfile(), questions: [kubernetes] });
-    const { page, eventually } = await opened();
-    await eventually(() =>
-      expect(page()?.querySelector("profile-assistant [data-action=alt]")).not.toBeNull(),
-    );
-
-    page()?.querySelectorAll<HTMLButtonElement>("profile-assistant [data-action=alt]")[1]?.click();
-    await eventually(() =>
-      expect(
-        page()?.querySelector<HTMLButtonElement>("profile-assistant [data-part=send]")?.disabled,
-      ).toBe(false),
-    );
-    page()?.querySelector<HTMLButtonElement>("profile-assistant [data-part=send]")?.click();
-
-    await eventually(() =>
-      expect(personSide(page)).toEqual([expect.stringContaining("Ran services on it")]),
-    );
-    expect(intakeRequests()).toContainEqual({
-      method: "POST",
-      address: "/api/conversations/profile/actions/answer_question",
-    });
-  });
-
-  it("draws the skip on the person's side after a skip, from the entry the action answered (D9)", async () => {
-    profileIs({ ...aFullProfile(), questions: [kubernetes] });
-    const { page, eventually } = await opened();
-    await eventually(() =>
-      expect(page()?.querySelector("profile-assistant [data-action=skip]")).not.toBeNull(),
-    );
-
-    page()?.querySelector<HTMLButtonElement>("profile-assistant [data-action=skip]")?.click();
-
-    await eventually(() => expect(personSide(page)).toEqual([expect.stringMatching(/skipped/i)]));
-  });
-});
-
-/** The observer and the listeners the reveal set up go with the viewer (`ID248`). */
 describe("the viewer going (ID248)", () => {
   it("stops following the column it revealed a region in", async () => {
-    profileIs({
-      ...aFullProfile(),
-      questions: [
-        questionOf({
-          id: "q1",
-          itemId: "chip-k8s",
-          itemTitle: "Kubernetes",
-          lead: "Which was it?",
-        }),
-      ],
-    });
+    profileIs(aFullProfile());
     const fixture = TestBed.createComponent(ProfileViewer);
-    fixture.componentRef.setInput("activated", { itemId: "chip-k8s" });
     const element = fixture.nativeElement as HTMLElement;
+    await vi.waitFor(async () => {
+      fixture.detectChanges();
+      await fixture.whenStable();
+      expect(element.querySelector('[data-region][data-id="chip-k8s"]')).not.toBeNull();
+    });
+
+    element.querySelector<HTMLElement>('[data-region][data-id="chip-k8s"]')?.click();
+
     await vi.waitFor(async () => {
       fixture.detectChanges();
       await fixture.whenStable();
@@ -654,7 +472,7 @@ describe("the viewer going (ID248)", () => {
   });
 });
 
-describe("no assistant during the profile intake (S3.0, ID202)", () => {
+describe("no assistant on the profile at all (S2.1, ID331; was S3.0, ID202)", () => {
   it("opens no conversation and draws no assistant column for a person with nothing read", async () => {
     profileIs(emptyProfile);
     // Handed over and not read yet, so the viewer keeps the person rather than sending

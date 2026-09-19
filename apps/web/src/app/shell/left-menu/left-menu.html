@@ -1,0 +1,123 @@
+@if (open()) {
+  <aside class="fixed inset-0 z-40 flex" aria-label="Menu" (keydown)="trap($event)">
+    <button
+      type="button"
+      class="absolute inset-0 bg-scrim"
+      aria-hidden="true"
+      tabindex="-1"
+      (click)="close.emit()"
+    ></button>
+
+    <div
+      #panel
+      class="relative flex h-full w-[min(320px,88vw)] flex-col border-border border-r bg-card shadow-card"
+    >
+      <div class="flex min-h-14 items-stretch border-border border-b sm:min-h-16">
+        <button
+          #closeSquare
+          type="button"
+          class="grid w-14 shrink-0 place-items-center border-border border-r text-foreground hover:bg-muted sm:w-16"
+          aria-label="Close the menu"
+          (click)="close.emit()"
+        >
+          <svg
+            width="20"
+            height="20"
+            viewBox="0 0 20 20"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2"
+            stroke-linecap="round"
+            aria-hidden="true"
+          >
+            <path d="M5 5l10 10M15 5 5 15" />
+          </svg>
+        </button>
+        <span class="flex min-w-0 items-center px-4 sm:px-6"><app-wordmark /></span>
+      </div>
+
+      <!-- Applications and Credits stay inert until the slots that feed them land (F3). -->
+      <nav uiStack gap="none" aria-label="Main" class="gap-0.5 p-3">
+        <a
+          href="/"
+          routerLink="/"
+          routerLinkActive="bg-accent font-semibold text-accent-foreground"
+          [routerLinkActiveOptions]="{ exact: true }"
+          uiRow
+          justify="between"
+          uiBox
+          px="md"
+          py="sm"
+          radius="md"
+          uiText
+          variant="ui"
+          class="no-underline hover:bg-muted"
+          (click)="close.emit()"
+        >
+          Home
+        </a>
+        <a
+          href="/profile"
+          routerLink="/profile"
+          routerLinkActive="bg-accent font-semibold text-accent-foreground"
+          uiRow
+          justify="between"
+          uiBox
+          px="md"
+          py="sm"
+          radius="md"
+          uiText
+          variant="ui"
+          class="no-underline hover:bg-muted"
+          (click)="close.emit()"
+        >
+          Profile
+        </a>
+        <span
+          uiRow
+          justify="between"
+          uiBox
+          px="md"
+          py="sm"
+          radius="md"
+          uiText
+          variant="ui"
+          tone="muted"
+          aria-disabled="true"
+        >
+          Applications
+        </span>
+        <span
+          uiRow
+          justify="between"
+          uiBox
+          px="md"
+          py="sm"
+          radius="md"
+          uiText
+          variant="ui"
+          tone="muted"
+          aria-disabled="true"
+        >
+          Credits
+          <span uiText variant="caption" tone="muted">
+            CHF <span uiText variant="caption" weight="semibold">12.40</span>
+          </span>
+        </span>
+      </nav>
+
+      <span uiSpacer></span>
+
+      @if (user(); as person) {
+        <div uiBox p="md" class="border-border border-t">
+          <app-account-menu
+            class="block w-full"
+            [user]="person"
+            (signOut)="signOut.emit()"
+            (deleteAccount)="deleteAccount.emit()"
+          />
+        </div>
+      }
+    </div>
+  </aside>
+}

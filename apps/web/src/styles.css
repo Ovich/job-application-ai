@@ -49,6 +49,12 @@
   --cv-accent: #172554;
   --cv-hairline: #e2e8f0;
 
+  /* What a panel over the page darkens it with: the left menu's backdrop (D20). One
+     value in both themes, because a scrim is a dimming of whatever is under it and not
+     a colour of its own. Named here from the mockups' `--scrim`; the design language
+     still has to take it in (product-flow-rework S1.1, finding 1). */
+  --scrim: #0000004d;
+
   --radius: 6px;
   --shadow: 0 1px 2px #0000000d, 0 4px 12px #0000000f;
 }
@@ -97,6 +103,7 @@
   --color-cv-muted: var(--cv-muted);
   --color-cv-accent: var(--cv-accent);
   --color-cv-hairline: var(--cv-hairline);
+  --color-scrim: var(--scrim);
 
   --radius-sm: 4px;
   --radius-md: var(--radius);

@@ -59,6 +59,7 @@ const { conversationsOf } = await import("../../src/routes/conversations");
 const { agentOn } = await import("../support/agent");
 const { profileAssistant } = await import("../../src/assistants/profile");
 const { itemNamed } = await import("../support/intake");
+const { withQuestions, withTheJavaQuestion } = await import("../support/questions");
 
 let storage: ReturnType<typeof localStorageIn>;
 
@@ -90,16 +91,19 @@ const three = [
 const profileOf = async (cookie: string): Promise<Support.ProfileAnswer> =>
   (await (await app.request("/api/intake/profile", { headers: { cookie } })).json()) as never;
 
-/** A person whose run has left them the four questions the shipped case proposes. */
+/**
+ * A person whose run has left them the four questions the shipped case proposes.
+ *
+ * **The questions are written, not read out of documents** (`S3.0`). Nothing here is about
+ * the reading: a question is what an answer and a skip need to exist before they can be
+ * tested, so the fixture writes it directly and no run is driven. The documents are still
+ * the person's three, as rows, because a profile cites them and the assistant opens on
+ * that; their bytes are nobody's business here, so none go in.
+ */
 const asked = async (email: string) => {
   const person = await signedIn(email);
-  // The bytes go in with the rows: the reading turns each file into text itself before
-  // it asks anything, so a run over rows with no objects behind them reads nothing
-  // (`ID157`).
-  await documentsFor(person.id, three, storage);
-  await (
-    await app.request("/api/intake/read", { method: "POST", headers: { cookie: person.cookie } })
-  ).text();
+  await documentsFor(person.id, three);
+  await withQuestions(person.id);
   return { ...person, profile: await profileOf(person.cookie) };
 };
 
@@ -538,14 +542,16 @@ describe("a tool used is a message to the agent (D31, ID291)", () => {
   /**
    * `ID292`: no case is written for a conversation, whose id changes on every run, so the
    * mock answers by the exact message the decision became. The shipped answers, no case of
-   * this test's own: the preset CV read alone, its Java question answered `Earlier work`.
+   * this test's own: the preset CV's Java question, answered `Earlier work`.
    */
   it("streams the reply written for the preset CV's Java question answered with `Earlier work`", async () => {
     const person = await signedIn("java-earlier-work@example.com");
-    await documentsFor(person.id, [theSet.cvEnglish.filename], storage);
-    await (
-      await app.request("/api/intake/read", { method: "POST", headers: { cookie: person.cookie } })
-    ).text();
+    await documentsFor(person.id, [theSet.cvEnglish.filename]);
+    // The question is written, not read out of the CV (`S3.0`, `S3.1`): a reading leaves
+    // none any more. It is the very question the shipped answer was recorded against —
+    // the lead, the place and the option are what the assistant's message quotes — so
+    // what this case still walks is the answer, which is its subject.
+    await withTheJavaQuestion(person.id);
     const question = about(await profileOf(person.cookie), "Java");
     const picked = question.options.find((option) => option.label === "Earlier work");
     const written =

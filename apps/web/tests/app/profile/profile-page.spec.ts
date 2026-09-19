@@ -18,14 +18,16 @@ import {
 import { reset, signedInAs } from "../../support/session";
 
 /**
- * `ProfilePage`, rendered at its route (D2, D8): the layout, and the relays between its two
- * sections, `ProfileViewer` on the right and `ProfileAssistant` on the left.
+ * `ProfilePage`, rendered at its route (D2, `D19`, `ID331`): one column, and nothing that
+ * asks anybody anything.
  *
- * Behind it: the routes both sections call, stood in for at `fetch`
- * (`tests/support/intake.ts`). What is read is what a person sees in one section after
- * something happened in the other.
+ * Behind it: the routes the viewer calls, stood in for at `fetch`
+ * (`tests/support/intake.ts`). What is read is the markup and the signals over a stubbed
+ * profile, with no network.
  *
- * Not past it: either section's own behaviour, which their own files hold.
+ * Not past it: the viewer's own behaviour and the sheet's own rendering, which their own
+ * files hold. The page relayed nine signals between two columns until
+ * product-flow-rework `S2.1`; there is one column now, and it holds none.
  */
 
 const person = {
@@ -44,12 +46,12 @@ const kubernetes = questionOf({
   lead: "Which was it?",
 });
 
-/** Five documents read today, and two chips a question can be about. */
-const aProfile = (questions: Question[]): Profile => ({
+/** Five documents read on a day of its own, and two chips something could be about. */
+const aProfile = (questions: Question[], readOn = new Date()): Profile => ({
   ...emptyProfile,
   name: "Stefan Teofanovic",
   documents: 5,
-  readOn: new Date().toISOString(),
+  readOn: readOn.toISOString(),
   groups: [
     itemOf({
       id: "group-devops",
@@ -98,11 +100,28 @@ const opened = async () => {
       assert();
     });
   await eventually(() => expect(at("profile-sheet")).not.toBeNull());
-  return { harness, at, all, eventually };
+  return { harness, page, at, all, eventually };
 };
 
-describe("the profile page (D2, D8)", () => {
-  it("draws no assistant section before a reading has made a profile", async () => {
+describe("the profile page (D2, ID331)", () => {
+  it("renders the viewer and no assistant, with questions still waiting on the profile", async () => {
+    profileIs(aProfile([kubernetes]));
+    const { at, harness } = await opened();
+    harness.detectChanges();
+    await harness.fixture.whenStable();
+    harness.detectChanges();
+
+    expect(at("profile-viewer")).not.toBeNull();
+    expect(at("profile-assistant")).toBeNull();
+    expect(at('section[aria-label="Assistant"]')).toBeNull();
+    expect(at("scope-tool")).toBeNull();
+    // Nothing was asked of the conversation either: the column is not merely hidden.
+    expect(
+      intakeRequests().filter((each) => each.address.startsWith("/api/conversations/")),
+    ).toEqual([]);
+  });
+
+  it("draws no assistant before a reading has made a profile either", async () => {
     profileIs(emptyProfile);
     documentsAre([rowOf({ id: "document-1", filename: "2026-08-30_cv_EN.pdf" })]);
     const { at, harness } = await opened();
@@ -116,60 +135,35 @@ describe("the profile page (D2, D8)", () => {
     expect(at("profile-assistant")).toBeNull();
   });
 
-  it("turns the assistant's tool on for the region pressed in the viewer", async () => {
-    profileIs(aProfile([]));
-    const { at, eventually } = await opened();
-    await eventually(() => expect(at("profile-assistant [data-part=done]")).not.toBeNull());
+  it("says on the bar when the profile was read, as a date and never as a count", async () => {
+    profileIs(aProfile([], new Date("2026-09-14T09:30:00.000Z")));
+    const { at } = await opened();
 
-    (at('[data-region][data-id="chip-docker"]') as HTMLElement | null)?.click();
-
-    await eventually(() =>
-      expect(textOf(at("profile-assistant scope-tool [data-part=lead]"))).toBe(
-        "Tell me what I should know about it, in your own words.",
-      ),
-    );
-    expect(textOf(at("profile-assistant composer [data-part=where]"))).toBe("Docker");
+    const bar = textOf(at("profile-bar"));
+    expect(bar).toContain("Stefan Teofanovic");
+    expect(bar).toContain("Read 14 September");
+    expect(bar).not.toMatch(/\d+ documents?/);
+    expect(bar).not.toContain("From");
   });
 
-  it("reads the profile back in the viewer once the assistant's decision is kept", async () => {
-    profileIs(aProfile([kubernetes]));
-    const { at, all, eventually } = await opened();
-    await eventually(() => expect(all("profile-assistant [data-action=alt]")).toHaveLength(4));
-
-    (all("profile-assistant [data-action=alt]")[0] as HTMLButtonElement).click();
-    await eventually(() =>
-      expect((at("[data-part=send]") as HTMLButtonElement | null)?.disabled).toBe(false),
-    );
-    (at("[data-part=send]") as HTMLButtonElement).click();
-
-    await eventually(() =>
-      expect(textOf(at('[data-region][data-id="chip-k8s"] [data-part=concern]'))).toBe(
-        "✓ Kubernetes: cluster administration, and the services on it",
-      ),
-    );
-    expect(
-      intakeRequests().filter(
-        (each) => each.method === "GET" && each.address === "/api/intake/profile",
-      ).length,
-    ).toBeGreaterThanOrEqual(2);
-  });
-
-  it("shows one section at a time below 1024 px, and the bar's toggle switches which", async () => {
+  it("is one column at every width: no switch control, and nothing hidden by one", async () => {
     profileIs(aProfile([]));
-    const { at, all, eventually } = await opened();
-    const assistant = () => at('section[aria-label="Assistant"]');
-    const toggle = (label: string) =>
-      all("profile-bar button").find((each) => textOf(each) === label) as HTMLButtonElement;
-    await eventually(() => expect(assistant()).not.toBeNull());
-    expect(assistant()?.classList.contains("hidden")).toBe(true);
+    const { page, all } = await opened();
 
-    toggle("Back to the chat").click();
+    // The toggle is gone, by its handle and by both of its labels.
+    expect(all("[data-action=toggle-view]")).toHaveLength(0);
+    const labels = all("button")
+      .map((each) => textOf(each))
+      .filter((each) => each !== "");
+    expect(labels).not.toContain("Back to the chat");
+    expect(labels).not.toContain("See my profile");
 
-    await eventually(() => expect(at("[data-view]")?.getAttribute("data-view")).toBe("chat"));
-    expect(assistant()?.classList.contains("hidden")).toBe(false);
-
-    toggle("See my profile").click();
-
-    await eventually(() => expect(assistant()?.classList.contains("hidden")).toBe(true));
+    // One column: the page holds the viewer and nothing beside it, at any width. The
+    // grid that put a second column there above 1024 px is gone with its occupant.
+    const column = page()?.querySelector("profile-page")?.firstElementChild ?? null;
+    expect(Array.from(column?.children ?? []).map((each) => each.tagName.toLowerCase())).toEqual([
+      "profile-viewer",
+    ]);
+    expect(column?.className).not.toMatch(/grid/);
   });
 });

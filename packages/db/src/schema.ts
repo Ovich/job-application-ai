@@ -1,8 +1,6 @@
-import { sql } from "drizzle-orm";
 import type { AnyPgColumn } from "drizzle-orm/pg-core";
 import {
   boolean,
-  check,
   integer,
   jsonb,
   pgEnum,
@@ -86,8 +84,8 @@ export type NewDocument = typeof document.$inferInsert;
 /**
  * What a profile is made of (ID120). Relational, and there is no JSON column anywhere
  * below this line (F8): a profile item's shape differs by kind, so the spine carries
- * what every kind has and one table per kind carries the rest. Provenance then needs
- * one foreign key, not one per kind, and so will the rules and the questions of SL4.
+ * what every kind has and one table per kind carries the rest. A row that points at a
+ * fact then needs one foreign key, not one per kind, as the questions and the concerns do.
  *
  * Three choices in the shape are the substance of it, and each one is a claim the
  * product makes about itself:
@@ -102,9 +100,9 @@ export type NewDocument = typeof document.$inferInsert;
  * the column out makes that a thing the database cannot express rather than a thing the
  * screen must remember not to draw (D16).
  *
- * **A fact points at one thing**, an item or a line, and the check constraint below is
- * what says so. `num_nonnulls` is PostgreSQL's own, so it is enforced on PGlite in the
- * suite exactly as it is on the deployed cluster (ID49).
+ * **A profile says what it says, and not where it came from** (`ID334`). The quote behind
+ * each fact was a table here; it is gone, and where a fact came from is the conversation's
+ * to answer.
  */
 export const itemKind = pgEnum("item_kind", [
   "summary",
@@ -183,7 +181,7 @@ export const itemEntry = pgTable("item_entry", {
   qualifier: text("qualifier"),
 });
 
-/** One bullet of an experience or a project, ordered, with provenance of its own. */
+/** One bullet of an experience or a project, ordered. */
 export const itemLine = pgTable("item_line", {
   id: text("id").primaryKey(),
   itemId: text("item_id")
@@ -193,35 +191,11 @@ export const itemLine = pgTable("item_line", {
   position: integer("position").notNull(),
 });
 
-/**
- * One fact, one document, and what that document said about it, verbatim.
- *
- * Two documents that state the same post differently give the one item two rows here,
- * each carrying its own document's wording in its own language. The merge picks no
- * winner and writes no third wording: what a person is shown is where a fact came from,
- * which is the product's one claim.
- */
-export const provenance = pgTable(
-  "provenance",
-  {
-    id: text("id").primaryKey(),
-    documentId: text("document_id")
-      .notNull()
-      .references(() => document.id, { onDelete: "cascade" }),
-    itemId: text("item_id").references(() => profileItem.id, { onDelete: "cascade" }),
-    lineId: text("line_id").references(() => itemLine.id, { onDelete: "cascade" }),
-    said: text("said").notNull(),
-  },
-  (table) => [check("one_fact", sql`num_nonnulls(${table.itemId}, ${table.lineId}) = 1`)],
-);
-
 /** The row shapes of the profile, named once, inferred from the tables above. */
 export type ProfileItem = typeof profileItem.$inferSelect;
 export type NewProfileItem = typeof profileItem.$inferInsert;
 export type ItemLine = typeof itemLine.$inferSelect;
 export type NewItemLine = typeof itemLine.$inferInsert;
-export type Provenance = typeof provenance.$inferSelect;
-export type NewProvenance = typeof provenance.$inferInsert;
 export type ItemKind = (typeof itemKind.enumValues)[number];
 
 /**

@@ -1,9 +1,8 @@
 <profile-bar
   [name]="name()"
   [readLine]="readLine()"
-  [view]="view()"
   (addDocuments)="addDocuments()"
-  (toggleView)="toggleView.emit()"
+  (startApplication)="startApplication()"
 />
 
 <!--
@@ -11,7 +10,7 @@
   moves its own `scrollTop`: it scrolls inside the shell, and `scrollIntoView` would
   also move whatever contains it.
 -->
-<div #scroller [class]="scrollClass()">
+<div #scroller class="flex min-h-0 flex-1 flex-col items-center overflow-auto p-4 lg:p-7">
   @switch (state()) {
     @case ("loading") {
       <div uiSpinner></div>

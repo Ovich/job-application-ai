@@ -3,7 +3,6 @@ import type { InferResponseType } from "hono/client";
 import type { api } from "../../lib/api";
 import { UiText } from "../../ui/typography/text/text";
 import { ProfileRegion, type RegionRef } from "../profile-region/profile-region";
-import { ProfileReviewFlag } from "../profile-review-flag/profile-review-flag";
 
 /**
  * The profile as the app's own surface (`US4`, `D17`, the mockup's right column).
@@ -15,9 +14,10 @@ import { ProfileReviewFlag } from "../profile-review-flag/profile-review-flag";
  * renders 246 chips as plain spans and stays fluid.
  *
  * **Every figure it prints is a count of what it drew, or a document's own word.** The
- * headings count the rows below them; a year span is the first and last year the
- * documents themselves wrote; an item's source count is what the interface answered.
- * There is no other kind of number on this screen, and that is what criterion 9 is.
+ * headings count the rows below them, and a year span is the first and last year the
+ * documents themselves wrote. Nothing says how many documents a part came from: where a
+ * fact came from is not shown anywhere on this screen (product-flow-rework `H10`,
+ * `ID334`). There is no other kind of number here, and that is what criterion 9 is.
  *
  * It owns no state. The hover is CSS (`profile-region`), the selection goes out and up
  * because the thing that acts on it is `SL4`'s tool, and the answer arrives already
@@ -39,7 +39,7 @@ const yearsIn = (items: Item[]): number[] =>
 
 @Component({
   selector: "profile-sheet",
-  imports: [ProfileRegion, ProfileReviewFlag, UiText],
+  imports: [ProfileRegion, UiText],
   templateUrl: "./profile-sheet.html",
 })
 export class ProfileSheet {
@@ -120,11 +120,6 @@ export class ProfileSheet {
       say(this.languages().length, "language"),
     ].join(", "),
   );
-
-  /** How many documents an item came from, said the way the mockup says it. */
-  protected from(count: number): string {
-    return say(count, "document");
-  }
 
   /** What a document stated about the dates, as it stated them. Never parsed. */
   protected dates(item: Item): string {
