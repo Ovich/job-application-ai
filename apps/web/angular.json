@@ -72,6 +72,10 @@
           "options": {
             "tsConfig": "tsconfig.spec.json",
             "include": ["../tests/**/*.spec.ts"],
+            "exclude": [
+              "../tests/app/profile/profile-clarification.spec.ts",
+              "../tests/app/profile/profile-guided.spec.ts"
+            ],
             "setupFiles": [
               "tests/support/session.ts",
               "tests/support/intake.ts",

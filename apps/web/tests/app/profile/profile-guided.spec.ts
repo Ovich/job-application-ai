@@ -19,6 +19,14 @@ import {
 import { reset, signedInAs } from "../../support/session";
 
 /**
+ * **Out of collection since product-flow-rework `S2.1`, and owed to `profile-assistant`.**
+ * Every case below mounts `/profile` and reads the assistant that used to be on it. The
+ * assistant left the intake (`ID331`), so none of them has a subject at that route any
+ * more — but they are the walks `profile-assistant` will want the day the column comes
+ * back (`ID330`), so they stay in the tree, named in `apps/web/angular.json`'s `exclude`,
+ * rather than being deleted or skipped. Whoever rebuilds that slot rewrites them against
+ * the seam it has and puts the file back in collection.
+ *
  * Seam A: the profile screen, `ProfileViewer` rendered with `ProfileAssistant` inside it
  * (agent-consolidation `SL8`, `S8.1`, `S8.2`, `S8.3`; `ID215`, `ID216`, `ID217`, `ID218`,
  * `ID219`).
